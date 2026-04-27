@@ -1,0 +1,8 @@
+dist/
+node_modules/
+controller/static/platform.js
+controller/static/assets/
+installer/assets/controller.exe
+*.db
+*.log
+
