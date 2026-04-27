@@ -1,12 +1,12 @@
 @echo off
+REM YUI_KIOSK_BOOTSTRAP
 setlocal
 
-tasklist /FI "IMAGENAME eq controller.exe" | find /I "controller.exe" >NUL
-if errorlevel 1 (
-  start "" "%~dp0controller.exe"
+echo [%date% %time%] launching "%~dp0controller.exe" >> "%~dp0controller-bootstrap.log"
+if not exist "%~dp0controller.exe" (
+  echo [%date% %time%] controller.exe not found >> "%~dp0controller-bootstrap.log"
+  goto :EOF
 )
-
-start "" chrome.exe --proxy-server=localhost:7070 %*
+start "" "%~dp0controller.exe" %*
 
 endlocal
-
