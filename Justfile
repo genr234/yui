@@ -1,0 +1,73 @@
+root_dir := justfile_directory()
+platform_dir := root_dir + "/platform"
+controller_dir := root_dir + "/controller"
+installer_dir := root_dir + "/installer"
+dist_dir := root_dir + "/dist"
+controller_asset := installer_dir + "/assets/controller.exe"
+
+help:
+  @echo "Available targets:"
+  @echo "  just deps               Install platform dependencies"
+  @echo "  just dev                Run controller + platform dev servers"
+  @echo "  just dev-platform       Run the Vite dev server only"
+  @echo "  just dev-controller     Run the Go controller only"
+  @echo "  just dev-inject Build Svelte and inject into Chrome via controller"
+  @echo "  just dev-hot    Run Vite HMR + inject into Chrome via controller"
+  @echo "  just build              Build platform + Windows controller + installer"
+  @echo "  just build-local        Build the platform + a local controller binary"
+  @echo "  just fmt                Format Go sources"
+  @echo "  just check              Build-check the Go controller"
+  @echo "  just clean              Remove generated artifacts"
+
+deps: deps-platform
+
+deps-platform:
+  cd {{platform_dir}} && bun install
+
+dev:
+  @trap 'kill 0' EXIT; (cd {{controller_dir}} && go run .) & (cd {{platform_dir}} && bun run dev) & wait
+
+dev-platform:
+  cd {{platform_dir}} && bun run dev
+
+dev-controller:
+  cd {{controller_dir}} && go run .
+
+dev-inject: build-platform
+  cd {{controller_dir}} && go run .
+
+dev-hot:
+  @trap 'kill 0' EXIT; (cd {{platform_dir}} && bun run dev -- --host 127.0.0.1) & sleep 2; (cd {{controller_dir}} && YUI_PLATFORM_DEV_SERVER=http://127.0.0.1:5173 go run .) & wait
+
+build: build-platform build-controller build-installer
+
+build-local: build-platform build-controller-local
+
+build-platform:
+  cd {{platform_dir}} && bun run build
+
+build-controller:
+  mkdir -p {{installer_dir}}/assets {{dist_dir}}
+  cd {{controller_dir}} && GOOS=windows GOARCH=amd64 go build -o {{controller_asset}} .
+
+build-controller-local:
+  mkdir -p {{dist_dir}}
+  cd {{controller_dir}} && go build -o {{dist_dir}}/controller .
+
+build-installer:
+  mkdir -p {{dist_dir}}
+  cd {{installer_dir}} && GOOS=windows GOARCH=amd64 go build -o {{dist_dir}}/installer.exe .
+
+fmt:
+  cd {{controller_dir}} && gofmt -w .
+  cd {{installer_dir}} && gofmt -w .
+
+check:
+  cd {{controller_dir}} && go build ./...
+  cd {{installer_dir}} && go build ./...
+  cd {{platform_dir}} && bun run build
+
+clean:
+  rm -rf {{dist_dir}}
+  rm -f {{controller_asset}}
+  rm -f {{platform_dir}}/package-lock.json

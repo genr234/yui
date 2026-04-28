@@ -1,28 +1,40 @@
-# Kiosk Platform Boilerplate
+# Yui Kiosk Platform
 
-Minimal scaffold for the kiosk monorepo with a mock-first platform flow that is easy to test on macOS.
+Yui is a Go-based kiosk controller with a Svelte overlay injected into the live kiosk page. The watchdog still launches `chrome.bat`, but the controller owns Chrome, config, logs, status, recovery, and the platform bridge.
 
-## Local testing on macOS
-
-### Platform only
+## Build
 
 ```sh
-cd platform
-npm install
-npm run dev
+make deps
+make build
 ```
 
-Then open the Vite URL and use the overlay buttons. In dev mode, the SDK automatically uses a browser-side mock bridge.
+This builds the Svelte overlay into `controller/static/platform.js`, embeds it into `controller.exe`, and packages the Windows installer.
 
-### Controller placeholder
+## macOS Overlay Test
 
 ```sh
-cd controller
-go run .
+make dev-inject URL=https://example.com
 ```
 
-This starts placeholder listeners on:
+The controller launches local Chrome with remote debugging, opens the URL, and injects the same Svelte overlay path used on the kiosk. Long-press the top-left corner of the page to open Yui.
 
-- `http://localhost:7070` — proxy stub
-- `http://localhost:7071` — bridge stub
-- `http://localhost:7072/demo.html` — static test page
+For Svelte hot reload while still using controller/CDP injection:
+
+```sh
+make dev-hot URL=https://example.com
+```
+
+This starts Vite on `127.0.0.1:5173`, runs the controller with `YUI_PLATFORM_DEV_SERVER`, and injects the Vite module into the live page.
+
+## Useful Checks
+
+```sh
+make check
+cd controller && go run . --version
+cd controller && go run . --check
+```
+
+## Kiosk Install Shape
+
+Run `dist/installer.exe` from Explorer on the kiosk, select the existing kiosk `chrome.bat`, and the installer preserves it as `chrome.original.bat`, writes the Yui bootstrap, writes `controller.exe`, and starts the controller.
