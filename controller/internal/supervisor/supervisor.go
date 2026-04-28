@@ -3,6 +3,7 @@ package supervisor
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"os/exec"
 	"path/filepath"
@@ -150,10 +151,14 @@ func startChrome(ctx context.Context, configuredPath string, args []string) (*ex
 func chromePathCandidates(configuredPath string) []string {
 	return unique([]string{
 		configuredPath,
+		`/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`,
+		`/Applications/Chromium.app/Contents/MacOS/Chromium`,
 		`C:\Program Files\Google\Chrome\Application\chrome.exe`,
 		`C:\Program Files (x86)\Google\Chrome\Application\chrome.exe`,
 		filepath.Join(`C:\Program Files`, "Google", "Chrome", "Application", "chrome.exe"),
 		filepath.Join(`C:\Program Files (x86)`, "Google", "Chrome", "Application", "chrome.exe"),
+		"google-chrome",
+		"chromium",
 		"chrome.exe",
 	})
 }
@@ -161,12 +166,22 @@ func chromePathCandidates(configuredPath string) []string {
 func chromeArgs(cfg config.Config) []string {
 	args := make([]string, 0, len(cfg.Flags)+1)
 	skipNext := false
+	hasRemoteDebugging := false
 	for _, flag := range cfg.Flags {
 		if skipNext {
 			skipNext = false
 			continue
 		}
 		lower := strings.ToLower(flag)
+		if strings.HasPrefix(lower, "--remote-debugging-port=") {
+			hasRemoteDebugging = true
+			continue
+		}
+		if lower == "--remote-debugging-port" {
+			hasRemoteDebugging = true
+			skipNext = true
+			continue
+		}
 		if strings.HasPrefix(lower, "--user-data-dir=") {
 			continue
 		}
@@ -179,8 +194,12 @@ func chromeArgs(cfg config.Config) []string {
 	if cfg.UserDataDir != "" {
 		args = append(args, "--user-data-dir="+cfg.UserDataDir)
 	}
-	if cfg.URL != "" {
-		args = append(args, cfg.URL)
+	if cfg.PlatformEnabled && cfg.PlatformDebugPort > 0 && !hasRemoteDebugging {
+		args = append(args, fmt.Sprintf("--remote-debugging-port=%d", cfg.PlatformDebugPort))
+	}
+	launchURL := cfg.URL
+	if launchURL != "" {
+		args = append(args, launchURL)
 	}
 	return args
 }

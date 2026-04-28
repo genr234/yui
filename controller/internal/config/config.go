@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 const fileName = "controller.json"
@@ -24,7 +25,7 @@ type Config struct {
 	PlatformHTTPAddr    string   `json:"platform_http_addr"`
 	PlatformBridgeAddr  string   `json:"platform_bridge_addr"`
 	PlatformDebugPort   int      `json:"platform_remote_debugging_port"`
-	PlatformDevURL      string   `json:"platform_dev_url"`
+	PlatformDevServer   string   `json:"platform_dev_server"`
 
 	ConfigPath    string `json:"-"`
 	ConfigDir     string `json:"-"`
@@ -177,10 +178,12 @@ func configCandidates(exeDir string) []string {
 		)
 	}
 
-	paths = append(paths,
-		filepath.Join(`C:\ProgramData`, "YuiKiosk", fileName),
-		filepath.Join(`C:\ProgramData`, "Yui", "Kiosk", fileName),
-	)
+	if runtime.GOOS == "windows" {
+		paths = append(paths,
+			filepath.Join(`C:\ProgramData`, "YuiKiosk", fileName),
+			filepath.Join(`C:\ProgramData`, "Yui", "Kiosk", fileName),
+		)
+	}
 
 	if workingDir, err := os.Getwd(); err == nil {
 		paths = append(paths, filepath.Join(workingDir, fileName))
@@ -226,6 +229,19 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.PlatformDebugPort <= 0 {
 		cfg.PlatformDebugPort = defaults.PlatformDebugPort
+	}
+	applyEnvOverrides(cfg)
+}
+
+func applyEnvOverrides(cfg *Config) {
+	if value := os.Getenv("YUI_PLATFORM_HTTP_ADDR"); value != "" {
+		cfg.PlatformHTTPAddr = value
+	}
+	if value := os.Getenv("YUI_PLATFORM_BRIDGE_ADDR"); value != "" {
+		cfg.PlatformBridgeAddr = value
+	}
+	if value := os.Getenv("YUI_PLATFORM_DEV_SERVER"); value != "" {
+		cfg.PlatformDevServer = value
 	}
 }
 

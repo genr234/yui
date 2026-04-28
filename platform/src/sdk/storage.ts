@@ -5,4 +5,3 @@ export const storage = {
   set: (key: string, value: string) => bridge.send<void>('storage.set', { key, value }),
   delete: (key: string) => bridge.send<void>('storage.delete', { key }),
 }
-

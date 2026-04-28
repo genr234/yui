@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"embed"
 	"errors"
 	"fmt"
 	"log"
@@ -10,14 +11,19 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"kiosk/controller/bridge"
 	"kiosk/controller/internal/config"
 	controllerlog "kiosk/controller/internal/logging"
 	"kiosk/controller/internal/nativeui"
+	"kiosk/controller/internal/platform"
 	"kiosk/controller/internal/singleinstance"
 	"kiosk/controller/internal/status"
 	"kiosk/controller/internal/supervisor"
 	"kiosk/controller/internal/version"
 )
+
+//go:embed static/*
+var staticFS embed.FS
 
 func main() {
 	if err := run(); err != nil {
@@ -60,7 +66,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	defer logFile.Close()
+	defer func(logFile *os.File) {
+		err := logFile.Close()
+		if err != nil {
+			log.Printf("error closing log file: %v", err)
+		}
+	}(logFile)
 
 	defer func() {
 		if value := recover(); value != nil {
@@ -78,6 +89,9 @@ func run() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	platform.Start(ctx, cfg, staticFS)
+	bridge.Start(ctx, cfg)
 
 	runner := supervisor.New(cfg, statusWriter)
 	if err := runner.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
@@ -103,7 +117,12 @@ func runCheck() (string, error) {
 
 	logFile, logErr := controllerlog.Setup(cfg.LogPath)
 	if logErr == nil {
-		defer logFile.Close()
+		defer func(logFile *os.File) {
+			err := logFile.Close()
+			if err != nil {
+				log.Printf("failed to close log file: %v", err)
+			}
+		}(logFile)
 		log.Printf("controller check")
 		log.Printf("%s", report)
 	}
@@ -129,7 +148,7 @@ func buildCheckReport(cfg config.Config) string {
 	}
 
 	return fmt.Sprintf(
-		"Yui Kiosk Controller\nVersion: %s\nConfig: %s (%s)\nChrome path: %s (%s)\nUser data dir: %s\nLog path: %s\nStatus path: %s",
+		"Yui Kiosk Controller\nVersion: %s\nConfig: %s (%s)\nChrome path: %s (%s)\nUser data dir: %s\nLog path: %s\nStatus path: %s\nPlatform: %t\nPlatform HTTP: %s\nPlatform bridge: %s\nRemote debugging port: %d",
 		version.Version,
 		cfg.ConfigPath,
 		configState,
@@ -138,6 +157,10 @@ func buildCheckReport(cfg config.Config) string {
 		cfg.UserDataDir,
 		cfg.LogPath,
 		cfg.StatusPath,
+		cfg.PlatformEnabled,
+		cfg.PlatformHTTPAddr,
+		cfg.PlatformBridgeAddr,
+		cfg.PlatformDebugPort,
 	)
 }
 
