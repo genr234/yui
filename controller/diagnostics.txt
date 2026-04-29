@@ -1,9 +1,0 @@
-Yui Kiosk Controller
-Version: 0.1.0
-Controller started: 2026-04-28T13:48:03+02:00
-Updated: 2026-04-28T13:48:03+02:00
-Event: chrome_started
-Config: /Users/sunlightdev/yui/controller/controller.json
-Chrome: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
-Chrome PID: 8081
-Restart count: 0

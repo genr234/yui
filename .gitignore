@@ -8,3 +8,7 @@ installer/assets/controller.exe
 *.bak
 *.tmp
 controller/chrome-profile
+controller/yui_controller
+controller/diagnostics.txt
+controller/controller.log
+controller/status.json
