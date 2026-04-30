@@ -1,17 +1,19 @@
 {
   "name": "kiosk-platform",
-  "private": true,
   "version": "0.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build"
-  },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^3.1.2",
     "svelte": "^4.2.18",
     "typescript": "^5.4.5",
     "vite": "^5.2.11"
+  },
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "type": "module",
+  "dependencies": {
+    "lucide-svelte": "0.468.0"
   }
 }
-
