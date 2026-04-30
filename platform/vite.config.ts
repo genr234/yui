@@ -8,6 +8,9 @@ export default defineConfig({
     cors: true,
     host: '127.0.0.1',
   },
+  optimizeDeps: {
+    exclude: ['lucide-svelte', '@lucide/svelte'],
+  },
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
