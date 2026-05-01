@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 //go:embed assets/*
@@ -26,7 +27,8 @@ const (
 )
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "--version" {
+	args := userArgs()
+	if len(args) > 0 && args[0] == "--version" {
 		fmt.Println(installerVersion)
 		return
 	}
@@ -39,6 +41,21 @@ func main() {
 	mode, target, err := selectActionAndTarget()
 	if err != nil {
 		fatal(err)
+	}
+
+	if mode == modeInstall && !hasElevationMarker() {
+		if err := confirmInstall(target); err != nil {
+			fatal(err)
+		}
+	}
+
+	relaunched, err := relaunchElevatedIfNeeded(mode, target)
+	if err != nil {
+		fatal(err)
+	}
+	if relaunched {
+		log.Printf("elevated installer launched; exiting current process")
+		return
 	}
 
 	if mode == modeRestore {
@@ -54,8 +71,9 @@ func main() {
 }
 
 func selectActionAndTarget() (installMode, string, error) {
-	if len(os.Args) > 1 && os.Args[1] != "" {
-		if os.Args[1] == "--restore" {
+	args := userArgs()
+	if len(args) > 0 && args[0] != "" {
+		if args[0] == "--restore" {
 			target, err := selectTargetArg(2)
 			return modeRestore, target, err
 		}
@@ -84,8 +102,10 @@ func selectActionAndTarget() (installMode, string, error) {
 }
 
 func selectTargetArg(index int) (string, error) {
-	if len(os.Args) > index && os.Args[index] != "" {
-		return filepath.Abs(os.Args[index])
+	args := userArgs()
+	argIndex := index - 1
+	if len(args) > argIndex && args[argIndex] != "" {
+		return filepath.Abs(args[argIndex])
 	}
 	path, ok, err := selectFile(
 		"Select the kiosk chrome.bat",
@@ -153,11 +173,28 @@ func install(target string) error {
 	targetDir := filepath.Dir(target)
 	backupPath := filepath.Join(targetDir, "chrome.original.bat")
 	controllerPath := filepath.Join(targetDir, "controller.exe")
+	menuPath := filepath.Join(targetDir, "yui-menu.bat")
 	bootstrapLogPath := filepath.Join(targetDir, "controller-bootstrap.log")
 
 	log.Printf("installer version: %s", installerVersion)
 	log.Printf("install target: %s", target)
 	log.Printf("target dir: %s", targetDir)
+
+	originalData, err := os.ReadFile(target)
+	if err != nil {
+		return fmt.Errorf("read selected chrome.bat %s: %w", target, err)
+	}
+	installComplete := false
+	defer func() {
+		if installComplete {
+			return
+		}
+		if err := os.WriteFile(target, originalData, 0644); err != nil {
+			log.Printf("rollback failed for %s: %v", target, err)
+		} else {
+			log.Printf("rolled back chrome.bat after failed install")
+		}
+	}()
 
 	if err := ensureOriginalBackup(target, backupPath); err != nil {
 		return err
@@ -166,6 +203,9 @@ func install(target string) error {
 		return err
 	}
 	if err := writeAsset("assets/chrome.bat", target, 0644); err != nil {
+		return err
+	}
+	if err := writeAsset("assets/yui-menu.bat", menuPath, 0644); err != nil {
 		return err
 	}
 	if err := appendLine(bootstrapLogPath, "installer wrote bootstrap and controller.exe"); err != nil {
@@ -181,9 +221,15 @@ func install(target string) error {
 		return fmt.Errorf("start controller after install: %w", err)
 	}
 	log.Printf("started controller pid=%d", cmd.Process.Pid)
+
+	verifySummary, verifyErr := verifyPostInstall(targetDir, target, backupPath, controllerPath, menuPath)
+	if verifyErr != nil {
+		return verifyErr
+	}
+	installComplete = true
 	_, _, _ = messageBox(
 		"Yui Kiosk Installer",
-		"Installed successfully.\n\nThe controller has been started.",
+		"Installed successfully.\n\nThe controller has been started.\n\n"+verifySummary,
 		messageInfo|messageOK,
 	)
 
@@ -267,6 +313,271 @@ func writeAsset(assetPath string, targetPath string, mode os.FileMode) error {
 	}
 
 	return nil
+}
+
+func confirmInstall(target string) error {
+	target = filepath.Clean(target)
+	targetDir := filepath.Dir(target)
+	backupPath := filepath.Join(targetDir, "chrome.original.bat")
+	previewPath := target
+	if isHijacked, err := containsMarker(target); err == nil && isHijacked && fileExists(backupPath) {
+		previewPath = backupPath
+	}
+
+	preview, ok, err := readBatchPreview(previewPath)
+	if err != nil {
+		return err
+	}
+
+	var body strings.Builder
+	body.WriteString("Ready to install Yui into this kiosk batch.\n\n")
+	body.WriteString("Target:\n")
+	body.WriteString(target)
+	body.WriteString("\n\nBackup:\n")
+	body.WriteString(backupPath)
+	body.WriteString("\n\n")
+	if ok {
+		body.WriteString("Detected Chrome:\n")
+		body.WriteString(preview.ChromePath)
+		body.WriteString("\n\nDetected URL:\n")
+		body.WriteString(valueOr(preview.URL, "(none found)"))
+		body.WriteString("\n\nFlags: ")
+		body.WriteString(fmt.Sprintf("%d", len(preview.Flags)))
+		body.WriteString("\n")
+	} else {
+		body.WriteString("Warning: no Chrome command was detected. Yui can still install, but the controller may use defaults or ask for recovery input.\n")
+	}
+	body.WriteString("\nTap Yes to install. Tap No to cancel.")
+
+	result, _, _ := messageBox(
+		"Yui Kiosk Installer",
+		body.String(),
+		messageQuestion|messageYesNo,
+	)
+	if result != dialogYes {
+		return errors.New("install canceled")
+	}
+
+	return nil
+}
+
+type batchPreview struct {
+	ChromePath string
+	URL        string
+	Flags      []string
+}
+
+func readBatchPreview(path string) (batchPreview, bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return batchPreview{}, false, fmt.Errorf("read batch preview %s: %w", path, err)
+	}
+
+	for _, rawLine := range strings.Split(string(data), "\n") {
+		line := cleanBatchLine(rawLine)
+		if line == "" {
+			continue
+		}
+		chromePath, args, ok := parseChromeCommand(line)
+		if !ok {
+			continue
+		}
+		flags, url := splitChromeArgs(args)
+		return batchPreview{ChromePath: chromePath, URL: url, Flags: flags}, true, nil
+	}
+
+	return batchPreview{}, false, nil
+}
+
+func cleanBatchLine(line string) string {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return ""
+	}
+	lower := strings.ToLower(line)
+	if strings.HasPrefix(lower, "rem ") || strings.HasPrefix(line, "::") {
+		return ""
+	}
+	return line
+}
+
+func parseChromeCommand(line string) (string, []string, bool) {
+	tokens := tokenizeCommandLine(line)
+	for i, token := range tokens {
+		if strings.EqualFold(filepath.Base(token), "chrome.exe") {
+			return token, tokens[i+1:], true
+		}
+	}
+
+	lower := strings.ToLower(line)
+	idx := strings.Index(lower, "chrome.exe")
+	if idx == -1 {
+		return "", nil, false
+	}
+	start := idx
+	for start > 0 {
+		ch := line[start-1]
+		if ch == '"' || ch == ' ' || ch == '\t' {
+			break
+		}
+		start--
+	}
+	path := strings.Trim(line[start:idx+len("chrome.exe")], `" `)
+	tail := strings.TrimSpace(line[idx+len("chrome.exe"):])
+	tail = strings.TrimPrefix(tail, `"`)
+	return path, tokenizeCommandLine(tail), true
+}
+
+func tokenizeCommandLine(line string) []string {
+	var tokens []string
+	var current strings.Builder
+	inQuotes := false
+
+	for i := 0; i < len(line); i++ {
+		ch := line[i]
+		switch ch {
+		case '"':
+			inQuotes = !inQuotes
+		case ' ', '\t':
+			if inQuotes {
+				current.WriteByte(ch)
+				continue
+			}
+			if current.Len() > 0 {
+				tokens = append(tokens, current.String())
+				current.Reset()
+			}
+		default:
+			current.WriteByte(ch)
+		}
+	}
+	if current.Len() > 0 {
+		tokens = append(tokens, current.String())
+	}
+	return tokens
+}
+
+func splitChromeArgs(args []string) ([]string, string) {
+	flags := make([]string, 0, len(args))
+	url := ""
+	for _, arg := range args {
+		lower := strings.ToLower(arg)
+		if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+			url = arg
+			continue
+		}
+		flags = append(flags, arg)
+	}
+	return flags, url
+}
+
+func verifyPostInstall(targetDir, target, backupPath, controllerPath, menuPath string) (string, error) {
+	checks := []struct {
+		label string
+		path  string
+	}{
+		{"controller.exe", controllerPath},
+		{"original backup", backupPath},
+		{"recovery menu", menuPath},
+	}
+
+	for _, check := range checks {
+		if !fileExists(check.path) {
+			return "", fmt.Errorf("post-install verification failed: %s missing at %s", check.label, check.path)
+		}
+	}
+	if ok, err := containsMarker(target); err != nil {
+		return "", err
+	} else if !ok {
+		return "", fmt.Errorf("post-install verification failed: chrome.bat does not contain Yui marker")
+	}
+
+	runtimeSummary := waitForRuntimeFiles(targetDir, 8*time.Second)
+	return "Verified files:\ncontroller.exe\nchrome.bat\nchrome.original.bat\nyui-menu.bat\n\n" + runtimeSummary, nil
+}
+
+func waitForRuntimeFiles(targetDir string, timeout time.Duration) string {
+	deadline := time.Now().Add(timeout)
+	var found []string
+	for {
+		found = existingRuntimeFiles(targetDir)
+		if len(found) >= 2 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	if len(found) == 0 {
+		return "Runtime files were not observed yet. Check controller-bootstrap.log or yui-menu.bat if the kiosk does not recover."
+	}
+
+	return "Observed runtime files:\n" + strings.Join(found, "\n")
+}
+
+func existingRuntimeFiles(targetDir string) []string {
+	candidates := runtimeFileCandidates(targetDir)
+	found := make([]string, 0, len(candidates))
+	seen := map[string]bool{}
+	for _, path := range candidates {
+		if seen[path] || !fileExists(path) {
+			continue
+		}
+		seen[path] = true
+		found = append(found, path)
+	}
+	return found
+}
+
+func runtimeFileCandidates(targetDir string) []string {
+	names := []string{"controller.json", "controller.log", "status.json", "yui-store.db"}
+	dirs := []string{targetDir}
+	if programData := os.Getenv("ProgramData"); programData != "" {
+		dirs = append(dirs,
+			filepath.Join(programData, "YuiKiosk"),
+			filepath.Join(programData, "Yui", "Kiosk"),
+		)
+	}
+	if allUsers := os.Getenv("ALLUSERSPROFILE"); allUsers != "" {
+		dirs = append(dirs,
+			filepath.Join(allUsers, "YuiKiosk"),
+			filepath.Join(allUsers, "Yui", "Kiosk"),
+		)
+	}
+
+	var paths []string
+	for _, dir := range dirs {
+		for _, name := range names {
+			paths = append(paths, filepath.Join(dir, name))
+		}
+	}
+	return paths
+}
+
+func valueOr(value string, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
+}
+
+func userArgs() []string {
+	args := make([]string, 0, len(os.Args)-1)
+	for _, arg := range os.Args[1:] {
+		if arg == "--elevated" {
+			continue
+		}
+		args = append(args, arg)
+	}
+	return args
+}
+
+func hasElevationMarker() bool {
+	for _, arg := range os.Args[1:] {
+		if arg == "--elevated" {
+			return true
+		}
+	}
+	return false
 }
 
 func setupLog() *os.File {

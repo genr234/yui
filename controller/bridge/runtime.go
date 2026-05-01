@@ -26,7 +26,7 @@ type rpcRequest struct {
 
 type rpcResponse struct {
 	ID     string `json:"id"`
-	Result any    `json:"result,omitempty"`
+	Result any    `json:"result"`
 	Error  string `json:"error,omitempty"`
 }
 
@@ -72,6 +72,9 @@ func (r *Runtime) serve(ctx context.Context) {
 	log.Printf("platform bridge listening on %s", r.cfg.PlatformBridgeAddr)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Printf("platform bridge stopped: %v", err)
+	}
+	if err := r.commands.Close(); err != nil {
+		log.Printf("platform bridge store close failed: %v", err)
 	}
 }
 

@@ -12,3 +12,4 @@ controller/yui_controller
 controller/diagnostics.txt
 controller/controller.log
 controller/status.json
+installer/installer

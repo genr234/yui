@@ -7,6 +7,7 @@ export type BridgeState = "connecting" | "online" | "offline" | string;
 export type SectionItem = {
 	id: Section;
 	label: string;
+	subtitle?: string;
 	icon: ComponentType;
 };
 

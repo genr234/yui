@@ -5,6 +5,8 @@
 
 <section class="card empty-state">
 	<h2>{title}</h2>
-	<p>{body}</p>
+	{#if body}
+		<p>{body}</p>
+	{/if}
 	<slot />
 </section>

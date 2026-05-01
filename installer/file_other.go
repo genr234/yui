@@ -8,6 +8,7 @@ func selectFile(title string, initialDir string, filter string) (string, bool, e
 
 const (
 	messageOK          uintptr = 0
+	messageYesNo       uintptr = 0
 	messageYesNoCancel uintptr = 0
 	messageError       uintptr = 0
 	messageQuestion    uintptr = 0
@@ -22,4 +23,8 @@ func messageBox(title string, body string, icon uintptr) (uintptr, uintptr, erro
 
 func defaultInitialDir() string {
 	return "."
+}
+
+func relaunchElevatedIfNeeded(mode installMode, target string) (bool, error) {
+	return false, nil
 }
