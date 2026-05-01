@@ -80,7 +80,7 @@
 	}
 
 	$: activeLabel = sections.find((item) => item.id === section)?.label ?? "Home";
-	$: activeSubtitle = sections.find((item) => item.id === section)?.label ?? "Home";
+	$: activeSubtitle = sections.find((item) => item.id === section)?.subtitle ?? "";
 	$: homeMetrics = [
 	] satisfies MetricItem[];
 	$: homeActions = [
@@ -160,7 +160,9 @@
 				{:else if section === "settings"}
 					<DetailCard title="Platform Settings" />
 				{:else}
-					<EmptyState title="About Yui" body="Yui is a fully featured DigiKiosk jailbreak that adds cool things i always dreamed to have on public kiosks">
+					<EmptyState title="About Yui">
+						<p>Yui is a fully featured DigiKiosk jailbreak that adds cool things i always dreamed to have on public kiosks</p>
+						<p class=""><i>Disclaimer: Yui is an hobby project and isn't affiliated with or endorsed by TechLab Works or Flazio in any way</i></p>
 					</EmptyState>
 				{/if}
 			</main>

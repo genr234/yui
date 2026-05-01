@@ -14,6 +14,7 @@ help:
   @echo "  just dev-inject Build Svelte and inject into Chrome via controller"
   @echo "  just dev-hot    Run Vite HMR + inject into Chrome via controller"
   @echo "  just build              Build platform + Windows controller + installer"
+  @echo "  just package            Build a clean deploy zip with checksum"
   @echo "  just build-local        Build the platform + a local controller binary"
   @echo "  just fmt                Format Go sources"
   @echo "  just check              Build-check the Go controller"
@@ -40,6 +41,13 @@ dev-hot:
   @trap 'kill 0' EXIT; (cd {{platform_dir}} && bun run dev -- --host 127.0.0.1) & sleep 2; (cd {{controller_dir}} && YUI_PLATFORM_DEV_SERVER=http://127.0.0.1:5173 go run .) & wait
 
 build: build-platform build-controller build-installer
+
+package: build
+  rm -rf {{dist_dir}}/release
+  mkdir -p {{dist_dir}}/release
+  cp {{dist_dir}}/installer.exe {{dist_dir}}/release/yui-kiosk-installer.exe
+  cd {{dist_dir}}/release && shasum -a 256 yui-kiosk-installer.exe > SHA256SUMS.txt
+  cd {{dist_dir}} && rm -f yui-kiosk-installer.zip && zip -qr yui-kiosk-installer.zip release
 
 build-local: build-platform build-controller-local
 

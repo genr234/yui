@@ -21,6 +21,7 @@ type Config struct {
 	RestartMaxSeconds   int      `json:"restart_max_seconds"`
 	LogPath             string   `json:"log_path"`
 	StatusPath          string   `json:"status_path"`
+	StorePath           string   `json:"store_path"`
 	PlatformEnabled     bool     `json:"platform_enabled"`
 	PlatformHTTPAddr    string   `json:"platform_http_addr"`
 	PlatformBridgeAddr  string   `json:"platform_bridge_addr"`
@@ -58,6 +59,7 @@ func Default() Config {
 		UserDataDir:         "chrome-profile",
 		LogPath:             "controller.log",
 		StatusPath:          "status.json",
+		StorePath:           "yui-store.db",
 		PlatformEnabled:     true,
 		PlatformHTTPAddr:    "127.0.0.1:7072",
 		PlatformBridgeAddr:  "127.0.0.1:7071",
@@ -221,6 +223,9 @@ func applyDefaults(cfg *Config) {
 	if cfg.StatusPath == "" {
 		cfg.StatusPath = defaults.StatusPath
 	}
+	if cfg.StorePath == "" {
+		cfg.StorePath = defaults.StorePath
+	}
 	if cfg.PlatformHTTPAddr == "" {
 		cfg.PlatformHTTPAddr = defaults.PlatformHTTPAddr
 	}
@@ -257,6 +262,9 @@ func resolvePaths(cfg *Config) {
 	}
 	if !filepath.IsAbs(cfg.StatusPath) {
 		cfg.StatusPath = filepath.Join(cfg.ConfigDir, cfg.StatusPath)
+	}
+	if !filepath.IsAbs(cfg.StorePath) {
+		cfg.StorePath = filepath.Join(cfg.ConfigDir, cfg.StorePath)
 	}
 }
 

@@ -148,7 +148,7 @@ func buildCheckReport(cfg config.Config) string {
 	}
 
 	return fmt.Sprintf(
-		"Yui Kiosk Controller\nVersion: %s\nConfig: %s (%s)\nChrome path: %s (%s)\nUser data dir: %s\nLog path: %s\nStatus path: %s\nPlatform: %t\nPlatform HTTP: %s\nPlatform bridge: %s\nRemote debugging port: %d",
+		"Yui Kiosk Controller\nVersion: %s\nConfig: %s (%s)\nChrome path: %s (%s)\nUser data dir: %s\nLog path: %s\nStatus path: %s\nStore path: %s\nPlatform: %t\nPlatform HTTP: %s\nPlatform bridge: %s\nRemote debugging port: %d",
 		version.Version,
 		cfg.ConfigPath,
 		configState,
@@ -157,6 +157,7 @@ func buildCheckReport(cfg config.Config) string {
 		cfg.UserDataDir,
 		cfg.LogPath,
 		cfg.StatusPath,
+		cfg.StorePath,
 		cfg.PlatformEnabled,
 		cfg.PlatformHTTPAddr,
 		cfg.PlatformBridgeAddr,
