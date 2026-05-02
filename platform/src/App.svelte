@@ -1,17 +1,16 @@
 <script lang="ts">
 	import { onMount } from "svelte";
-	import ActionGrid from "./components/ActionGrid.svelte";
-	import DetailCard from "./components/DetailCard.svelte";
-	import EmptyState from "./components/EmptyState.svelte";
 	import Sidebar from "./components/Sidebar.svelte";
 	import TitleBar from "./components/TitleBar.svelte";
+	import Router from "./pages/Router.svelte";
+	import { findRoute, routes } from "./pages/routes";
 	import { bridge } from "./sdk/bridge";
-	import type { ActionItem, BridgeState, DetailItem, MetricItem, Section, SectionItem } from "./types";
-	import HouseIcon from "lucide-svelte/icons/house";
-	import InfoIcon from "lucide-svelte/icons/info";
-	import LayoutGridIcon from "lucide-svelte/icons/layout-grid";
-	import SettingsIcon from "lucide-svelte/icons/settings";
-	import WrenchIcon from "lucide-svelte/icons/wrench";
+	import type { ActionItem, BridgeState, DetailItem, Section, SectionItem } from "./types";
+	import ChromeIcon from "lucide-svelte/icons/chrome";
+	import FolderIcon from "lucide-svelte/icons/folder";
+	import RefreshCwIcon from "lucide-svelte/icons/refresh-cw";
+	import {resolveSubtitle} from "@/pages/subtitle";
+	import {store} from "@/sdk/store";
 
 	let open = false;
 	let section: Section = "home";
@@ -21,13 +20,7 @@
 	let bridgeState: BridgeState = "connecting";
 	let pressTimer: number | undefined;
 
-	const sections: SectionItem[] = [
-		{ id: "home", label: "Home", icon: HouseIcon },
-		{ id: "apps", label: "Apps", icon: LayoutGridIcon },
-		{ id: "tools", label: "Tools", icon: WrenchIcon },
-		{ id: "settings", label: "Settings", icon: SettingsIcon },
-		{ id: "about", label: "About", icon: InfoIcon },
-	];
+	const sections: SectionItem[] = routes;
 
 	onMount(() => {
 		void refresh();
@@ -79,16 +72,19 @@
 		return value === undefined || value === null || value === "" ? fallback : String(value);
 	}
 
-	$: activeLabel = sections.find((item) => item.id === section)?.label ?? "Home";
-	$: activeSubtitle = sections.find((item) => item.id === section)?.subtitle ?? "";
-	$: homeMetrics = [
-	] satisfies MetricItem[];
+	$: activeRoute = findRoute(section);
+	$: activeSubtitle = resolveSubtitle(activeRoute, { appCount: 1 });
+	$: apps = store.collection<unknown>("apps");
 	$: homeActions = [
+		{ label: "Refresh Status", icon: RefreshCwIcon, tone: "blue", run: refresh },
+		{ label: "Re-import Config", icon: FolderIcon, tone: "green", run: reimportConfig },
+		{ label: "Select Chrome", icon: ChromeIcon, tone: "violet", run: selectChrome },
 	] satisfies ActionItem[];
 	$: toolActions = [
+		{ label: "Refresh Diagnostics", icon: RefreshCwIcon, tone: "blue", run: refresh },
+		{ label: "Re-import Kiosk Batch", icon: FolderIcon, tone: "green", run: reimportConfig },
+		{ label: "Select Chrome", icon: ChromeIcon, tone: "orange", run: selectChrome },
 	] satisfies ActionItem[];
-	$: runtimeDetails = [
-	] satisfies DetailItem[];
 	$: settingDetails = [
 		{ label: "HTTP", value: metric(config?.platform_http_addr) },
 		{ label: "Bridge", value: metric(config?.platform_bridge_addr) },
@@ -97,10 +93,7 @@
 		{ label: "Config", value: metric(config?.config_path ?? config?.ConfigPath, "Active config loaded") },
 		{ label: "Status", value: metric(config?.status_path) },
 		{ label: "User data", value: metric(config?.user_data_dir) },
-		{ label: "Refresh Diagnostics", icon: "refresh", tone: "blue", run: refresh },
-		{ label: "Re-import Kiosk Batch", icon: "folder", tone: "green", run: reimportConfig },
-		{ label: "Select Chrome", icon: "device", tone: "orange", run: selectChrome },
-	];
+	] satisfies DetailItem[];
 </script>
 
 <div
@@ -127,46 +120,10 @@
 		/>
 
 		<div class="workspace">
-
 			<main class="main">
-				<TitleBar title={activeLabel} subtitle={activeSubtitle} on:refresh={refresh} />
-
-				{#if section === "home"}
-					<section>
-						<div class="section-heading">
-							<h2>Quick Actions</h2>
-						</div>
-						<ActionGrid actions={homeActions} />
-					</section>
-				{:else if section === "apps"}
-					<EmptyState
-							title="Games"
-							body=""
-					/>
-					<EmptyState
-							title="Utilities"
-							body=""
-					/>
-					<EmptyState
-							title="Explore"
-							body=""
-					/>
-				{:else if section === "tools"}
-					<ActionGrid actions={toolActions} />
-					<section class="card">
-						<div class="card-title">Diagnostics</div>
-						<pre>{diagnostics || "No diagnostics yet."}</pre>
-					</section>
-				{:else if section === "settings"}
-					<DetailCard title="Platform Settings" />
-				{:else}
-					<EmptyState title="About Yui">
-						<p>Yui is a fully featured DigiKiosk jailbreak that adds cool things i always dreamed to have on public kiosks</p>
-						<p class=""><i>Disclaimer: Yui is an hobby project and isn't affiliated with or endorsed by TechLab Works or Flazio in any way</i></p>
-					</EmptyState>
-				{/if}
+				<TitleBar title={activeRoute.label} subtitle={activeSubtitle} on:refresh={refresh} />
+				<Router {section} {homeActions} {apps} {toolActions} {settingDetails} {diagnostics} />
 			</main>
 		</div>
-
 	</section>
 {/if}

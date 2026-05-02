@@ -10,6 +10,6 @@
 <div class="title-row">
 	<div>
 		<h1>{title}</h1>
-		<p>{subtitle}</p>
+		<p class="subtitle">{subtitle}</p>
 	</div>
 </div>

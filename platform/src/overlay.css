@@ -13,6 +13,7 @@
 
 * {
 	box-sizing: border-box;
+	-webkit-tap-highlight-color: transparent;
 }
 
 button,
@@ -233,10 +234,14 @@ dl {
 }
 
 .title-row p {
-	margin-top: 8px;
+	margin-top: 6px;
 	color: #667689;
 	font-size: 18px;
 	font-weight: 600;
+}
+
+.subtitle {
+	font-weight: 500;
 }
 
 .card {
@@ -432,7 +437,7 @@ dl {
 dt {
 	color: #6b7a8d;
 	font-size: 13px;
-	font-weight: 600;
+	font-weight: 700;
 	text-transform: uppercase;
 }
 
@@ -441,7 +446,7 @@ dd {
 	margin: 0;
 	overflow-wrap: anywhere;
 	color: #111925;
-	font-weight: 700;
+	font-weight: 500;
 }
 
 .empty-state {
@@ -474,79 +479,37 @@ pre {
 		monospace;
 }
 
-@media (max-width: 860px), (max-height: 660px) {
-	.shell {
-		grid-template-columns: 1fr;
-		grid-template-rows: auto minmax(0, 1fr);
-		border-radius: 16px;
-	}
+button,
+.action-card,
+.big-button,
+.nav button {
+	transition:
+			transform 120ms ease,
+			box-shadow 120ms ease,
+			filter 120ms ease,
+			background-color 120ms ease;
+	will-change: transform;
+}
 
-	.sidebar {
-		grid-row: auto;
-		display: block;
-		padding: 16px;
-	}
+button:active,
+.action-card:active,
+.big-button:active,
+.nav button:active {
+	transform: translateY(2px) scale(0.985);
+	box-shadow:
+			0 2px 6px rgba(23, 35, 48, 0.08),
+			0 1px 0 rgba(255,255,255,0.04) inset;
+	filter: brightness(0.98) saturate(1.03);
+}
 
-	.brand {
-		padding: 0 4px 14px;
-	}
+.action-card {
+	transition:
+			transform 140ms cubic-bezier(.2,.8,.2,1),
+			box-shadow 140ms ease,
+			filter 140ms ease;
+}
 
-	.nav {
-		grid-template-columns: repeat(5, minmax(0, 1fr));
-		gap: 8px;
-	}
-
-	.nav button {
-		grid-template-columns: 1fr;
-		justify-items: center;
-		min-height: 60px;
-		padding: 8px 4px;
-		text-align: center;
-		font-size: 12px;
-	}
-
-	.sidebar-bottom {
-		display: none;
-	}
-
-	.topbar {
-		min-height: 58px;
-		padding: 0 18px;
-		gap: 12px;
-	}
-
-	.main {
-		padding: 22px 18px 24px;
-	}
-
-	.title-row {
-		align-items: flex-start;
-		flex-direction: column;
-		margin-bottom: 20px;
-	}
-
-	.title-row h1 {
-		font-size: 30px;
-	}
-
-	.metrics,
-	.quick-grid {
-		grid-template-columns: 1fr;
-	}
-
-	.metric {
-		border-right: 0;
-		border-bottom: 1px solid #dfe5ec;
-		padding: 20px 0;
-	}
-
-	.metric:last-child {
-		border-bottom: 0;
-	}
-
-
-	.detail-list dl div {
-		grid-template-columns: 1fr;
-		gap: 4px;
-	}
+.action-card:active {
+	transform: translateY(1px) scale(0.985);
+	box-shadow: 0 6px 12px rgba(23,35,48,0.08);
 }
