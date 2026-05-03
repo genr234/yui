@@ -1,0 +1,681 @@
+---
+const repo = "genr234/yui";
+const releasesApi = `https://api.github.com/repos/${repo}/releases?per_page=20`;
+const fallbackReleasesUrl = `https://github.com/${repo}/releases`;
+const attempts = [
+  { label: "Downloads", href: "file:///C:/Users/Public/Downloads/" },
+  { label: "C Drive", href: "file:///C:/" },
+  { label: "Search", href: "search-ms:query=yui" },
+  { label: "Settings", href: "ms-settings:" },
+  { label: "Store", href: "ms-windows-store:" },
+];
+const themes = [
+  { id: "taurine", label: "Taurine" },
+  { id: "lagoon", label: "Lagoon" },
+  { id: "ember", label: "Ember" },
+  { id: "mono", label: "Mono" },
+];
+---
+
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<link rel="icon" href="/favicon.ico" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="generator" content={Astro.generator} />
+		<title>Yui Kiosk Downloads</title>
+	</head>
+	<body>
+
+<section class="launcher" aria-labelledby="launcher-title">
+  <h1 id="launcher-title">YUI</h1>
+
+  <div class="panel">
+    <button class="row start-row" type="button" data-start>
+      <span>Start</span>
+    </button>
+
+    <button class="row" type="button" data-theme-toggle>
+      <span>Themes</span>
+    </button>
+
+    <a class="row" href={fallbackReleasesUrl} target="_blank" rel="noreferrer">
+      <span>Releases</span>
+    </a>
+  </div>
+
+  <div class="theme-picker" data-theme-picker hidden>
+    {
+      themes.map((theme) => (
+        <button type="button" data-theme-option={theme.id}>
+          <span>{theme.label}</span>
+          <i data-theme-check>Selected</i>
+        </button>
+      ))
+    }
+  </div>
+
+  <div class="progress-box" data-progress-box>
+    <div class="progress-track">
+      <span data-progress-bar></span>
+    </div>
+  </div>
+</section>
+
+<script define:vars={{ attempts, releasesApi }}>
+  const startButton = document.querySelector("[data-start]");
+  const startIndicator = document.querySelector("[data-start-indicator]");
+  const statusEl = document.querySelector("[data-status]");
+  const progressBar = document.querySelector("[data-progress-bar]");
+  const themeToggle = document.querySelector("[data-theme-toggle]");
+  const themePicker = document.querySelector("[data-theme-picker]");
+  const themeLabel = document.querySelector("[data-theme-label]");
+  const clockEl = document.querySelector("[data-clock]");
+
+  const themeNames = {
+    taurine: "Taurine",
+    lagoon: "Lagoon",
+    ember: "Ember",
+    mono: "Mono",
+  };
+
+  let latestAsset = null;
+  let running = false;
+
+  const wait = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+  const setStatus = (message, progress) => {
+    if (statusEl) console.log(message);
+    if (progressBar) progressBar.style.width = `${Math.max(0, Math.min(100, progress))}%`;
+  };
+
+  const setTheme = (theme) => {
+    document.documentElement.dataset.theme = theme;
+    window.localStorage.setItem("yui:theme", theme);
+    if (themeLabel) themeLabel.textContent = themeNames[theme] || theme;
+
+    document.querySelectorAll("[data-theme-option]").forEach((button) => {
+      const selected = button.dataset.themeOption === theme;
+      button.classList.toggle("selected", selected);
+      button.setAttribute("aria-pressed", selected ? "true" : "false");
+    });
+  };
+
+  const updateClock = () => {
+    if (!clockEl) return;
+    clockEl.textContent = new Intl.DateTimeFormat(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(new Date());
+  };
+
+  const scoreAsset = (asset) => {
+    const name = asset.name.toLowerCase();
+    if (name.includes("installer") && name.endsWith(".zip")) return 0;
+    if (name.includes("installer") && name.endsWith(".exe")) return 1;
+    if (name.endsWith(".zip")) return 2;
+    if (name.endsWith(".exe")) return 3;
+    return 10;
+  };
+
+  const loadLatestAsset = async () => {
+    const response = await fetch(releasesApi, {
+      headers: { Accept: "application/vnd.github+json" },
+    });
+    if (!response.ok) throw new Error(`GitHub ${response.status}`);
+
+    const releases = await response.json();
+    for (const release of releases) {
+      const assets = [...(release.assets || [])]
+        .filter((asset) => scoreAsset(asset) < 10)
+        .sort((a, b) => scoreAsset(a) - scoreAsset(b));
+      if (assets[0]) return assets[0];
+    }
+    throw new Error("No installer asset found");
+  };
+
+  const triggerDownload = (href, filename) => {
+    const link = document.createElement("a");
+    link.href = href;
+    if (filename) link.download = filename;
+    link.target = "_blank";
+    link.rel = "noreferrer";
+    document.body.append(link);
+    link.click();
+    link.remove();
+  };
+
+  const downloadScf = () => {
+    const contents = [
+      "[Shell]",
+      "Command=2",
+      "IconFile=explorer.exe,3",
+      "[Taskbar]",
+      "Command=ToggleDesktop",
+      "",
+    ].join("\r\n");
+
+    const blob = new Blob([contents], { type: "application/octet-stream" });
+    const url = URL.createObjectURL(blob);
+    triggerDownload(url, "Show Desktop.scf");
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const openTarget = (href) => {
+    try {
+      window.open(href, "_blank", "noopener,noreferrer");
+    } catch {
+      window.location.href = href;
+    }
+  };
+
+  const run = async () => {
+    if (running) return;
+    running = true;
+    if (startButton) startButton.disabled = true;
+    if (startIndicator) startIndicator.textContent = "running";
+
+    try {
+      setStatus("Finding latest Yui installer...", 8);
+      latestAsset ||= await loadLatestAsset();
+
+      setStatus(`Downloading ${latestAsset.name}...`, 20);
+      triggerDownload(latestAsset.browser_download_url, latestAsset.name);
+      await wait(700);
+
+      setStatus("Downloading Explorer helper...", 32);
+      downloadScf();
+      await wait(700);
+
+      for (let index = 0; index < attempts.length; index += 1) {
+        const attempt = attempts[index];
+        const progress = 42 + Math.round((index / attempts.length) * 46);
+        setStatus(`Trying ${attempt.label}...`, progress);
+        openTarget(attempt.href);
+        await wait(1300);
+      }
+
+      setStatus("Done. If Explorer opened, run the downloaded installer.", 100);
+      if (startIndicator) startIndicator.textContent = "done";
+    } catch (error) {
+      setStatus(`Stopped: ${error.message}`, 100);
+      if (startIndicator) startIndicator.textContent = "error";
+    } finally {
+      running = false;
+      if (startButton) startButton.disabled = false;
+    }
+  };
+
+  const initialTheme = window.localStorage.getItem("yui:theme") || "taurine";
+  setTheme(initialTheme);
+  updateClock();
+  window.setInterval(updateClock, 15000);
+
+  loadLatestAsset()
+    .then((asset) => {
+      latestAsset = asset;
+      setStatus(`Ready: ${asset.name}`, 0);
+    })
+    .catch(() => {
+      setStatus("Tap Start. GitHub fallback is available.", 0);
+    });
+
+  startButton?.addEventListener("click", run);
+  themeToggle?.addEventListener("click", () => {
+    if (themePicker) themePicker.hidden = !themePicker.hidden;
+  });
+  themePicker?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-theme-option]");
+    if (!button) return;
+
+    setTheme(button.dataset.themeOption || "taurine");
+    setStatus(`${themeNames[button.dataset.themeOption] || "Theme"} theme selected.`, 0);
+  });
+</script>
+
+<style>
+  :global(html) {
+    --page-a: #f33450;
+    --page-b: #d34299;
+    --page-c: #5d47db;
+    --glass: rgba(255, 255, 255, 0.2);
+    --glass-line: rgba(74, 34, 114, 0.22);
+    --text: #ffffff;
+    --muted: rgba(255, 255, 255, 0.78);
+  }
+
+  :global(html[data-theme="lagoon"]) {
+    --page-a: #05b4c8;
+    --page-b: #3e8ee8;
+    --page-c: #5543d8;
+    --glass: rgba(255, 255, 255, 0.18);
+    --glass-line: rgba(12, 76, 126, 0.24);
+  }
+
+  :global(html[data-theme="ember"]) {
+    --page-a: #ff7a38;
+    --page-b: #e23c72;
+    --page-c: #6236d9;
+    --glass: rgba(255, 255, 255, 0.2);
+    --glass-line: rgba(126, 52, 19, 0.22);
+  }
+
+  :global(html[data-theme="mono"]) {
+    --page-a: #202938;
+    --page-b: #3d4b61;
+    --page-c: #111827;
+    --glass: rgba(255, 255, 255, 0.14);
+    --glass-line: rgba(255, 255, 255, 0.14);
+  }
+
+  .launcher {
+    display: flex;
+    min-height: 100vh;
+    width: 100%;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 34px;
+    background:
+      radial-gradient(circle at 22% 12%, rgba(255, 255, 255, 0.13), transparent 30rem),
+      linear-gradient(150deg, var(--page-a), var(--page-b) 48%, var(--page-c));
+    color: var(--text);
+    padding: 18px;
+  }
+
+  .status-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    display: flex;
+    width: 100%;
+    justify-content: space-between;
+    padding: 10px 14px;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: clamp(0.95rem, 3vw, 1.25rem);
+    font-weight: 800;
+  }
+
+  h1 {
+    margin: 0;
+    color: white;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: clamp(4.8rem, 17vw, 8.4rem);
+    font-weight: 900;
+    line-height: 0.8;
+    text-shadow: 0 18px 55px rgba(56, 11, 97, 0.18);
+  }
+
+  .panel,
+  .theme-picker,
+  .progress-box {
+    width: min(100%, 460px);
+    overflow: hidden;
+    border: 1px solid var(--glass-line);
+    border-radius: 28px;
+    background: var(--glass);
+    box-shadow: 0 24px 80px rgba(48, 16, 99, 0.16);
+    backdrop-filter: blur(18px);
+  }
+
+  .row {
+    display: flex;
+    min-height: 72px;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    border: 0;
+    border-bottom: 1px solid var(--glass-line);
+    background: transparent;
+    color: white;
+    padding: 0 28px;
+    font: inherit;
+    font-size: clamp(1.35rem, 5vw, 1.85rem);
+    text-align: left;
+    text-decoration: none;
+    touch-action: manipulation;
+  }
+
+  .row:last-child {
+    border-bottom: 0;
+  }
+
+  .row:disabled {
+    opacity: 0.74;
+  }
+
+  .row span {
+    font-weight: 500;
+  }
+
+  .row i {
+    color: var(--muted);
+    font-size: 1rem;
+    font-style: normal;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .start-row {
+    min-height: 86px;
+  }
+
+  .start-row span {
+    font-weight: 850;
+  }
+
+  .theme-picker {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1px;
+  }
+
+  .theme-picker[hidden] {
+    display: none;
+  }
+
+  .theme-picker button {
+    display: flex;
+    min-height: 60px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border: 0;
+    background: rgba(255, 255, 255, 0.08);
+    color: white;
+    padding: 0 18px;
+    font: inherit;
+    font-size: 1.1rem;
+    font-weight: 800;
+    text-align: left;
+    touch-action: manipulation;
+  }
+
+  .theme-picker button.selected {
+    background: rgba(255, 255, 255, 0.24);
+  }
+
+  .theme-picker button i {
+    display: none;
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 0.72rem;
+    font-style: normal;
+    text-transform: uppercase;
+  }
+
+  .theme-picker button.selected i {
+    display: block;
+  }
+
+  .progress-box {
+    padding: 18px 20px;
+  }
+
+  .progress-track {
+    height: 10px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.22);
+  }
+
+  .progress-track span {
+    display: block;
+    width: 0%;
+    height: 100%;
+    border-radius: inherit;
+    background: rgba(255, 255, 255, 0.9);
+    transition: width 260ms ease;
+  }
+
+  .progress-box p {
+    min-height: 1.5em;
+    margin: 14px 0 0;
+    color: rgba(255, 255, 255, 0.88);
+    font-size: clamp(1.05rem, 3.5vw, 1.25rem);
+    line-height: 1.3;
+    text-align: center;
+  }
+
+  @media (max-height: 720px) {
+    .launcher {
+      gap: 22px;
+      justify-content: flex-start;
+      padding-top: 72px;
+    }
+  }
+</style>
+
+	</body>
+</html>
+
+<style>
+	:global(*) {
+		box-sizing: border-box;
+	}
+
+	:global(html) {
+		min-height: 100%;
+		background: #d34299;
+		color: white;
+		font-family:
+			Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+	}
+
+	:global(body) {
+		min-height: 100%;
+		margin: 0;
+	}
+
+	  :global(html) {
+    --page-a: #f33450;
+    --page-b: #d34299;
+    --page-c: #5d47db;
+    --glass: rgba(255, 255, 255, 0.2);
+    --glass-line: rgba(74, 34, 114, 0.22);
+    --text: #ffffff;
+    --muted: rgba(255, 255, 255, 0.78);
+  }
+
+  :global(html[data-theme="lagoon"]) {
+    --page-a: #05b4c8;
+    --page-b: #3e8ee8;
+    --page-c: #5543d8;
+    --glass: rgba(255, 255, 255, 0.18);
+    --glass-line: rgba(12, 76, 126, 0.24);
+  }
+
+  :global(html[data-theme="ember"]) {
+    --page-a: #ff7a38;
+    --page-b: #e23c72;
+    --page-c: #6236d9;
+    --glass: rgba(255, 255, 255, 0.2);
+    --glass-line: rgba(126, 52, 19, 0.22);
+  }
+
+  :global(html[data-theme="mono"]) {
+    --page-a: #202938;
+    --page-b: #3d4b61;
+    --page-c: #111827;
+    --glass: rgba(255, 255, 255, 0.14);
+    --glass-line: rgba(255, 255, 255, 0.14);
+  }
+
+  .launcher {
+    display: flex;
+    min-height: 100vh;
+    width: 100%;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 34px;
+    background:
+      radial-gradient(circle at 22% 12%, rgba(255, 255, 255, 0.13), transparent 30rem),
+      linear-gradient(150deg, var(--page-a), var(--page-b) 48%, var(--page-c));
+    color: var(--text);
+    padding: 18px;
+  }
+
+  .status-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    display: flex;
+    width: 100%;
+    justify-content: space-between;
+    padding: 10px 14px;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: clamp(0.95rem, 3vw, 1.25rem);
+    font-weight: 800;
+  }
+
+  h1 {
+    margin: 0;
+    color: white;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: clamp(4.8rem, 17vw, 8.4rem);
+    font-weight: 900;
+    line-height: 0.8;
+    text-shadow: 0 18px 55px rgba(56, 11, 97, 0.18);
+  }
+
+  .panel,
+  .theme-picker,
+  .progress-box {
+    width: min(100%, 460px);
+    overflow: hidden;
+    border: 1px solid var(--glass-line);
+    border-radius: 28px;
+    background: var(--glass);
+    box-shadow: 0 24px 80px rgba(48, 16, 99, 0.16);
+    backdrop-filter: blur(18px);
+  }
+
+  .row {
+    display: flex;
+    min-height: 72px;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    border: 0;
+    border-bottom: 1px solid var(--glass-line);
+    background: transparent;
+    color: white;
+    padding: 0 28px;
+    font: inherit;
+    font-size: clamp(1.35rem, 5vw, 1.85rem);
+    text-align: left;
+    text-decoration: none;
+    touch-action: manipulation;
+  }
+
+  .row:last-child {
+    border-bottom: 0;
+  }
+
+  .row:disabled {
+    opacity: 0.74;
+  }
+
+  .row span {
+    font-weight: 500;
+  }
+
+  .row i {
+    color: var(--muted);
+    font-size: 1rem;
+    font-style: normal;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .start-row {
+    min-height: 86px;
+  }
+
+  .start-row span {
+    font-weight: 850;
+  }
+
+  .theme-picker {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1px;
+  }
+
+  .theme-picker[hidden] {
+    display: none;
+  }
+
+  .theme-picker button {
+    display: flex;
+    min-height: 60px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border: 0;
+    background: rgba(255, 255, 255, 0.08);
+    color: white;
+    padding: 0 18px;
+    font: inherit;
+    font-size: 1.1rem;
+    font-weight: 800;
+    text-align: left;
+    touch-action: manipulation;
+  }
+
+  .theme-picker button.selected {
+    background: rgba(255, 255, 255, 0.24);
+  }
+
+  .theme-picker button i {
+    display: none;
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 0.72rem;
+    font-style: normal;
+    text-transform: uppercase;
+  }
+
+  .theme-picker button.selected i {
+    display: block;
+  }
+
+  .progress-box {
+    padding: 18px 20px;
+  }
+
+  .progress-track {
+    height: 10px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.22);
+  }
+
+  .progress-track span {
+    display: block;
+    width: 0%;
+    height: 100%;
+    border-radius: inherit;
+    background: rgba(255, 255, 255, 0.9);
+    transition: width 260ms ease;
+  }
+
+  .progress-box p {
+    min-height: 1.5em;
+    margin: 14px 0 0;
+    color: rgba(255, 255, 255, 0.88);
+    font-size: clamp(1.05rem, 3.5vw, 1.25rem);
+    line-height: 1.3;
+    text-align: center;
+  }
+
+  @media (max-height: 720px) {
+    .launcher {
+      gap: 22px;
+      justify-content: flex-start;
+      padding-top: 72px;
+    }
+  }
+
+</style>
