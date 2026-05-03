@@ -9,6 +9,15 @@
     getAppPermissionState,
     setAppPermission,
   } from "../sdk/apps/permissions";
+  import {
+    clearEmbedStorage,
+    getEmbedStorageEntries,
+    type EmbedStorageEntry,
+  } from "../sdk/apps/embed-storage";
+  import {
+    clearAppStorage,
+    listAppStorageKeys,
+  } from "../sdk/apps/app-storage";
   import type { DetailItem } from "../types";
 
   export let details: DetailItem[] = [];
@@ -21,19 +30,36 @@
   let dragStartX = 0;
   let dragX = 0;
   let permissionVersion = 0;
+  let embedStorageVersion = 0;
+  let appStorageVersion = 0;
+  let loadedStorageKey = "";
+  let selectedEmbedStorage: EmbedStorageEntry[] = [];
+  let selectedStorageKeys: string[] = [];
 
   onMount(() => {
     const refresh = () => {
       permissionVersion += 1;
     };
+    const refreshEmbedStorage = () => {
+      embedStorageVersion += 1;
+    };
+    const refreshAppStorage = () => {
+      appStorageVersion += 1;
+    };
     window.addEventListener("yui:permissions-changed", refresh);
+    window.addEventListener("yui:embed-storage-changed", refreshEmbedStorage);
+    window.addEventListener("yui:app-storage-changed", refreshAppStorage);
 
     void (async () => {
       apps = await discoverDevApps();
       selectedId = apps[0]?.id ?? "";
     })();
 
-    return () => window.removeEventListener("yui:permissions-changed", refresh);
+    return () => {
+      window.removeEventListener("yui:permissions-changed", refresh);
+      window.removeEventListener("yui:embed-storage-changed", refreshEmbedStorage);
+      window.removeEventListener("yui:app-storage-changed", refreshAppStorage);
+    };
   });
 
   $: selected = apps.find((app) => app.id === selectedId) ?? apps[0];
@@ -41,6 +67,33 @@
   $: selectedPermissionState = selected
     ? getAppPermissionState(selected.id)
     : {};
+  $: {
+    const storageKey = selected
+      ? `${selected.id}:${embedStorageVersion}:${appStorageVersion}`
+      : "";
+    if (storageKey !== loadedStorageKey) {
+      loadedStorageKey = storageKey;
+      void loadSelectedStorage();
+    }
+  }
+
+  async function loadSelectedStorage() {
+    if (!selected) {
+      selectedEmbedStorage = [];
+      selectedStorageKeys = [];
+      return;
+    }
+
+    const app = selected;
+    const [embedStorage, storageKeys] = await Promise.all([
+      getEmbedStorageEntries(app.id),
+      listAppStorageKeys(app.id),
+    ]);
+
+    if (selected?.id !== app.id) return;
+    selectedEmbedStorage = embedStorage;
+    selectedStorageKeys = storageKeys;
+  }
 
   function permissionGranted(permission: string) {
     permissionVersion;
@@ -51,6 +104,25 @@
     if (!selected) return;
     setAppPermission(selected.id, permission, checked);
     permissionVersion += 1;
+  }
+
+  async function clearEmbedOrigin(origin?: string) {
+    if (!selected) return;
+    await clearEmbedStorage(selected.id, origin);
+    embedStorageVersion += 1;
+  }
+
+  async function clearSelectedAppStorage() {
+    if (!selected) return;
+    const appId = selected.id;
+    await clearAppStorage(appId);
+    window.dispatchEvent(
+      new CustomEvent("yui:embed-storage-cleared", {
+        detail: { appId },
+      }),
+    );
+    appStorageVersion += 1;
+    embedStorageVersion += 1;
   }
 
   function openApp(app: YuiDevApp) {
@@ -243,6 +315,68 @@
                       togglePermission(permission, event.currentTarget.checked)}
                   />
                 </label>
+              {/each}
+            {/if}
+          </section>
+
+          <section class="settings-group">
+            <div class="settings-row static">
+              <span>
+                <span>App storage</span>
+                <small>
+                  {selectedStorageKeys.length === 1
+                    ? "1 isolated record"
+                    : `${selectedStorageKeys.length} isolated records`}
+                </small>
+              </span>
+              {#if selectedStorageKeys.length > 0}
+                <button
+                  class="settings-inline-button danger"
+                  type="button"
+                  on:click={clearSelectedAppStorage}
+                >
+                  Clear
+                </button>
+              {/if}
+            </div>
+          </section>
+
+          <section class="settings-group">
+            {#if selectedEmbedStorage.length === 0}
+              <div class="settings-row static">
+                <span>
+                  <span>Embedded websites</span>
+                  <small>No embedded websites tracked for this app.</small>
+                </span>
+              </div>
+            {:else}
+              <div class="settings-row static">
+                <span>
+                  <span>Embedded websites</span>
+                  <small>Credentialless embeds are isolated from the normal web profile. Clearing forgets this app's tracked websites and reloads active embeds.</small>
+                </span>
+                <button
+                  class="settings-inline-button danger"
+                  type="button"
+                  on:click={() => clearEmbedOrigin()}
+                >
+                  Clear all
+                </button>
+              </div>
+              {#each selectedEmbedStorage as entry}
+                <div class="settings-row static">
+                  <span>
+                    <span>{entry.origin}</span>
+                    <small>Last used {new Date(entry.lastUsedAt).toLocaleString()}</small>
+                  </span>
+                  <button
+                    class="settings-inline-button"
+                    type="button"
+                    on:click={() => clearEmbedOrigin(entry.origin)}
+                  >
+                    Clear
+                  </button>
+                </div>
               {/each}
             {/if}
           </section>

@@ -113,7 +113,7 @@ dl {
 	min-height: 38px;
 	padding: 8px 14px;
 	border-radius: 8px;
-	font-weight: 800;
+	font-weight: 600;
 	cursor: pointer;
 }
 
@@ -1067,6 +1067,24 @@ dd {
 	cursor: pointer;
 }
 
+.settings-inline-button {
+	min-height: 32px;
+	padding: 6px 10px;
+	border: 1px solid #ccd7e3;
+	border-radius: 8px;
+	color: #172334;
+	background: #ffffff;
+	font-size: 12px;
+	font-weight: 800;
+	cursor: pointer;
+}
+
+.settings-inline-button.danger {
+	border-color: #e2b7b7;
+	color: #a73535;
+	background: #fff7f7;
+}
+
 .yui-app-card {
 	display: grid;
 	gap: 12px;
@@ -1225,7 +1243,7 @@ dd {
 	color: #172334;
 	background: #ffffff;
 	font-size: 12px;
-	font-weight: 800;
+	font-weight: 600;
 	cursor: pointer;
 }
 

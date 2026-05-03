@@ -6,6 +6,9 @@
     requestAppPermission,
     setAppPermission,
   } from "../../sdk/apps/permissions";
+  import {
+    rememberEmbedStorage,
+  } from "../../sdk/apps/embed-storage";
   import type {
     YuiChildren,
     YuiNode,
@@ -21,7 +24,6 @@
   let embedError = "";
   let embedLoadedSource = "";
   let embedFrameKey = 0;
-  let embedFrame: HTMLIFrameElement | undefined;
 
   function children(value: YuiNode) {
     return normalize(value.children ?? []);
@@ -224,26 +226,19 @@
     return hasGrantedAppPermission("fullscreen");
   }
 
-  function enterYuiFullscreenFromEmbed() {
-    if (!app || !embedAllowsFullscreen()) return;
-    window.dispatchEvent(
-      new CustomEvent("yui:shell-fullscreen", {
-        detail: { active: true, appId: app.id, source: "embed" },
-      }),
-    );
-  }
-
-  function handleFullscreenChange() {
-    if (!embedFrame || document.fullscreenElement !== embedFrame) return;
-    void document.exitFullscreen().catch(() => {});
-    enterYuiFullscreenFromEmbed();
-  }
-
   function embedOriginLabel() {
     try {
       return new URL(embedUrl).origin;
     } catch {
       return embedPermission || "embedded website";
+    }
+  }
+
+  function embedOrigin() {
+    try {
+      return new URL(embedUrl).origin;
+    } catch {
+      return "";
     }
   }
 
@@ -263,6 +258,7 @@
     }
     if (isPermissionGranted(app.id, embedPermission)) {
       embedGranted = true;
+      void rememberEmbedStorage(app.id, embedOrigin());
       return;
     }
     if (hasPermissionDecision(app.id, embedPermission)) {
@@ -271,6 +267,7 @@
     }
 
     embedGranted = await requestAppPermission(app, embedPermission);
+    if (embedGranted) void rememberEmbedStorage(app.id, embedOrigin());
     if (!embedGranted) embedError = "website permission denied";
   }
 
@@ -280,10 +277,17 @@
     setAppPermission(app.id, embedPermission, true);
     embedError = "";
     embedGranted = true;
+    void rememberEmbedStorage(app.id, embedOrigin());
   }
 
   function resetEmbed() {
     embedFrameKey += 1;
+  }
+
+  function handleEmbedStorageCleared(event: CustomEvent<{ appId: string; origin?: string }>) {
+    if (!app || event.detail.appId !== app.id) return;
+    if (event.detail.origin && event.detail.origin !== embedOrigin()) return;
+    resetEmbed();
   }
 
   const stringProp = (name: string, fallback = "") =>
@@ -310,7 +314,7 @@
   }
 </script>
 
-<svelte:document on:fullscreenchange={handleFullscreenChange} />
+<svelte:window on:yui:embed-storage-cleared={handleEmbedStorageCleared} />
 
 {#if node === null || node === undefined || node === false}
   <span hidden></span>
@@ -468,7 +472,6 @@
       </div>
       {#key embedFrameKey}
         <iframe
-          bind:this={embedFrame}
           class="yui-app-embed"
           src={embedUrl}
           title={stringProp("title", embedUrl)}
@@ -476,6 +479,7 @@
           referrerpolicy={embedReferrerPolicy()}
           allow={embedAllowPolicy()}
           allowfullscreen={embedAllowsFullscreen()}
+          credentialless
           style={`height: ${numberProp("height", 420)}px`}
         ></iframe>
       {/key}
