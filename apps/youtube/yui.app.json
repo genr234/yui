@@ -1,0 +1,6 @@
+{
+  "schema": "yui.local-app.v0",
+  "type": "simple-js",
+  "entry": "./app.yui.js",
+  "dev": true
+}

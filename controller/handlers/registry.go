@@ -39,6 +39,7 @@ func NewRegistry(cfg config.Config) *Registry {
 	r.Register(StorageCommands()...)
 	r.Register(FSCommands()...)
 	r.Register(ProcessCommands()...)
+	r.Register(NetworkCommands()...)
 	return r
 }
 
