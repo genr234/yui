@@ -248,6 +248,7 @@
           {homeActions}
           {toolActions}
           {settingDetails}
+          {config}
           {diagnostics}
           on:appLaunched={(event) => (appRouteActive = event.detail.active)}
         />

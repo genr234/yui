@@ -2,7 +2,10 @@
   import { onMount } from "svelte";
   import ChevronRightIcon from "lucide-svelte/icons/chevron-right";
   import ArrowLeftIcon from "lucide-svelte/icons/arrow-left";
+  import DownloadIcon from "lucide-svelte/icons/download";
+  import RefreshCwIcon from "lucide-svelte/icons/refresh-cw";
   import { discoverDevApps, type YuiDevApp } from "../sdk/apps";
+  import { bridge } from "../sdk/bridge";
   import {
     declaredPermissions,
     describePermission,
@@ -21,10 +24,23 @@
   import type { DetailItem } from "../types";
 
   export let details: DetailItem[] = [];
+  export let config: any = null;
+
+  type UpdateStatus = {
+    enabled: boolean;
+    repo: string;
+    current_commit: string;
+    latest_commit: string;
+    latest_tag: string;
+    latest_url: string;
+    update_available: boolean;
+    checked_at: string;
+    error?: string;
+  };
 
   let apps: YuiDevApp[] = [];
   let selectedId = "";
-  let page: "root" | "apps" | "app" = "root";
+  let page: "root" | "apps" | "app" | "update" = "root";
   let pageDirection: "forward" | "back" = "forward";
   let dragging = false;
   let dragStartX = 0;
@@ -35,6 +51,11 @@
   let loadedStorageKey = "";
   let selectedEmbedStorage: EmbedStorageEntry[] = [];
   let selectedStorageKeys: string[] = [];
+  let updateStatus: UpdateStatus | null = null;
+  let updateBusy = false;
+  let updateApplying = false;
+  let updateMessage = "";
+  let updateError = "";
 
   onMount(() => {
     const refresh = () => {
@@ -54,6 +75,7 @@
       apps = await discoverDevApps();
       selectedId = apps[0]?.id ?? "";
     })();
+    void loadUpdateStatus(false);
 
     return () => {
       window.removeEventListener("yui:permissions-changed", refresh);
@@ -131,7 +153,7 @@
   }
 
   function goTo(
-    nextPage: "root" | "apps" | "app",
+    nextPage: "root" | "apps" | "app" | "update",
     direction: "forward" | "back",
   ) {
     pageDirection = direction;
@@ -141,8 +163,66 @@
 
   function previousPage() {
     if (page === "app") return "apps";
+    if (page === "update") return "root";
     if (page === "apps") return "root";
     return "root";
+  }
+
+  async function loadUpdateStatus(showBusy = true) {
+    if (showBusy) updateBusy = true;
+    updateError = "";
+    updateMessage = "";
+    try {
+      updateStatus = await bridge.send<UpdateStatus>("update.check");
+    } catch (error) {
+      updateError = error instanceof Error ? error.message : String(error);
+    } finally {
+      updateBusy = false;
+    }
+  }
+
+  async function setAutoUpdateEnabled(enabled: boolean) {
+    updateBusy = true;
+    updateError = "";
+    updateMessage = "";
+    try {
+      config = await bridge.send("config.update", {
+        auto_update_enabled: enabled,
+      });
+      updateStatus = {
+        ...(updateStatus ?? {
+          repo: config?.auto_update_repo ?? "genr234/yui",
+          current_commit: "unknown",
+          latest_commit: "",
+          latest_tag: "",
+          latest_url: "",
+          update_available: false,
+          checked_at: "",
+        }),
+        enabled,
+      };
+      if (enabled) await loadUpdateStatus(false);
+    } catch (error) {
+      updateError = error instanceof Error ? error.message : String(error);
+    } finally {
+      updateBusy = false;
+    }
+  }
+
+  async function applyUpdate() {
+    updateApplying = true;
+    updateError = "";
+    updateMessage = "";
+    try {
+      updateStatus = await bridge.send<UpdateStatus>("update.apply");
+      updateMessage = updateStatus.update_available
+        ? "Installer started. Yui will close and restart after the update."
+        : "Yui is already on the latest kiosk build.";
+    } catch (error) {
+      updateError = error instanceof Error ? error.message : String(error);
+    } finally {
+      updateApplying = false;
+    }
   }
 
   function startPageDrag(event: PointerEvent) {
@@ -176,6 +256,24 @@
           /\.(png|jpe?g|gif|webp|svg)$/i.test(icon)),
     );
   }
+
+  function shortCommit(value?: string) {
+    if (!value) return "Unknown";
+    return value.length > 12 ? value.slice(0, 12) : value;
+  }
+
+  function autoUpdateEnabled() {
+    return config?.auto_update_enabled !== false;
+  }
+
+  function updateSummary() {
+    if (!autoUpdateEnabled()) return "Off";
+    if (updateStatus?.update_available) {
+      return `Update ready: ${shortCommit(updateStatus.latest_commit)}`;
+    }
+    if (updateStatus?.latest_commit) return "Latest build installed";
+    return "On";
+  }
 </script>
 
 <section
@@ -200,6 +298,16 @@
             </span>
             <ChevronRightIcon size={18} strokeWidth={2.4} />
           </button>
+          <button
+            class="settings-row"
+            on:click={() => goTo("update", "forward")}
+          >
+            <span>
+              <span>Auto update</span>
+              <small>{updateSummary()}</small>
+            </span>
+            <ChevronRightIcon size={18} strokeWidth={2.4} />
+          </button>
         </section>
 
         <section class="settings-group">
@@ -211,6 +319,88 @@
               <small>{detail.value}</small>
             </div>
           {/each}
+        </section>
+      </div>
+    {:else if page === "update"}
+      <div class="settings-page settings-page-motion {pageDirection}">
+        <nav class="settings-nav" aria-label="Settings navigation">
+          <button
+            class="icon-button"
+            aria-label="Back to settings"
+            title="Back to settings"
+            on:click={() => goTo("root", "back")}
+          >
+            <ArrowLeftIcon size={18} strokeWidth={2.4} />
+          </button>
+          <span>Auto update</span>
+        </nav>
+
+        <section class="settings-group">
+          <label class="settings-row permission-row">
+            <span>
+              <span>Install latest kiosk builds</span>
+              <small>{config?.auto_update_repo ?? "genr234/yui"}</small>
+            </span>
+            <input
+              type="checkbox"
+              checked={autoUpdateEnabled()}
+              disabled={updateBusy || updateApplying}
+              on:change={(event) =>
+                setAutoUpdateEnabled(event.currentTarget.checked)}
+            />
+          </label>
+          <div class="settings-row static">
+            <span>
+              <span>Current commit</span>
+            </span>
+            <small>{shortCommit(updateStatus?.current_commit)}</small>
+          </div>
+          <div class="settings-row static">
+            <span>
+              <span>Latest commit</span>
+              <small>{updateStatus?.latest_tag || "Not checked yet"}</small>
+            </span>
+            <small>{shortCommit(updateStatus?.latest_commit)}</small>
+          </div>
+        </section>
+
+        <section class="settings-group">
+          <div class="settings-row static settings-actions-row">
+            <span>
+              <span>Release check</span>
+              <small>
+                {#if updateError}
+                  {updateError}
+                {:else if updateMessage}
+                  {updateMessage}
+                {:else if updateStatus?.update_available}
+                  A newer kiosk installer is ready.
+                {:else}
+                  {updateBusy ? "Checking GitHub..." : "No newer build found."}
+                {/if}
+              </small>
+            </span>
+            <span class="settings-actions">
+              <button
+                class="settings-inline-button"
+                disabled={updateBusy || updateApplying}
+                title="Check for updates"
+                on:click={() => loadUpdateStatus(true)}
+              >
+                <RefreshCwIcon size={14} strokeWidth={2.4} />
+                Check
+              </button>
+              <button
+                class="settings-inline-button"
+                disabled={!updateStatus?.update_available || updateApplying}
+                title="Install latest build"
+                on:click={applyUpdate}
+              >
+                <DownloadIcon size={14} strokeWidth={2.4} />
+                Install
+              </button>
+            </span>
+          </div>
         </section>
       </div>
     {:else if page === "apps"}

@@ -27,6 +27,9 @@ type Config struct {
 	PlatformBridgeAddr  string   `json:"platform_bridge_addr"`
 	PlatformDebugPort   int      `json:"platform_remote_debugging_port"`
 	PlatformDevServer   string   `json:"platform_dev_server"`
+	AutoUpdateEnabled   bool     `json:"auto_update_enabled"`
+	AutoUpdateRepo      string   `json:"auto_update_repo"`
+	AutoUpdateInterval  int      `json:"auto_update_interval_minutes"`
 
 	ConfigPath    string `json:"-"`
 	ConfigDir     string `json:"-"`
@@ -64,6 +67,9 @@ func Default() Config {
 		PlatformHTTPAddr:    "127.0.0.1:7072",
 		PlatformBridgeAddr:  "127.0.0.1:7071",
 		PlatformDebugPort:   9222,
+		AutoUpdateEnabled:   true,
+		AutoUpdateRepo:      "genr234/yui",
+		AutoUpdateInterval:  30,
 	}
 }
 
@@ -235,6 +241,12 @@ func applyDefaults(cfg *Config) {
 	if cfg.PlatformDebugPort <= 0 {
 		cfg.PlatformDebugPort = defaults.PlatformDebugPort
 	}
+	if cfg.AutoUpdateRepo == "" {
+		cfg.AutoUpdateRepo = defaults.AutoUpdateRepo
+	}
+	if cfg.AutoUpdateInterval <= 0 {
+		cfg.AutoUpdateInterval = defaults.AutoUpdateInterval
+	}
 	applyEnvOverrides(cfg)
 }
 
@@ -247,6 +259,9 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if value := os.Getenv("YUI_PLATFORM_DEV_SERVER"); value != "" {
 		cfg.PlatformDevServer = value
+	}
+	if value := os.Getenv("YUI_AUTO_UPDATE_REPO"); value != "" {
+		cfg.AutoUpdateRepo = value
 	}
 }
 

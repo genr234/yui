@@ -53,6 +53,15 @@ func (ConfigUpdateCommand) Handle(r *Registry, params json.RawMessage) (any, err
 	if value, ok := patch["platform_remote_debugging_port"].(float64); ok {
 		cfg.PlatformDebugPort = int(value)
 	}
+	if value, ok := patch["auto_update_enabled"].(bool); ok {
+		cfg.AutoUpdateEnabled = value
+	}
+	if value, ok := patch["auto_update_repo"].(string); ok {
+		cfg.AutoUpdateRepo = value
+	}
+	if value, ok := patch["auto_update_interval_minutes"].(float64); ok {
+		cfg.AutoUpdateInterval = int(value)
+	}
 
 	if err := config.Save(cfg); err != nil {
 		return r.cfg, err

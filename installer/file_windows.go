@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -18,9 +19,13 @@ var (
 	comdlg32         = syscall.NewLazyDLL("comdlg32.dll")
 	shell32          = syscall.NewLazyDLL("shell32.dll")
 	user32           = syscall.NewLazyDLL("user32.dll")
+	kernel32         = syscall.NewLazyDLL("kernel32.dll")
 	getOpenFileNameW = comdlg32.NewProc("GetOpenFileNameW")
 	messageBoxW      = user32.NewProc("MessageBoxW")
 	shellExecuteW    = shell32.NewProc("ShellExecuteW")
+	openProcess      = kernel32.NewProc("OpenProcess")
+	waitSingleObject = kernel32.NewProc("WaitForSingleObject")
+	closeHandle      = kernel32.NewProc("CloseHandle")
 )
 
 type openFileName struct {
@@ -61,6 +66,8 @@ const (
 	messageInfo        = 0x00000040
 	dialogYes          = 6
 	dialogNo           = 7
+	synchronize        = 0x00100000
+	waitTimeout        = 0x00000102
 )
 
 func selectFile(title string, initialDir string, filter string) (string, bool, error) {
@@ -132,6 +139,12 @@ func relaunchElevatedIfNeeded(mode installMode, target string) (bool, error) {
 	}
 
 	args := []string{"--elevated"}
+	if autoUpdateMode {
+		args = append(args, "--auto-update")
+		if parentPID > 0 {
+			args = append(args, "--parent-pid", fmt.Sprintf("%d", parentPID))
+		}
+	}
 	if mode == modeRestore {
 		args = append(args, "--restore")
 	}
@@ -215,6 +228,25 @@ func shellExecuteRunas(args []string) error {
 	}
 
 	return nil
+}
+
+func waitForParentExit(pid int, timeout time.Duration) {
+	if pid <= 0 {
+		return
+	}
+
+	handle, _, _ := openProcess.Call(synchronize, 0, uintptr(uint32(pid)))
+	if handle == 0 {
+		log.Printf("auto update parent process %d was not found", pid)
+		return
+	}
+	defer closeHandle.Call(handle)
+
+	millis := uint32(timeout / time.Millisecond)
+	result, _, _ := waitSingleObject.Call(handle, uintptr(millis))
+	if result == waitTimeout {
+		log.Printf("auto update parent process %d did not exit before timeout", pid)
+	}
 }
 
 func joinWindowsArgs(args []string) string {

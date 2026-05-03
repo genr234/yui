@@ -11,6 +11,7 @@
 	export let homeActions: ActionItem[] = [];
 	export let toolActions: ActionItem[] = [];
 	export let settingDetails: DetailItem[] = [];
+	export let config: any = null;
 	export let diagnostics = "";
 	const dispatch = createEventDispatcher<{ appLaunched: { active: boolean } }>();
 </script>
@@ -28,7 +29,7 @@
 </div>
 
 <div class="router-panel" hidden={section !== "settings"} aria-hidden={section !== "settings"}>
-	<Settings details={settingDetails} />
+	<Settings details={settingDetails} {config} />
 </div>
 
 <div class="router-panel" hidden={section !== "about"} aria-hidden={section !== "about"}>
