@@ -2,6 +2,13 @@ import { createUiApi } from "./ui";
 import type { YuiContext, YuiPermission, YuiSimpleApp } from "./types";
 import { isPermissionDeclared, isPermissionGranted, requestAppPermission } from "./permissions";
 import { bridge } from "../bridge";
+import {
+	clearAppStorage,
+	deleteAppStorageValue,
+	getAppStorageValue,
+	listAppStorageKeys,
+	setAppStorageValue,
+} from "./app-storage";
 
 function permissionError(permission: YuiPermission) {
 	return new Error(`YUI_PERMISSION_DENIED: ${permission} permission is required`);
@@ -100,7 +107,6 @@ async function fetchThroughBridge(url: string, options?: RequestInit) {
 export function createYuiContext(app: YuiSimpleApp, onRender: () => void): YuiContext {
 	const disposables = new Set<() => void>();
 	const eventHandlers = new Map<string, Set<(data: unknown) => void | Promise<void>>>();
-	const storagePrefix = `yui.simple-app.${app.id}.`;
 	const scheduleRender = scheduleOnce(onRender);
 
 	const ensurePermission = async (permission: YuiPermission) => {
@@ -137,30 +143,23 @@ export function createYuiContext(app: YuiSimpleApp, onRender: () => void): YuiCo
 		storage: {
 			async get(key) {
 				await ensurePermission("storage");
-				const value = localStorage.getItem(storagePrefix + key);
-				return value === null ? null : JSON.parse(value);
+				return getAppStorageValue(app.id, key);
 			},
 			async set(key, value) {
 				await ensurePermission("storage");
-				localStorage.setItem(storagePrefix + key, JSON.stringify(value));
+				await setAppStorageValue(app.id, key, value);
 			},
 			async delete(key) {
 				await ensurePermission("storage");
-				localStorage.removeItem(storagePrefix + key);
+				await deleteAppStorageValue(app.id, key);
 			},
 			async keys() {
 				await ensurePermission("storage");
-				return Object.keys(localStorage)
-					.filter((key) => key.startsWith(storagePrefix))
-					.map((key) => key.slice(storagePrefix.length));
+				return listAppStorageKeys(app.id);
 			},
 			async clear() {
 				await ensurePermission("storage");
-				for (const key of Object.keys(localStorage)) {
-					if (key.startsWith(storagePrefix)) {
-						localStorage.removeItem(key);
-					}
-				}
+				await clearAppStorage(app.id);
 			},
 		},
 		commands: {
