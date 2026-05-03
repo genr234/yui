@@ -13,6 +13,7 @@ type State struct {
 	ControllerStartedAt string `json:"controller_started_at"`
 	UpdatedAt           string `json:"updated_at"`
 	Version             string `json:"version"`
+	Commit              string `json:"commit"`
 	Event               string `json:"event"`
 	ConfigPath          string `json:"config_path"`
 	ChromePath          string `json:"chrome_path"`
@@ -27,13 +28,14 @@ type Writer struct {
 	base State
 }
 
-func New(path string, version string, configPath string, chromePath string) *Writer {
+func New(path string, version string, commit string, configPath string, chromePath string) *Writer {
 	now := time.Now().Format(time.RFC3339)
 	return &Writer{
 		path: path,
 		base: State{
 			ControllerStartedAt: now,
 			Version:             version,
+			Commit:              commit,
 			ConfigPath:          configPath,
 			ChromePath:          chromePath,
 		},
@@ -83,6 +85,7 @@ func formatDiagnostics(state State) string {
 
 	fmt.Fprintf(&b, "Yui Kiosk Controller\n")
 	fmt.Fprintf(&b, "Version: %s\n", state.Version)
+	fmt.Fprintf(&b, "Commit: %s\n", state.Commit)
 	fmt.Fprintf(&b, "Controller started: %s\n", state.ControllerStartedAt)
 	fmt.Fprintf(&b, "Updated: %s\n", state.UpdatedAt)
 	fmt.Fprintf(&b, "Event: %s\n", state.Event)

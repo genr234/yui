@@ -2,6 +2,8 @@
 
 package main
 
+import "time"
+
 func selectFile(title string, initialDir string, filter string) (string, bool, error) {
 	return "", false, nil
 }
@@ -28,3 +30,5 @@ func defaultInitialDir() string {
 func relaunchElevatedIfNeeded(mode installMode, target string) (bool, error) {
 	return false, nil
 }
+
+func waitForParentExit(pid int, timeout time.Duration) {}

@@ -19,6 +19,7 @@ import (
 	"kiosk/controller/internal/singleinstance"
 	"kiosk/controller/internal/status"
 	"kiosk/controller/internal/supervisor"
+	"kiosk/controller/internal/updater"
 	"kiosk/controller/internal/version"
 )
 
@@ -81,7 +82,7 @@ func run() error {
 
 	logControllerStartup(cfg)
 
-	statusWriter := status.New(cfg.StatusPath, version.Version, cfg.ConfigPath, cfg.ChromePath)
+	statusWriter := status.New(cfg.StatusPath, version.Version, version.Commit, cfg.ConfigPath, cfg.ChromePath)
 	statusWriter.Write(status.State{
 		Event:      "controller_started",
 		ChromePath: cfg.ChromePath,
@@ -92,6 +93,7 @@ func run() error {
 
 	platform.Start(ctx, cfg, staticFS)
 	bridge.Start(ctx, cfg)
+	updater.Start(ctx, cfg)
 
 	runner := supervisor.New(cfg, statusWriter)
 	if err := runner.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
@@ -127,7 +129,7 @@ func runCheck() (string, error) {
 		log.Printf("%s", report)
 	}
 
-	statusWriter := status.New(cfg.StatusPath, version.Version, cfg.ConfigPath, cfg.ChromePath)
+	statusWriter := status.New(cfg.StatusPath, version.Version, version.Commit, cfg.ConfigPath, cfg.ChromePath)
 	statusWriter.Write(status.State{
 		Event:      "controller_check",
 		ChromePath: cfg.ChromePath,

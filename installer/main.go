@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -24,6 +25,11 @@ type installMode int
 const (
 	modeInstall installMode = iota
 	modeRestore
+)
+
+var (
+	autoUpdateMode bool
+	parentPID      int
 )
 
 func main() {
@@ -43,7 +49,7 @@ func main() {
 		fatal(err)
 	}
 
-	if mode == modeInstall && !hasElevationMarker() {
+	if mode == modeInstall && !hasElevationMarker() && !autoUpdateMode {
 		if err := confirmInstall(target); err != nil {
 			fatal(err)
 		}
@@ -65,6 +71,10 @@ func main() {
 		return
 	}
 
+	if autoUpdateMode {
+		waitForParentExit(parentPID, 45*time.Second)
+	}
+
 	if err := install(target); err != nil {
 		fatal(err)
 	}
@@ -73,6 +83,10 @@ func main() {
 func selectActionAndTarget() (installMode, string, error) {
 	args := userArgs()
 	if len(args) > 0 && args[0] != "" {
+		if args[0] == "--auto-update" {
+			target, err := parseAutoUpdateArgs(args[1:])
+			return modeInstall, target, err
+		}
 		if args[0] == "--restore" {
 			target, err := selectTargetArg(2)
 			return modeRestore, target, err
@@ -101,6 +115,27 @@ func selectActionAndTarget() (installMode, string, error) {
 	return mode, path, nil
 }
 
+func parseAutoUpdateArgs(args []string) (string, error) {
+	autoUpdateMode = true
+	for len(args) > 0 {
+		switch args[0] {
+		case "--parent-pid":
+			if len(args) < 2 {
+				return "", errors.New("--parent-pid requires a value")
+			}
+			pid, err := strconv.Atoi(args[1])
+			if err != nil {
+				return "", fmt.Errorf("parse parent pid: %w", err)
+			}
+			parentPID = pid
+			args = args[2:]
+		default:
+			return filepath.Abs(args[0])
+		}
+	}
+	return "", errors.New("--auto-update requires a chrome.bat target")
+}
+
 func selectTargetArg(index int) (string, error) {
 	args := userArgs()
 	argIndex := index - 1
@@ -122,6 +157,10 @@ func selectTargetArg(index int) (string, error) {
 }
 
 func chooseModeForSelectedTarget(target string) (installMode, error) {
+	if autoUpdateMode {
+		return modeInstall, nil
+	}
+
 	target = filepath.Clean(target)
 	backupPath := filepath.Join(filepath.Dir(target), "chrome.original.bat")
 	hasBackup := fileExists(backupPath)
@@ -227,6 +266,9 @@ func install(target string) error {
 		return verifyErr
 	}
 	installComplete = true
+	if autoUpdateMode {
+		return nil
+	}
 	_, _, _ = messageBox(
 		"Yui Kiosk Installer",
 		"Installed successfully.\n\nThe controller has been started.\n\n"+verifySummary,
@@ -616,6 +658,9 @@ func appendLine(path string, message string) error {
 
 func fatal(err error) {
 	log.Printf("install failed: %v", err)
+	if autoUpdateMode {
+		os.Exit(1)
+	}
 	_, _, _ = messageBox("Yui Kiosk Installer", err.Error(), messageError)
 	os.Exit(1)
 }

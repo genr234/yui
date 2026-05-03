@@ -4,6 +4,7 @@ controller_dir := root_dir + "/controller"
 installer_dir := root_dir + "/installer"
 dist_dir := root_dir + "/dist"
 controller_asset := installer_dir + "/assets/controller.exe"
+commit := `if [ -n "$YUI_COMMIT" ]; then printf "%s" "$YUI_COMMIT"; else git rev-parse HEAD 2>/dev/null || echo dev; fi`
 
 help:
   @echo "Available targets:"
@@ -56,11 +57,11 @@ build-platform:
 
 build-controller:
   mkdir -p {{installer_dir}}/assets {{dist_dir}}
-  cd {{controller_dir}} && GOOS=windows GOARCH=amd64 go build -o {{controller_asset}} .
+  cd {{controller_dir}} && GOOS=windows GOARCH=amd64 go build -ldflags "-X kiosk/controller/internal/version.Commit={{commit}}" -o {{controller_asset}} .
 
 build-controller-local:
   mkdir -p {{dist_dir}}
-  cd {{controller_dir}} && go build -o {{dist_dir}}/controller .
+  cd {{controller_dir}} && go build -ldflags "-X kiosk/controller/internal/version.Commit={{commit}}" -o {{dist_dir}}/controller .
 
 build-installer:
   mkdir -p {{dist_dir}}
