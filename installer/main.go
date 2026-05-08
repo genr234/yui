@@ -48,13 +48,18 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
+	log.Printf("selected action: %s", modeLabel(mode))
+	log.Printf("selected target: %s", target)
 
 	if mode == modeInstall && !hasElevationMarker() && !autoUpdateMode {
+		log.Printf("confirming install with user")
 		if err := confirmInstall(target); err != nil {
 			fatal(err)
 		}
+		log.Printf("install confirmed")
 	}
 
+	log.Printf("checking elevation requirement")
 	relaunched, err := relaunchElevatedIfNeeded(mode, target)
 	if err != nil {
 		fatal(err)
@@ -72,12 +77,14 @@ func main() {
 	}
 
 	if autoUpdateMode {
+		log.Printf("waiting for parent process before auto update")
 		waitForParentExit(parentPID, 45*time.Second)
 	}
 
 	if err := install(target); err != nil {
 		fatal(err)
 	}
+	log.Printf("install finished successfully")
 }
 
 func selectActionAndTarget() (installMode, string, error) {
@@ -600,6 +607,17 @@ func valueOr(value string, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func modeLabel(mode installMode) string {
+	switch mode {
+	case modeInstall:
+		return "install"
+	case modeRestore:
+		return "restore"
+	default:
+		return fmt.Sprintf("unknown(%d)", mode)
+	}
 }
 
 func userArgs() []string {

@@ -13,51 +13,20 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
+
+	"github.com/ncruces/zenity"
 )
 
 var (
-	comdlg32         = syscall.NewLazyDLL("comdlg32.dll")
 	shell32          = syscall.NewLazyDLL("shell32.dll")
-	user32           = syscall.NewLazyDLL("user32.dll")
 	kernel32         = syscall.NewLazyDLL("kernel32.dll")
-	getOpenFileNameW = comdlg32.NewProc("GetOpenFileNameW")
-	messageBoxW      = user32.NewProc("MessageBoxW")
 	shellExecuteW    = shell32.NewProc("ShellExecuteW")
 	openProcess      = kernel32.NewProc("OpenProcess")
 	waitSingleObject = kernel32.NewProc("WaitForSingleObject")
 	closeHandle      = kernel32.NewProc("CloseHandle")
 )
 
-type openFileName struct {
-	structSize    uint32
-	owner         uintptr
-	instance      uintptr
-	filter        *uint16
-	customFilter  *uint16
-	maxCustFilter uint32
-	filterIndex   uint32
-	file          *uint16
-	maxFile       uint32
-	fileTitle     *uint16
-	maxFileTitle  uint32
-	initialDir    *uint16
-	title         *uint16
-	flags         uint32
-	fileOffset    uint16
-	fileExtension uint16
-	defExt        *uint16
-	custData      uintptr
-	hook          uintptr
-	templateName  *uint16
-	reservedPtr   uintptr
-	reserved      uint32
-	flagsEx       uint32
-}
-
 const (
-	ofnFileMustExist   = 0x00001000
-	ofnPathMustExist   = 0x00000800
-	ofnExplorer        = 0x00080000
 	messageOK          = 0x00000000
 	messageYesNo       = 0x00000004
 	messageYesNoCancel = 0x00000003
@@ -70,56 +39,68 @@ const (
 	waitTimeout        = 0x00000102
 )
 
-func selectFile(title string, initialDir string, filter string) (string, bool, error) {
-	buffer := make([]uint16, 32768)
-	filterPtr := utf16DoubleNull(filter)
-	titlePtr, err := syscall.UTF16PtrFromString(title)
-	if err != nil {
-		return "", false, err
-	}
-	initialDirPtr, err := syscall.UTF16PtrFromString(initialDir)
-	if err != nil {
-		return "", false, err
-	}
-
-	ofn := openFileName{
-		structSize: uint32(unsafe.Sizeof(openFileName{})),
-		filter:     &filterPtr[0],
-		file:       &buffer[0],
-		maxFile:    uint32(len(buffer)),
-		initialDir: initialDirPtr,
-		title:      titlePtr,
-		flags:      ofnExplorer | ofnFileMustExist | ofnPathMustExist,
-	}
-
-	ret, _, callErr := getOpenFileNameW.Call(uintptr(unsafe.Pointer(&ofn)))
-	if ret == 0 {
-		if callErr != syscall.Errno(0) {
-			return "", false, callErr
-		}
+func selectFile(title string, initialDir string, _ string) (string, bool, error) {
+	path, err := zenity.SelectFile(
+		zenity.Title(title),
+		zenity.Filename(initialDir),
+		zenity.FileFilters{
+			{Name: "Batch files", Patterns: []string{"*.bat"}},
+			{Name: "All files", Patterns: []string{"*"}},
+		},
+	)
+	if errors.Is(err, zenity.ErrCanceled) {
 		return "", false, nil
 	}
-
-	return syscall.UTF16ToString(buffer), true, nil
+	if err != nil {
+		return "", false, err
+	}
+	return path, true, nil
 }
 
 func messageBox(title string, body string, icon uintptr) (uintptr, uintptr, error) {
-	titlePtr, err := syscall.UTF16PtrFromString(title)
-	if err != nil {
-		return 0, 0, err
-	}
-	bodyPtr, err := syscall.UTF16PtrFromString(body)
-	if err != nil {
+	options := []zenity.Option{zenity.Title(title)}
+	if icon&messageQuestion != 0 {
+		if icon&messageYesNoCancel == messageYesNoCancel {
+			err := zenity.Question(body,
+				append(options,
+					zenity.OKLabel("Yes"),
+					zenity.ExtraButton("No"),
+					zenity.CancelLabel("Cancel"),
+					zenity.DefaultCancel(),
+				)...,
+			)
+			switch {
+			case err == nil:
+				return dialogYes, 0, nil
+			case errors.Is(err, zenity.ErrExtraButton):
+				return dialogNo, 0, nil
+			case errors.Is(err, zenity.ErrCanceled):
+				return 0, 0, nil
+			default:
+				return 0, 0, err
+			}
+		}
+
+		err := zenity.Question(body,
+			append(options,
+				zenity.OKLabel("Yes"),
+				zenity.CancelLabel("No"),
+				zenity.DefaultCancel(),
+			)...,
+		)
+		if err == nil {
+			return dialogYes, 0, nil
+		}
+		if errors.Is(err, zenity.ErrCanceled) {
+			return dialogNo, 0, nil
+		}
 		return 0, 0, err
 	}
 
-	ret, errno, callErr := messageBoxW.Call(
-		0,
-		uintptr(unsafe.Pointer(bodyPtr)),
-		uintptr(unsafe.Pointer(titlePtr)),
-		icon,
-	)
-	return ret, errno, callErr
+	if icon&messageError != 0 {
+		return 0, 0, zenity.Error(body, options...)
+	}
+	return 0, 0, zenity.Info(body, options...)
 }
 
 func defaultInitialDir() string {
@@ -289,12 +270,4 @@ func quoteWindowsArg(arg string) string {
 	}
 	b.WriteByte('"')
 	return b.String()
-}
-
-func utf16DoubleNull(s string) []uint16 {
-	encoded := syscall.StringToUTF16(s)
-	if len(encoded) == 0 || encoded[len(encoded)-1] != 0 {
-		encoded = append(encoded, 0)
-	}
-	return encoded
 }
