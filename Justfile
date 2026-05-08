@@ -4,7 +4,7 @@ controller_dir := root_dir + "/controller"
 installer_dir := root_dir + "/installer"
 dist_dir := root_dir + "/dist"
 controller_asset := installer_dir + "/assets/controller.exe"
-commit := `if [ -n "$YUI_COMMIT" ]; then printf "%s" "$YUI_COMMIT"; else git rev-parse HEAD 2>/dev/null || echo dev; fi`
+commit := `if [ -n "${YUI_COMMIT-}" ]; then printf "%s" "$YUI_COMMIT"; else git rev-parse HEAD 2>/dev/null || echo dev; fi`
 
 help:
   @echo "Available targets:"
