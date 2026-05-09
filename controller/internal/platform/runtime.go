@@ -44,6 +44,7 @@ func Start(ctx context.Context, cfg config.Config, staticFS embed.FS) {
 
 	go r.serveHTTP(ctx)
 	go r.injectLoop(ctx)
+	go r.blockerLoop(ctx)
 }
 
 func (r *Runtime) serveHTTP(ctx context.Context) {
@@ -66,6 +67,7 @@ func (r *Runtime) serveHTTP(ctx context.Context) {
 	mux.HandleFunc("/diagnostics.txt", func(w http.ResponseWriter, req *http.Request) {
 		http.ServeFile(w, req, diagnosticsPath(r.cfg.StatusPath))
 	})
+	mux.HandleFunc("/embed-proxy/", r.handleEmbedProxy)
 
 	server := &http.Server{Addr: r.cfg.PlatformHTTPAddr, Handler: mux}
 	go func() {

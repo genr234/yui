@@ -3,8 +3,18 @@
   import ChevronRightIcon from "lucide-svelte/icons/chevron-right";
   import ArrowLeftIcon from "lucide-svelte/icons/arrow-left";
   import DownloadIcon from "lucide-svelte/icons/download";
+  import PlusIcon from "lucide-svelte/icons/plus";
   import RefreshCwIcon from "lucide-svelte/icons/refresh-cw";
-  import { discoverDevApps, type YuiDevApp } from "../sdk/apps";
+  import TrashIcon from "lucide-svelte/icons/trash-2";
+  import {
+    appCatalog,
+    appSources,
+    catalogEntryId,
+    discoverApps,
+    type YuiAppSource,
+    type YuiCatalogEntry,
+    type YuiDevApp,
+  } from "../sdk/apps";
   import { bridge } from "../sdk/bridge";
   import {
     declaredPermissions,
@@ -17,10 +27,7 @@
     getEmbedStorageEntries,
     type EmbedStorageEntry,
   } from "../sdk/apps/embed-storage";
-  import {
-    clearAppStorage,
-    listAppStorageKeys,
-  } from "../sdk/apps/app-storage";
+  import { clearAppStorage, listAppStorageKeys } from "../sdk/apps/app-storage";
   import type { DetailItem } from "../types";
 
   export let details: DetailItem[] = [];
@@ -39,8 +46,10 @@
   };
 
   let apps: YuiDevApp[] = [];
+  let sources: YuiAppSource[] = [];
+  let catalog: YuiCatalogEntry[] = [];
   let selectedId = "";
-  let page: "root" | "apps" | "app" | "update" = "root";
+  let page: "root" | "apps" | "app" | "update" | "sources" = "root";
   let pageDirection: "forward" | "back" = "forward";
   let dragging = false;
   let dragStartX = 0;
@@ -56,6 +65,10 @@
   let updateApplying = false;
   let updateMessage = "";
   let updateError = "";
+  let sourceURL = "";
+  let appBusy = "";
+  let appMessage = "";
+  let appError = "";
 
   onMount(() => {
     const refresh = () => {
@@ -72,19 +85,24 @@
     window.addEventListener("yui:app-storage-changed", refreshAppStorage);
 
     void (async () => {
-      apps = await discoverDevApps();
-      selectedId = apps[0]?.id ?? "";
+      await loadAppsArea();
     })();
     void loadUpdateStatus(false);
 
     return () => {
       window.removeEventListener("yui:permissions-changed", refresh);
-      window.removeEventListener("yui:embed-storage-changed", refreshEmbedStorage);
+      window.removeEventListener(
+        "yui:embed-storage-changed",
+        refreshEmbedStorage,
+      );
       window.removeEventListener("yui:app-storage-changed", refreshAppStorage);
     };
   });
 
   $: selected = apps.find((app) => app.id === selectedId) ?? apps[0];
+  $: installedIds = new Set(
+    apps.filter((app) => app.installed).map((app) => app.id),
+  );
   $: selectedPermissions = selected ? declaredPermissions(selected.app) : [];
   $: selectedPermissionState = selected
     ? getAppPermissionState(selected.id)
@@ -96,6 +114,99 @@
     if (storageKey !== loadedStorageKey) {
       loadedStorageKey = storageKey;
       void loadSelectedStorage();
+    }
+  }
+
+  async function loadAppsArea() {
+    const [nextApps, nextSources, nextCatalog] = await Promise.all([
+      discoverApps(),
+      appSources.list().catch(() => []),
+      appCatalog.list().catch(() => []),
+    ]);
+    apps = nextApps;
+    sources = nextSources;
+    catalog = nextCatalog;
+    selectedId =
+      apps.find((app) => app.id === selectedId)?.id ?? apps[0]?.id ?? "";
+  }
+
+  async function addSource() {
+    const url = sourceURL.trim();
+    if (!url) return;
+    appBusy = "source:add";
+    appError = "";
+    appMessage = "";
+    try {
+      const source = await appSources.add(url);
+      await appSources.refresh(source.id);
+      sourceURL = "";
+      appMessage = "App source added and refreshed.";
+      await loadAppsArea();
+    } catch (error) {
+      appError = error instanceof Error ? error.message : String(error);
+    } finally {
+      appBusy = "";
+    }
+  }
+
+  async function refreshSource(id: string) {
+    appBusy = `source:refresh:${id}`;
+    appError = "";
+    appMessage = "";
+    try {
+      await appSources.refresh(id);
+      appMessage = "App source refreshed.";
+      await loadAppsArea();
+    } catch (error) {
+      appError = error instanceof Error ? error.message : String(error);
+      await loadAppsArea();
+    } finally {
+      appBusy = "";
+    }
+  }
+
+  async function removeSource(id: string) {
+    appBusy = `source:remove:${id}`;
+    appError = "";
+    appMessage = "";
+    try {
+      await appSources.remove(id);
+      appMessage = "App source removed.";
+      await loadAppsArea();
+    } catch (error) {
+      appError = error instanceof Error ? error.message : String(error);
+    } finally {
+      appBusy = "";
+    }
+  }
+
+  async function installCatalogApp(entry: YuiCatalogEntry) {
+    appBusy = `install:${catalogEntryId(entry)}`;
+    appError = "";
+    appMessage = "";
+    try {
+      await appCatalog.install(catalogEntryId(entry));
+      appMessage = `${entry.app.name} installed.`;
+      await loadAppsArea();
+    } catch (error) {
+      appError = error instanceof Error ? error.message : String(error);
+    } finally {
+      appBusy = "";
+    }
+  }
+
+  async function uninstallApp(id: string) {
+    appBusy = `uninstall:${id}`;
+    appError = "";
+    appMessage = "";
+    try {
+      await appCatalog.uninstall(id);
+      appMessage = "App uninstalled.";
+      await loadAppsArea();
+    } catch (error) {
+      appError = error instanceof Error ? error.message : String(error);
+    } finally {
+      appBusy = "";
     }
   }
 
@@ -153,7 +264,7 @@
   }
 
   function goTo(
-    nextPage: "root" | "apps" | "app" | "update",
+    nextPage: "root" | "apps" | "app" | "update" | "sources",
     direction: "forward" | "back",
   ) {
     pageDirection = direction;
@@ -163,6 +274,7 @@
 
   function previousPage() {
     if (page === "app") return "apps";
+    if (page === "sources") return "apps";
     if (page === "update") return "root";
     if (page === "apps") return "root";
     return "root";
@@ -417,6 +529,25 @@
           <span>Apps</span>
         </nav>
 
+        <section class="settings-group">
+          <button
+            class="settings-row"
+            on:click={() => goTo("sources", "forward")}
+          >
+            <span>
+              <span>Federated sources</span>
+              <small>
+                {sources.length === 1
+                  ? "1 source"
+                  : `${sources.length} sources`} · {catalog.length === 1
+                  ? "1 catalog app"
+                  : `${catalog.length} catalog apps`}
+              </small>
+            </span>
+            <ChevronRightIcon size={18} strokeWidth={2.4} />
+          </button>
+        </section>
+
         {#if apps.length === 0}
           <section class="settings-group">
             <div class="settings-row static">
@@ -445,13 +576,157 @@
                 </span>
                 <span>
                   <span>{app.name}</span>
-                  <small>{app.id}</small>
+                  <small
+                    >{app.id}{app.installed
+                      ? " · installed"
+                      : " · local"}</small
+                  >
                 </span>
                 <ChevronRightIcon size={18} strokeWidth={2.4} />
               </button>
             {/each}
           </section>
         {/if}
+      </div>
+    {:else if page === "sources"}
+      <div class="settings-page settings-page-motion {pageDirection}">
+        <nav class="settings-nav" aria-label="Settings navigation">
+          <button
+            class="icon-button"
+            aria-label="Back to apps"
+            title="Back to apps"
+            on:click={() => goTo("apps", "back")}
+          >
+            <ArrowLeftIcon size={18} strokeWidth={2.4} />
+          </button>
+          <span>App sources</span>
+        </nav>
+
+        <section class="settings-group">
+          <div class="settings-row static settings-actions-row">
+            <span>
+              <span>Add source</span>
+            </span>
+          </div>
+          <div class="settings-row static settings-actions-row">
+            <input
+              class="settings-text-input"
+              placeholder="https://example.com/yui/catalog.json"
+              bind:value={sourceURL}
+              disabled={Boolean(appBusy)}
+            />
+            <button
+              class="settings-inline-button"
+              disabled={Boolean(appBusy) || !sourceURL.trim()}
+              title="Add app source"
+              on:click={addSource}
+            >
+              <PlusIcon size={14} strokeWidth={2.4} />
+              Add
+            </button>
+          </div>
+          {#if appError || appMessage}
+            <div class="settings-row static">
+              <span>
+                <span>{appError ? "Source error" : "Source status"}</span>
+                <small>{appError || appMessage}</small>
+              </span>
+            </div>
+          {/if}
+        </section>
+
+        <section class="settings-group">
+          {#if sources.length === 0}
+            <div class="settings-row static">
+              <span>
+                <span>No sources</span>
+                <small
+                  >Add a signed HTTPS catalog to discover downloadable apps.</small
+                >
+              </span>
+            </div>
+          {:else}
+            {#each sources as source}
+              <div class="settings-row static settings-actions-row">
+                <span>
+                  <span>{source.name || source.url}</span>
+                  <small>
+                    {source.lastStatus}{source.publisher
+                      ? ` · ${source.publisher}`
+                      : ""}
+                    {source.lastError ? ` · ${source.lastError}` : ""}
+                  </small>
+                </span>
+                <span class="settings-actions">
+                  <button
+                    class="settings-inline-button"
+                    disabled={Boolean(appBusy)}
+                    title="Refresh source"
+                    on:click={() => refreshSource(source.id)}
+                  >
+                    <RefreshCwIcon size={14} strokeWidth={2.4} />
+                    Refresh
+                  </button>
+                  <button
+                    class="settings-inline-button danger"
+                    disabled={Boolean(appBusy)}
+                    title="Remove source"
+                    on:click={() => removeSource(source.id)}
+                  >
+                    <TrashIcon size={14} strokeWidth={2.4} />
+                    Remove
+                  </button>
+                </span>
+              </div>
+            {/each}
+          {/if}
+        </section>
+
+        <section class="settings-group">
+          {#if catalog.length === 0}
+            <div class="settings-row static">
+              <span>
+                <span>No catalog apps</span>
+                <small>Refresh a source to load signed app listings.</small>
+              </span>
+            </div>
+          {:else}
+            {#each catalog as entry}
+              <div class="settings-row static settings-actions-row">
+                <span>
+                  <span>{entry.app.name}</span>
+                  <small>
+                    {entry.app.id} · {entry.app.version} · {entry.catalog}
+                    {entry.app.permissions?.length
+                      ? ` · ${entry.app.permissions.join(", ")}`
+                      : " · no permissions"}
+                  </small>
+                </span>
+                {#if installedIds.has(entry.app.id)}
+                  <button
+                    class="settings-inline-button danger"
+                    disabled={Boolean(appBusy)}
+                    title="Uninstall app"
+                    on:click={() => uninstallApp(entry.app.id)}
+                  >
+                    <TrashIcon size={14} strokeWidth={2.4} />
+                    Uninstall
+                  </button>
+                {:else}
+                  <button
+                    class="settings-inline-button"
+                    disabled={Boolean(appBusy)}
+                    title="Install signed app"
+                    on:click={() => installCatalogApp(entry)}
+                  >
+                    <DownloadIcon size={14} strokeWidth={2.4} />
+                    Install
+                  </button>
+                {/if}
+              </div>
+            {/each}
+          {/if}
+        </section>
       </div>
     {:else}
       <div class="settings-page settings-page-motion {pageDirection}">
@@ -480,8 +755,34 @@
               <h2>{selected.name}</h2>
               <p>{selected.app.description ?? selected.id}</p>
               <small>{selected.version}</small>
+              {#if selected.installed}
+                <small>Installed from {selected.sourceUrl}</small>
+              {/if}
             </div>
           </section>
+
+          {#if selected.installed}
+            <section class="settings-group">
+              <div class="settings-row static settings-actions-row">
+                <span>
+                  <span>Installed app</span>
+                  <small
+                    >Uninstalling keeps this app's isolated storage until you
+                    clear it.</small
+                  >
+                </span>
+                <button
+                  class="settings-inline-button danger"
+                  disabled={Boolean(appBusy)}
+                  type="button"
+                  on:click={() => uninstallApp(selected.id)}
+                >
+                  <TrashIcon size={14} strokeWidth={2.4} />
+                  Uninstall
+                </button>
+              </div>
+            </section>
+          {/if}
 
           <section class="settings-group">
             {#if selectedPermissions.length === 0}
@@ -543,7 +844,11 @@
               <div class="settings-row static">
                 <span>
                   <span>Embedded websites</span>
-                  <small>Credentialless embeds are isolated from the normal web profile. Clearing forgets this app's tracked websites and reloads active embeds.</small>
+                  <small
+                    >Credentialless embeds are isolated from the normal web
+                    profile. Clearing forgets this app's tracked websites and
+                    reloads active embeds.</small
+                  >
                 </span>
                 <button
                   class="settings-inline-button danger"
@@ -557,7 +862,11 @@
                 <div class="settings-row static">
                   <span>
                     <span>{entry.origin}</span>
-                    <small>Last used {new Date(entry.lastUsedAt).toLocaleString()}</small>
+                    <small
+                      >Last used {new Date(
+                        entry.lastUsedAt,
+                      ).toLocaleString()}</small
+                    >
                   </span>
                   <button
                     class="settings-inline-button"

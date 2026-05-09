@@ -50,8 +50,8 @@ dl {
 	padding: 0;
 	border: 0;
 	pointer-events: auto;
-	background: rgba(10, 16, 22, 0.48);
-	backdrop-filter: blur(10px) saturate(0.86);
+	background: rgba(10, 16, 22, 0.3);
+	backdrop-filter: blur(6px) saturate(0.86);
 	animation: veil-in 240ms ease both;
 }
 
@@ -1094,6 +1094,22 @@ dd {
 	background: #fff7f7;
 }
 
+.settings-text-input {
+	width: min(100%, 440px);
+	min-height: 36px;
+	padding: 7px 10px;
+	border: 1px solid #ccd7e3;
+	border-radius: 8px;
+	color: #172334;
+	background: #ffffff;
+	font-size: 13px;
+	font-weight: 600;
+}
+
+.settings-text-input:disabled {
+	opacity: 0.58;
+}
+
 .settings-actions-row {
 	grid-template-columns: minmax(0, 1fr) auto;
 }
@@ -1227,6 +1243,9 @@ dd {
 }
 
 .yui-app-embed-shell {
+	display: flex;
+	flex-direction: column;
+	max-width: 100%;
 	overflow: hidden;
 	border: 1px solid #dce4ee;
 	border-radius: 8px;
@@ -1269,6 +1288,7 @@ dd {
 
 .yui-app-embed {
 	display: block;
+	flex: 1 1 auto;
 	width: 100%;
 	min-height: 420px;
 	border: 0;

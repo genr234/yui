@@ -130,7 +130,11 @@ export type YuiDevApp = {
 	version: string;
 	type: "simple-js";
 	entry: string;
-	dev: true;
+	dev: boolean;
+	installed?: boolean;
+	sourceId?: string;
+	sourceUrl?: string;
+	installedAt?: string;
 	app: YuiSimpleApp;
 	source: string;
 };
