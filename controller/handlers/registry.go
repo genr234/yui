@@ -40,7 +40,9 @@ func NewRegistry(cfg config.Config) *Registry {
 	r.Register(FSCommands()...)
 	r.Register(ProcessCommands()...)
 	r.Register(NetworkCommands()...)
+	r.Register(AppsCommands()...)
 	r.Register(UpdateCommands()...)
+	r.Register(EmbedBlockerCommands()...)
 	return r
 }
 

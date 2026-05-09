@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
+  import { bridge } from "../../sdk/bridge";
   import {
     hasPermissionDecision,
     isPermissionDeclared,
@@ -24,6 +26,7 @@
   let embedError = "";
   let embedLoadedSource = "";
   let embedFrameKey = 0;
+  let registeredBlockerOrigin = "";
 
   function children(value: YuiNode) {
     return normalize(value.children ?? []);
@@ -173,7 +176,7 @@
   }
 
   function embedReferrerPolicy() {
-    return stringProp("referrerPolicy", "strict-origin-when-cross-origin");
+    return stringProp("referrerPolicy", "no-referrer");
   }
 
   function hasGrantedAppPermission(permission: string) {
@@ -242,6 +245,52 @@
     }
   }
 
+  function embedBlockerEnabled() {
+    const value = prop<unknown>("blocker", false);
+    return value === true || value === "on" || value === "block" || value === "standard";
+  }
+
+  function embedCredentialless() {
+    return prop<unknown>("credentialless", false) === true;
+  }
+
+  function embedTransport() {
+    return stringProp("transport", "proxy");
+  }
+
+  function embedFrameUrl() {
+    if (!embedUrl || embedTransport() === "direct") return embedUrl;
+    const encoded = btoa(embedUrl)
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/g, "");
+    const base = (window.__YUI_PLATFORM_HTTP || "http://127.0.0.1:7072").replace(/\/+$/g, "");
+    return `${base}/embed-proxy/${encoded}/`;
+  }
+
+  async function setEmbedBlocker(origin: string, enabled: boolean) {
+    if (!app || !origin) return;
+    try {
+      await bridge.send("embedBlocker.set", {
+        appId: app.id,
+        origin,
+        enabled,
+      });
+    } catch {
+      // Embeds still work if the native blocker bridge is unavailable.
+    }
+  }
+
+  function syncEmbedBlocker() {
+    const origin = embedGranted && embedBlockerEnabled() ? embedOrigin() : "";
+    if (registeredBlockerOrigin === origin) return;
+    if (registeredBlockerOrigin && registeredBlockerOrigin !== origin) {
+      void setEmbedBlocker(registeredBlockerOrigin, false);
+    }
+    registeredBlockerOrigin = origin;
+    if (origin) void setEmbedBlocker(origin, true);
+  }
+
   async function loadEmbed(value: string) {
     embedLoadedSource = value;
     const next = embedPermissionFor(value);
@@ -250,6 +299,7 @@
     embedError = next.error;
     embedGranted = false;
     embedFrameKey += 1;
+    syncEmbedBlocker();
 
     if (embedError || !app) return;
     if (!isPermissionDeclared(app, embedPermission)) {
@@ -259,6 +309,7 @@
     if (isPermissionGranted(app.id, embedPermission)) {
       embedGranted = true;
       void rememberEmbedStorage(app.id, embedOrigin());
+      syncEmbedBlocker();
       return;
     }
     if (hasPermissionDecision(app.id, embedPermission)) {
@@ -269,6 +320,7 @@
     embedGranted = await requestAppPermission(app, embedPermission);
     if (embedGranted) void rememberEmbedStorage(app.id, embedOrigin());
     if (!embedGranted) embedError = "website permission denied";
+    syncEmbedBlocker();
   }
 
   function allowEmbed() {
@@ -278,6 +330,7 @@
     embedError = "";
     embedGranted = true;
     void rememberEmbedStorage(app.id, embedOrigin());
+    syncEmbedBlocker();
   }
 
   function resetEmbed() {
@@ -301,6 +354,21 @@
     return typeof value === "number" ? `${value}px` : value || fallback;
   };
 
+  function embedShellStyle() {
+    const style = [
+      `width: ${cssSizeProp("width", "100%")}`,
+      `height: ${cssSizeProp("height", "auto")}`,
+      `min-height: ${cssSizeProp("minHeight", "0")}`,
+    ];
+    const maxWidth = prop<string | number>("maxWidth");
+    const maxHeight = prop<string | number>("maxHeight");
+    const aspectRatio = prop<string | number>("aspectRatio");
+    if (maxWidth !== undefined) style.push(`max-width: ${cssSizeProp("maxWidth")}`);
+    if (maxHeight !== undefined) style.push(`max-height: ${cssSizeProp("maxHeight")}`);
+    if (aspectRatio !== undefined) style.push(`aspect-ratio: ${aspectRatio}`);
+    return style.join("; ");
+  }
+
   $: if (
     node &&
     typeof node === "object" &&
@@ -312,6 +380,16 @@
       void loadEmbed(source);
     }
   }
+
+  $: if (node && typeof node === "object" && !Array.isArray(node) && node.type === "embed") {
+    syncEmbedBlocker();
+  }
+
+  onDestroy(() => {
+    if (registeredBlockerOrigin) {
+      void setEmbedBlocker(registeredBlockerOrigin, false);
+    }
+  });
 </script>
 
 <svelte:window on:yui:embed-storage-cleared={handleEmbedStorageCleared} />
@@ -463,7 +541,7 @@
   />
 {:else if node.type === "embed"}
   {#if embedGranted}
-    <div class="yui-app-embed-shell">
+    <div class="yui-app-embed-shell" style={embedShellStyle()}>
       <div class="yui-app-embed-toolbar">
         <span>{embedOriginLabel()}</span>
         <button class="yui-app-embed-reset" type="button" on:click={resetEmbed}
@@ -473,14 +551,14 @@
       {#key embedFrameKey}
         <iframe
           class="yui-app-embed"
-          src={embedUrl}
+          src={embedFrameUrl()}
           title={stringProp("title", embedUrl)}
           sandbox={iframeSandboxPolicy()}
           referrerpolicy={embedReferrerPolicy()}
           allow={embedAllowPolicy()}
           allowfullscreen={embedAllowsFullscreen()}
-          credentialless
-          style={`height: ${numberProp("height", 420)}px`}
+          credentialless={embedCredentialless()}
+          style={`height: ${cssSizeProp("frameHeight", cssSizeProp("height", "420px"))}`}
         ></iframe>
       {/key}
     </div>

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -84,6 +85,10 @@ func (s *Supervisor) Run(ctx context.Context) error {
 		err = cmd.Wait()
 		if err == nil {
 			log.Printf("chrome exited")
+			if s.monitorDetachedChrome(ctx, usedPath, restartCount) {
+				delay = baseDelay
+				continue
+			}
 		} else if errors.Is(ctx.Err(), context.Canceled) {
 			return ctx.Err()
 		} else {
@@ -111,6 +116,37 @@ func (s *Supervisor) Run(ctx context.Context) error {
 			return err
 		}
 		delay = nextDelay(delay, maxDelay)
+	}
+}
+
+func (s *Supervisor) monitorDetachedChrome(ctx context.Context, usedPath string, restartCount int) bool {
+	if !s.cfg.PlatformEnabled || s.cfg.PlatformDebugPort <= 0 {
+		return false
+	}
+	if !chromeDebugReachable(ctx, s.cfg.PlatformDebugPort, 5*time.Second) {
+		return false
+	}
+
+	log.Printf("chrome launcher exited but remote debugging is still reachable; monitoring existing chrome")
+	s.status.Write(status.State{
+		Event:        "chrome_detached",
+		ChromePath:   usedPath,
+		RestartCount: restartCount,
+	})
+
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return true
+		case <-ticker.C:
+			if !chromeDebugReachable(ctx, s.cfg.PlatformDebugPort, 0) {
+				log.Printf("detached chrome remote debugging is no longer reachable")
+				return false
+			}
+		}
 	}
 }
 
@@ -202,6 +238,44 @@ func chromeArgs(cfg config.Config) []string {
 		args = append(args, launchURL)
 	}
 	return args
+}
+
+func chromeDebugReachable(ctx context.Context, port int, wait time.Duration) bool {
+	deadline := time.Now().Add(wait)
+	for {
+		if isChromeDebugReachable(ctx, port) {
+			return true
+		}
+		if wait <= 0 || time.Now().After(deadline) {
+			return false
+		}
+		timer := time.NewTimer(250 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return false
+		case <-timer.C:
+		}
+	}
+}
+
+func isChromeDebugReachable(ctx context.Context, port int) bool {
+	reqCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+
+	url := fmt.Sprintf("http://127.0.0.1:%d/json/version", port)
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, url, nil)
+	if err != nil {
+		return false
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+
+	return resp.StatusCode >= 200 && resp.StatusCode < 300
 }
 
 func nextDelay(current time.Duration, max time.Duration) time.Duration {
