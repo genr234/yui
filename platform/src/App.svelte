@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
+  import OnScreenKeyboard from "./components/OnScreenKeyboard.svelte";
   import Sidebar from "./components/Sidebar.svelte";
   import TitleBar from "./components/TitleBar.svelte";
   import Router from "./pages/Router.svelte";
@@ -285,4 +286,6 @@
       </section>
     </div>
   {/if}
+
+  <OnScreenKeyboard />
 {/if}
