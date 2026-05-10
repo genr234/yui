@@ -18,10 +18,9 @@ export default {
           title: "fruit ninja game",
           referrerPolicy: "no-referrer",
           allow: "autoplay; picture-in-picture; fullscreen",
-          blocker: false,
+          blocker: true,
           credentialless: false,
           width: "100%",
-          frameHeight: "calc(100dvh - 170px)",
           minHeight: 620,
         }),
       ]);
