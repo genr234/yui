@@ -32,13 +32,6 @@ export const routes: RouteDefinition[] = [
 		component: Apps,
 	},
 	{
-		id: "tools",
-		label: "Tools",
-		defaultSubtitle: "Controller-backed maintenance actions",
-		icon: WrenchIcon,
-		component: Tools,
-	},
-	{
 		id: "settings",
 		label: "Settings",
 		defaultSubtitle: "Runtime paths and platform configuration",
