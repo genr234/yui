@@ -7,10 +7,20 @@
   import RefreshCwIcon from "lucide-svelte/icons/refresh-cw";
   import TrashIcon from "lucide-svelte/icons/trash-2";
   import {
-    appCatalog,
-    appSources,
-    catalogEntryId,
-    discoverApps,
+    addAppSource,
+    appCatalogEntryId,
+    fallbackAppIcon,
+    findApp,
+    firstAvailableAppId,
+    installedAppIds,
+    installCatalogApp as installAppFromCatalog,
+    isImageAppIcon,
+    loadAppsLibrary,
+    refreshAppSource,
+    removeAppSource,
+    uninstallApp as uninstallInstalledApp,
+  } from "../apps";
+  import {
     type YuiAppSource,
     type YuiCatalogEntry,
     type YuiDevApp,
@@ -99,10 +109,8 @@
     };
   });
 
-  $: selected = apps.find((app) => app.id === selectedId) ?? apps[0];
-  $: installedIds = new Set(
-    apps.filter((app) => app.installed).map((app) => app.id),
-  );
+  $: selected = findApp(apps, selectedId) ?? apps[0];
+  $: installedIds = installedAppIds(apps);
   $: selectedPermissions = selected ? declaredPermissions(selected.app) : [];
   $: selectedPermissionState = selected
     ? getAppPermissionState(selected.id)
@@ -118,16 +126,11 @@
   }
 
   async function loadAppsArea() {
-    const [nextApps, nextSources, nextCatalog] = await Promise.all([
-      discoverApps(),
-      appSources.list().catch(() => []),
-      appCatalog.list().catch(() => []),
-    ]);
-    apps = nextApps;
-    sources = nextSources;
-    catalog = nextCatalog;
-    selectedId =
-      apps.find((app) => app.id === selectedId)?.id ?? apps[0]?.id ?? "";
+    const library = await loadAppsLibrary();
+    apps = library.apps;
+    sources = library.sources;
+    catalog = library.catalog;
+    selectedId = firstAvailableAppId(apps, selectedId);
   }
 
   async function addSource() {
@@ -137,8 +140,7 @@
     appError = "";
     appMessage = "";
     try {
-      const source = await appSources.add(url);
-      await appSources.refresh(source.id);
+      await addAppSource(url);
       sourceURL = "";
       appMessage = "App source added and refreshed.";
       await loadAppsArea();
@@ -154,7 +156,7 @@
     appError = "";
     appMessage = "";
     try {
-      await appSources.refresh(id);
+      await refreshAppSource(id);
       appMessage = "App source refreshed.";
       await loadAppsArea();
     } catch (error) {
@@ -170,7 +172,7 @@
     appError = "";
     appMessage = "";
     try {
-      await appSources.remove(id);
+      await removeAppSource(id);
       appMessage = "App source removed.";
       await loadAppsArea();
     } catch (error) {
@@ -181,11 +183,11 @@
   }
 
   async function installCatalogApp(entry: YuiCatalogEntry) {
-    appBusy = `install:${catalogEntryId(entry)}`;
+    appBusy = `install:${appCatalogEntryId(entry)}`;
     appError = "";
     appMessage = "";
     try {
-      await appCatalog.install(catalogEntryId(entry));
+      await installAppFromCatalog(entry);
       appMessage = `${entry.app.name} installed.`;
       await loadAppsArea();
     } catch (error) {
@@ -200,7 +202,7 @@
     appError = "";
     appMessage = "";
     try {
-      await appCatalog.uninstall(id);
+      await uninstallInstalledApp(id);
       appMessage = "App uninstalled.";
       await loadAppsArea();
     } catch (error) {
@@ -359,14 +361,6 @@
     } else {
       dragX = 0;
     }
-  }
-
-  function isImageIcon(icon?: string) {
-    return Boolean(
-      icon &&
-        (/^(https?:|data:|\/|\.)/.test(icon) ||
-          /\.(png|jpe?g|gif|webp|svg)$/i.test(icon)),
-    );
   }
 
   function shortCommit(value?: string) {
@@ -568,10 +562,10 @@
                 on:click={() => openApp(app)}
               >
                 <span class="app-icon">
-                  {#if isImageIcon(app.app.icon)}
+                  {#if isImageAppIcon(app.app.icon)}
                     <img src={app.app.icon} alt="" class="app-row-icon-img" />
                   {:else}
-                    <span>{app.app.icon ?? app.name.slice(0, 4)}</span>
+                    <span>{fallbackAppIcon(app)}</span>
                   {/if}
                 </span>
                 <span>
@@ -745,10 +739,10 @@
         {#if selected}
           <section class="settings-app-hero">
             <span class="app-icon">
-              {#if isImageIcon(selected.app.icon)}
+              {#if isImageAppIcon(selected.app.icon)}
                 <img src={selected.app.icon} alt="" />
               {:else}
-                <span>{selected.app.icon ?? selected.name.slice(0, 4)}</span>
+                <span>{fallbackAppIcon(selected)}</span>
               {/if}</span
             >
             <div>

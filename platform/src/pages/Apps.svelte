@@ -6,10 +6,18 @@
   import RotateCwIcon from "lucide-svelte/icons/rotate-cw";
   import EmptyState from "../components/EmptyState.svelte";
   import AppHost from "../components/apps/AppHost.svelte";
-  import { discoverDevApps, type YuiDevApp } from "../sdk/apps";
+  import {
+    appHasPermission,
+    fallbackAppIcon,
+    findApp,
+    groupAppsByCategory,
+    isGameAppCategory,
+    isImageAppIcon,
+    loadApps,
+  } from "../apps";
+  import type { YuiDevApp } from "../sdk/apps";
 
   let apps: YuiDevApp[] = [];
-  let selectedId = "";
   let launchedId = "";
   let reloadKey = 0;
   let error = "";
@@ -27,8 +35,7 @@
 
     void (async () => {
       try {
-        apps = await discoverDevApps();
-        selectedId = apps[0]?.id ?? "";
+        apps = await loadApps();
       } catch (err) {
         error = err instanceof Error ? err.message : String(err);
       } finally {
@@ -45,39 +52,10 @@
     setShellFullscreen(false);
   });
 
-  $: selected = apps.find((app) => app.id === selectedId) ?? apps[0];
-  $: launched = apps.find((app) => app.id === launchedId);
-  $: categories = groupApps(apps);
-
-  function groupApps(items: YuiDevApp[]) {
-    const groups = new Map<string, YuiDevApp[]>();
-    for (const app of items) {
-      const category = normalizeCategory(app.app.category);
-      groups.set(category, [...(groups.get(category) ?? []), app]);
-    }
-    return [...groups.entries()].map(([name, items]) => ({ name, items }));
-  }
-
-  function normalizeCategory(category?: string) {
-    const value = category?.trim();
-    if (!value) return "Utilities";
-    return value.charAt(0).toUpperCase() + value.slice(1);
-  }
-
-  function isImageIcon(icon?: string) {
-    return Boolean(
-      icon &&
-        (/^(https?:|data:|\/|\.)/.test(icon) ||
-          /\.(png|jpe?g|gif|webp|svg)$/i.test(icon)),
-    );
-  }
-
-  function isGameCategory(category: string) {
-    return category.toLowerCase() === "games";
-  }
+  $: launched = findApp(apps, launchedId);
+  $: categories = groupAppsByCategory(apps);
 
   function launch(app: YuiDevApp) {
-    selectedId = app.id;
     launchedId = app.id;
     reloadKey += 1;
     announceLaunched(true);
@@ -90,7 +68,7 @@
   }
 
   function toggleFullscreen() {
-    if (!launched?.app.permissions?.includes("fullscreen")) return;
+    if (!appHasPermission(launched, "fullscreen")) return;
     setShellFullscreen(!shellFullscreen);
   }
 
@@ -139,7 +117,7 @@
       >
         <RotateCwIcon size={18} strokeWidth={2.4} />
       </button>
-      {#if launched.app.permissions?.includes("fullscreen")}
+      {#if appHasPermission(launched, "fullscreen")}
         <button
           class="icon-button"
           aria-label={shellFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
@@ -164,29 +142,29 @@
         <div class="app-shelf">
           {#each category.items as app}
             <button
-              class:game={isGameCategory(category.name)}
+              class:game={isGameAppCategory(category.name)}
               class="app-tile"
               on:click={() => launch(app)}
             >
               <span class="app-tile-icon" aria-hidden="true">
-                {#if isGameCategory(category.name)}
+                {#if isGameAppCategory(category.name)}
                   <span class="cartridge">
                     <span class="cartridge-brand">YUI</span>
                     <span class="cartridge-ridges left"></span>
                     <span class="cartridge-ridges right"></span>
                     <span class="cartridge-label">
-                      {#if isImageIcon(app.app.icon)}
+                      {#if isImageAppIcon(app.app.icon)}
                         <img src={app.app.icon} alt="" />
                       {:else}
-                        <span>{app.app.icon ?? app.name.slice(0, 4)}</span>
+                        <span>{fallbackAppIcon(app)}</span>
                       {/if}
                     </span>
                     <span class="cartridge-notch"></span>
                   </span>
-                {:else if isImageIcon(app.app.icon)}
+                {:else if isImageAppIcon(app.app.icon)}
                   <img src={app.app.icon} alt="" width="64" height="64" />
                 {:else}
-                  <span>{app.app.icon ?? "◇"}</span>
+                  <span>{fallbackAppIcon(app)}</span>
                 {/if}
               </span>
               <span class="app-tile-name">{app.name}</span>
