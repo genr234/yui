@@ -6,6 +6,7 @@
   import Home from "./Home.svelte";
   import Settings from "./Settings.svelte";
   import Tools from "./Tools.svelte";
+  import Plugins from "./Plugins.svelte";
 
   export let section: Section = "home";
   export let homeActions: ActionItem[] = [];
@@ -32,6 +33,14 @@
   aria-hidden={section !== "apps"}
 >
   <Apps on:launched={(event) => dispatch("appLaunched", event.detail)} />
+</div>
+
+<div
+  class="router-panel"
+  hidden={section !== "plugins"}
+  aria-hidden={section !== "plugins"}
+>
+  <Plugins />
 </div>
 
 <div

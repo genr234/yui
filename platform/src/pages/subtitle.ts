@@ -1,16 +1,18 @@
-import { loadApps } from "../apps";
 import type { RouteDefinition } from "./routes";
 
 export type SubtitleContext = {
-}
-
-const apps = await loadApps().then(apps => apps.length).catch(() => 0);
+	appCount?: number | null;
+	pluginCount?: number | null;
+};
 
 export function resolveSubtitle(route: RouteDefinition, ctx: SubtitleContext): string {
-    if (route.id === "apps") {
-        return apps === 1
-            ? "1 app installed"
-            : `${apps} apps`;
-    }
-    return route.defaultSubtitle
+	if (route.id === "apps" && typeof ctx.appCount === "number") {
+		return ctx.appCount === 1 ? "1 app installed" : `${ctx.appCount} apps installed`;
+	}
+	if (route.id === "plugins" && typeof ctx.pluginCount === "number") {
+		return ctx.pluginCount === 1
+			? "1 plugin installed"
+			: `${ctx.pluginCount} plugins installed`;
+	}
+	return route.defaultSubtitle;
 }

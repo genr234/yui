@@ -10,37 +10,39 @@ export type PermissionRequest = {
 		name: string;
 	};
 	permission: YuiPermission;
+	permissions?: YuiPermission[];
 	resolve: (granted: boolean) => void;
+	resolveAll?: (granted: boolean) => void;
 };
 
 const permissionCopy: Record<string, { label: string; description: string }> = {
 	storage: {
 		label: "Storage",
-		description: "Save and read this app's local data.",
+		description: "Save local data.",
 	},
 	commands: {
 		label: "Commands",
-		description: "Add actions to yui command surfaces.",
+		description: "Add app actions.",
 	},
 	"clipboard.read": {
 		label: "Read clipboard",
-		description: "Read text from the clipboard.",
+		description: "Read copied text.",
 	},
 	"clipboard.write": {
 		label: "Write clipboard",
-		description: "Write text to the clipboard.",
+		description: "Copy text.",
 	},
 	notifications: {
 		label: "Notifications",
-		description: "Send system notifications.",
+		description: "Send alerts.",
 	},
 	"network.fetch": {
 		label: "Network",
-		description: "Make remote network requests.",
+		description: "Fetch remote data.",
 	},
 	fullscreen: {
 		label: "Fullscreen",
-		description: "Expand this app to fill the yui surface.",
+		description: "Fill the Yui surface.",
 	},
 };
 
@@ -61,8 +63,8 @@ export function describePermission(permission: YuiPermission) {
 	if (permission.startsWith("embed:")) {
 		const origin = permission.slice("embed:".length);
 		return {
-			label: `Embed ${origin}`,
-			description: `Allow this app to show ${origin} in an embedded website view.`,
+			label: "Embed website",
+			description: origin,
 		};
 	}
 
@@ -113,13 +115,23 @@ export function requestAppPermission(app: YuiSimpleApp, permission: YuiPermissio
 	}
 
 	return new Promise((resolve) => {
+		const pending = declaredPermissions(app).filter(
+			(item) => !hasPermissionDecision(app.id, item),
+		);
 		window.dispatchEvent(
 			new CustomEvent<PermissionRequest>("yui:permission-request", {
 				detail: {
 					app: { id: app.id, name: app.name },
 					permission,
+					permissions: pending.length ? pending : [permission],
 					resolve(granted) {
 						setAppPermission(app.id, permission, granted);
+						resolve(granted);
+					},
+					resolveAll(granted) {
+						for (const item of pending.length ? pending : [permission]) {
+							setAppPermission(app.id, item, granted);
+						}
 						resolve(granted);
 					},
 				},
