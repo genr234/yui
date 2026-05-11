@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import OnScreenKeyboard from "./components/OnScreenKeyboard.svelte";
+  import PermissionCards from "./components/PermissionCards.svelte";
   import Sidebar from "./components/Sidebar.svelte";
   import TitleBar from "./components/TitleBar.svelte";
   import Router from "./pages/Router.svelte";
@@ -16,11 +17,13 @@
   import ChromeIcon from "lucide-svelte/icons/chrome";
   import FolderIcon from "lucide-svelte/icons/folder";
   import RefreshCwIcon from "lucide-svelte/icons/refresh-cw";
+  import { loadApps } from "./apps";
   import { resolveSubtitle } from "@/pages/subtitle";
   import {
     describePermission,
     type PermissionRequest,
   } from "@/sdk/apps/permissions";
+  import { plugins } from "@/sdk/plugins";
 
   let open = false;
   let section: Section = "home";
@@ -34,6 +37,8 @@
   let permissionPrompt: PermissionRequest | null = null;
   let closing = false;
   let closeTimer: number | undefined;
+  let appCount: number | null = null;
+  let pluginCount: number | null = null;
 
   const sections: SectionItem[] = routes;
 
@@ -75,10 +80,20 @@
       diagnostics = diagnosticsResult?.text ?? "";
       config = configResult;
       bridgeState = "online";
+      void refreshSubtitles();
     } catch (error) {
       bridgeState = "offline";
       diagnostics = error instanceof Error ? error.message : String(error);
     }
+  }
+
+  async function refreshSubtitles() {
+    const [appsResult, pluginsResult] = await Promise.all([
+      loadApps().then((items) => items.length).catch(() => null),
+      plugins.list().then((items) => items.length).catch(() => null),
+    ]);
+    appCount = appsResult;
+    pluginCount = pluginsResult;
   }
 
   function startPress() {
@@ -104,6 +119,7 @@
     window.clearTimeout(closeTimer);
     closing = false;
     open = true;
+    void refreshSubtitles();
   }
 
   function closeMenu() {
@@ -136,8 +152,13 @@
     permissionPrompt = null;
   }
 
+  function answerAllPermissions(granted: boolean) {
+    permissionPrompt?.resolveAll?.(granted);
+    permissionPrompt = null;
+  }
+
   $: activeRoute = findRoute(section);
-  $: activeSubtitle = resolveSubtitle(activeRoute, { appCount: 1 });
+  $: activeSubtitle = resolveSubtitle(activeRoute, { appCount, pluginCount });
   $: shellRendered = open || closing || alwaysOpen();
   $: shellClosing = closing && !open && !alwaysOpen();
   $: showTitleBar = !(section === "apps" && appRouteActive);
@@ -266,14 +287,20 @@
         aria-labelledby="permission-title"
       >
         <div>
-          <h2 id="permission-title">
-            {permissionPrompt.app.name} wants {describePermission(
-              permissionPrompt.permission,
-            ).label.toLowerCase()}
-          </h2>
-          <p>{describePermission(permissionPrompt.permission).description}</p>
+          <h2 id="permission-title">{permissionPrompt.app.name} wants access</h2>
+          <p>You can change this later in Settings.</p>
         </div>
+        <PermissionCards
+          permissions={permissionPrompt.permissions ?? [permissionPrompt.permission]}
+          granted={[permissionPrompt.permission]}
+          describe={describePermission}
+          readonly
+        />
         <div class="permission-actions">
+          <button
+            class="permission-secondary"
+            on:click={() => answerAllPermissions(false)}>Deny all</button
+          >
           <button
             class="permission-secondary"
             on:click={() => answerPermission(false)}>Deny</button
@@ -281,6 +308,10 @@
           <button
             class="permission-primary"
             on:click={() => answerPermission(true)}>Grant</button
+          >
+          <button
+            class="permission-primary"
+            on:click={() => answerAllPermissions(true)}>Allow all</button
           >
         </div>
       </section>

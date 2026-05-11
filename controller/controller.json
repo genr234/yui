@@ -1,0 +1,33 @@
+{
+  "chrome_path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "url": "https://sicilykioskuser-acireale.flazio.com/?DIGI=20\u0026id_totem=20",
+  "flags": [
+    "--kiosk",
+    "--user-agent=chrome",
+    "--disable-pinch",
+    "--disable-session-restore",
+    "--js-flags=--expose-gc",
+    "--disable-session-crashed-bubble",
+    "--disable-infobars",
+    "--no-first-run",
+    "--fast",
+    "--fast-start",
+    "--disable-tab-switcher",
+    "--ignore-certificate-errors",
+    "--enable-low-res-tiling"
+  ],
+  "user_data_dir": "/Users/sunlightdev/yui/controller/chrome-profile",
+  "restart_delay_seconds": 3,
+  "restart_max_seconds": 30,
+  "log_path": "/Users/sunlightdev/yui/controller/controller.log",
+  "status_path": "/Users/sunlightdev/yui/controller/status.json",
+  "store_path": "/Users/sunlightdev/yui/controller/yui-store.db",
+  "platform_enabled": true,
+  "platform_http_addr": "127.0.0.1:7072",
+  "platform_bridge_addr": "127.0.0.1:7071",
+  "platform_remote_debugging_port": 9222,
+  "platform_dev_server": "",
+  "auto_update_enabled": true,
+  "auto_update_repo": "genr234/yui",
+  "auto_update_interval_minutes": 30
+}

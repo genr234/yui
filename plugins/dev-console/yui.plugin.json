@@ -1,0 +1,6 @@
+{
+  "schema": "yui.local-plugin.v0",
+  "type": "starlark",
+  "entry": "./plugin.star",
+  "dev": true
+}

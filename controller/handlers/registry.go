@@ -26,6 +26,7 @@ type Registry struct {
 	storeMu   sync.Mutex
 	store     *store.DB
 	migrated  bool
+	plugins   *PluginManager
 }
 
 func NewRegistry(cfg config.Config) *Registry {
@@ -41,6 +42,8 @@ func NewRegistry(cfg config.Config) *Registry {
 	r.Register(ProcessCommands()...)
 	r.Register(NetworkCommands()...)
 	r.Register(AppsCommands()...)
+	r.plugins = NewPluginManager(r)
+	r.Register(PluginCommands()...)
 	r.Register(UpdateCommands()...)
 	r.Register(EmbedBlockerCommands()...)
 	return r
@@ -85,6 +88,9 @@ func (r *Registry) Store() (*store.DB, error) {
 }
 
 func (r *Registry) Close() error {
+	if r.plugins != nil {
+		r.plugins.Stop()
+	}
 	r.storeMu.Lock()
 	defer r.storeMu.Unlock()
 

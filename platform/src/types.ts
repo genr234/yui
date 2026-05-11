@@ -1,6 +1,6 @@
 import type { ComponentType } from "svelte";
 
-export type Section = "home" | "apps" | "tools" | "settings" | "about";
+export type Section = "home" | "apps" | "tools" | "plugins" | "settings" | "about";
 
 export type BridgeState = "connecting" | "online" | "offline" | string;
 

@@ -6,6 +6,8 @@
   import PlusIcon from "lucide-svelte/icons/plus";
   import RefreshCwIcon from "lucide-svelte/icons/refresh-cw";
   import TrashIcon from "lucide-svelte/icons/trash-2";
+  import PermissionCards from "../components/PermissionCards.svelte";
+  import Plugins from "./Plugins.svelte";
   import {
     addAppSource,
     appCatalogEntryId,
@@ -59,7 +61,7 @@
   let sources: YuiAppSource[] = [];
   let catalog: YuiCatalogEntry[] = [];
   let selectedId = "";
-  let page: "root" | "apps" | "app" | "update" | "sources" = "root";
+  let page: "root" | "apps" | "app" | "plugins" | "update" | "sources" = "root";
   let pageDirection: "forward" | "back" = "forward";
   let dragging = false;
   let dragStartX = 0;
@@ -79,6 +81,11 @@
   let appBusy = "";
   let appMessage = "";
   let appError = "";
+  let pendingAppInstall: YuiCatalogEntry | null = null;
+  let pendingAppPermissions: string[] = [];
+  let pluginPageTitle = "Plugins";
+  let pluginPageCanGoBack = false;
+  let pluginPageBack: (() => void) | null = null;
 
   onMount(() => {
     const refresh = () => {
@@ -188,6 +195,13 @@
     appMessage = "";
     try {
       await installAppFromCatalog(entry);
+      for (const permission of entry.app.permissions ?? []) {
+        setAppPermission(
+          entry.app.id,
+          permission,
+          pendingAppPermissions.includes(permission),
+        );
+      }
       appMessage = `${entry.app.name} installed.`;
       await loadAppsArea();
     } catch (error) {
@@ -241,6 +255,26 @@
     permissionVersion += 1;
   }
 
+  function setAllSelectedPermissions(granted: boolean) {
+    if (!selected) return;
+    for (const permission of selectedPermissions) {
+      setAppPermission(selected.id, permission, granted);
+    }
+    permissionVersion += 1;
+  }
+
+  function startAppInstall(entry: YuiCatalogEntry) {
+    pendingAppInstall = entry;
+    pendingAppPermissions = [...(entry.app.permissions ?? [])];
+  }
+
+  function togglePendingAppPermission(permission: string, granted: boolean) {
+    const next = new Set(pendingAppPermissions);
+    if (granted) next.add(permission);
+    else next.delete(permission);
+    pendingAppPermissions = [...next];
+  }
+
   async function clearEmbedOrigin(origin?: string) {
     if (!selected) return;
     await clearEmbedStorage(selected.id, origin);
@@ -266,7 +300,7 @@
   }
 
   function goTo(
-    nextPage: "root" | "apps" | "app" | "update" | "sources",
+    nextPage: "root" | "apps" | "app" | "plugins" | "update" | "sources",
     direction: "forward" | "back",
   ) {
     pageDirection = direction;
@@ -276,10 +310,27 @@
 
   function previousPage() {
     if (page === "app") return "apps";
+    if (page === "plugins") return pluginPageCanGoBack ? "plugins" : "root";
     if (page === "sources") return "apps";
     if (page === "update") return "root";
     if (page === "apps") return "root";
     return "root";
+  }
+
+  function handlePluginPage(
+    event: CustomEvent<{ title: string; canGoBack: boolean; back: () => void }>,
+  ) {
+    pluginPageTitle = event.detail.title;
+    pluginPageCanGoBack = event.detail.canGoBack;
+    pluginPageBack = event.detail.back;
+  }
+
+  function backFromPlugins() {
+    if (pluginPageCanGoBack && pluginPageBack) {
+      pluginPageBack();
+      return;
+    }
+    goTo("root", "back");
   }
 
   async function loadUpdateStatus(showBusy = true) {
@@ -411,6 +462,16 @@
             <span>
               <span>Auto update</span>
               <small>{updateSummary()}</small>
+            </span>
+            <ChevronRightIcon size={18} strokeWidth={2.4} />
+          </button>
+          <button
+            class="settings-row"
+            on:click={() => goTo("plugins", "forward")}
+          >
+            <span>
+              <span>Plugins</span>
+              <small>Sources, installs, permissions, settings</small>
             </span>
             <ChevronRightIcon size={18} strokeWidth={2.4} />
           </button>
@@ -582,6 +643,24 @@
           </section>
         {/if}
       </div>
+    {:else if page === "plugins"}
+      <div class="settings-page settings-page-motion {pageDirection}">
+        <nav class="settings-nav" aria-label="Settings navigation">
+          <button
+            class="icon-button"
+            aria-label={pluginPageCanGoBack
+              ? "Back to plugins"
+              : "Back to settings"}
+            title={pluginPageCanGoBack ? "Back to plugins" : "Back to settings"}
+            on:click={backFromPlugins}
+          >
+            <ArrowLeftIcon size={18} strokeWidth={2.4} />
+          </button>
+          <span>{pluginPageTitle}</span>
+        </nav>
+
+        <Plugins mode="manage" embedded hideNav on:page={handlePluginPage} />
+      </div>
     {:else if page === "sources"}
       <div class="settings-page settings-page-motion {pageDirection}">
         <nav class="settings-nav" aria-label="Settings navigation">
@@ -711,7 +790,7 @@
                     class="settings-inline-button"
                     disabled={Boolean(appBusy)}
                     title="Install signed app"
-                    on:click={() => installCatalogApp(entry)}
+                    on:click={() => startAppInstall(entry)}
                   >
                     <DownloadIcon size={14} strokeWidth={2.4} />
                     Install
@@ -787,20 +866,14 @@
                 </span>
               </div>
             {:else}
-              {#each selectedPermissions as permission}
-                <label class="settings-row permission-row">
-                  <span>
-                    <span>{describePermission(permission).label}</span>
-                    <small>{describePermission(permission).description}</small>
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={permissionGranted(permission)}
-                    on:change={(event) =>
-                      togglePermission(permission, event.currentTarget.checked)}
-                  />
-                </label>
-              {/each}
+              <div class="settings-row static">
+                <PermissionCards
+                  permissions={selectedPermissions}
+                  granted={selectedPermissions.filter(permissionGranted)}
+                  describe={describePermission}
+                  onToggle={togglePermission}
+                />
+              </div>
             {/if}
           </section>
 
@@ -878,3 +951,43 @@
     {/if}
   {/key}
 </section>
+
+{#if pendingAppInstall}
+  <div class="permission-scrim" role="presentation">
+    <section
+      class="permission-dialog permission-dialog-wide"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div>
+        <h2>Install {pendingAppInstall.app.name}</h2>
+        <p>Choose what starts enabled.</p>
+      </div>
+      <PermissionCards
+        permissions={pendingAppInstall.app.permissions ?? []}
+        granted={pendingAppPermissions}
+        describe={describePermission}
+        onToggle={togglePendingAppPermission}
+        onAllowAll={() =>
+          (pendingAppPermissions = [
+            ...(pendingAppInstall?.app.permissions ?? []),
+          ])}
+        onDenyAll={() => (pendingAppPermissions = [])}
+      />
+      <div class="permission-actions">
+        <button
+          class="permission-secondary"
+          on:click={() => (pendingAppInstall = null)}>Cancel</button
+        >
+        <button
+          class="permission-primary"
+          on:click={() => {
+            const entry = pendingAppInstall;
+            pendingAppInstall = null;
+            if (entry) void installCatalogApp(entry);
+          }}>Install</button
+        >
+      </div>
+    </section>
+  </div>
+{/if}

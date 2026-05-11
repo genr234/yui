@@ -232,6 +232,7 @@ export default {
             title: state.selected?.title || "youtube video",
             referrerPolicy: "strict-origin-when-cross-origin",
             allow: "autoplay; encrypted-media; picture-in-picture",
+            transport: "direct",
             height: 430
           })
         ),

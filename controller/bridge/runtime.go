@@ -36,6 +36,7 @@ func Start(ctx context.Context, cfg config.Config) {
 	}
 
 	r := New(cfg)
+	r.commands.StartPlugins(ctx)
 	go r.serve(ctx)
 }
 

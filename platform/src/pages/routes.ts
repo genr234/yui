@@ -4,12 +4,14 @@ import InfoIcon from "lucide-svelte/icons/info";
 import LayoutGridIcon from "lucide-svelte/icons/layout-grid";
 import SettingsIcon from "lucide-svelte/icons/settings";
 import WrenchIcon from "lucide-svelte/icons/wrench";
+import BlocksIcon from "lucide-svelte/icons/blocks";
 import About from "./About.svelte";
 import Apps from "./Apps.svelte";
 import Home from "./Home.svelte";
 import Settings from "./Settings.svelte";
 import Tools from "./Tools.svelte";
 import type { Section, SectionItem } from "../types";
+import Plugins from "./Plugins.svelte";
 
 export type RouteDefinition = SectionItem & {
 	component: ComponentType;
@@ -20,7 +22,7 @@ export const routes: RouteDefinition[] = [
 	{
 		id: "home",
 		label: "Home",
-		defaultSubtitle: "System overview and quick actions",
+		defaultSubtitle: "",
 		icon: HouseIcon,
 		component: Home,
 	},
@@ -32,16 +34,23 @@ export const routes: RouteDefinition[] = [
 		component: Apps,
 	},
 	{
+		id: "plugins",
+		label: "Plugins",
+		defaultSubtitle: "No plugins installed... yet...",
+		icon: BlocksIcon,
+		component: Plugins,
+	},
+	{
 		id: "settings",
 		label: "Settings",
-		defaultSubtitle: "Runtime paths and platform configuration",
+		defaultSubtitle: "",
 		icon: SettingsIcon,
 		component: Settings,
 	},
 	{
 		id: "about",
 		label: "About",
-		defaultSubtitle: "Project notes and attribution",
+		defaultSubtitle: "",
 		icon: InfoIcon,
 		component: About,
 	},
