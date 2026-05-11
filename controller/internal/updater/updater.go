@@ -291,12 +291,39 @@ func installedBatchPath() (string, error) {
 }
 
 func updateAvailable(current string, latest string) bool {
-	current = strings.TrimSpace(strings.ToLower(current))
-	latest = strings.TrimSpace(strings.ToLower(latest))
-	return latest != "" && current != "" && current != "dev" && current != latest
+	current = normalizeCommit(current)
+	latest = normalizeCommit(latest)
+	if latest == "" || current == "" || current == "dev" {
+		return false
+	}
+	if current == latest {
+		return false
+	}
+	if isHexCommit(current) && isHexCommit(latest) {
+		return !strings.HasPrefix(current, latest) && !strings.HasPrefix(latest, current)
+	}
+	return true
 }
 
 func validRepo(repo string) bool {
 	parts := strings.Split(repo, "/")
 	return len(parts) == 2 && parts[0] != "" && parts[1] != "" && !strings.Contains(repo, "..")
+}
+
+func normalizeCommit(commit string) string {
+	commit = strings.TrimSpace(strings.ToLower(commit))
+	return strings.TrimPrefix(commit, "kiosk-")
+}
+
+func isHexCommit(commit string) bool {
+	if len(commit) < 7 {
+		return false
+	}
+	for _, r := range commit {
+		if (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') {
+			continue
+		}
+		return false
+	}
+	return true
 }
