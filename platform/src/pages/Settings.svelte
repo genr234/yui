@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { createEventDispatcher, onMount } from "svelte";
   import ChevronRightIcon from "lucide-svelte/icons/chevron-right";
   import ArrowLeftIcon from "lucide-svelte/icons/arrow-left";
   import DownloadIcon from "lucide-svelte/icons/download";
@@ -44,6 +44,10 @@
 
   export let details: DetailItem[] = [];
   export let config: any = null;
+  export let pluginSettingsRequest: { pluginId: string; nonce: number } | null =
+    null;
+
+  const dispatch = createEventDispatcher<{ pluginSettingsBack: void }>();
 
   type UpdateStatus = {
     enabled: boolean;
@@ -86,6 +90,9 @@
   let pluginPageTitle = "Plugins";
   let pluginPageCanGoBack = false;
   let pluginPageBack: (() => void) | null = null;
+  let forwardedPluginRequest: { pluginId: string; nonce: number } | null = null;
+  let consumedPluginRequestNonce = 0;
+  let returnToPluginsTab = false;
 
   onMount(() => {
     const refresh = () => {
@@ -117,6 +124,15 @@
   });
 
   $: selected = findApp(apps, selectedId) ?? apps[0];
+  $: if (
+    pluginSettingsRequest &&
+    pluginSettingsRequest.nonce !== consumedPluginRequestNonce
+  ) {
+    consumedPluginRequestNonce = pluginSettingsRequest.nonce;
+    forwardedPluginRequest = pluginSettingsRequest;
+    returnToPluginsTab = true;
+    goTo("plugins", "forward");
+  }
   $: installedIds = installedAppIds(apps);
   $: selectedPermissions = selected ? declaredPermissions(selected.app) : [];
   $: selectedPermissionState = selected
@@ -326,8 +342,14 @@
   }
 
   function backFromPlugins() {
-    if (pluginPageCanGoBack && pluginPageBack) {
-      pluginPageBack();
+    if (pluginPageCanGoBack) {
+      if (returnToPluginsTab) {
+        returnToPluginsTab = false;
+        forwardedPluginRequest = null;
+        dispatch("pluginSettingsBack");
+        return;
+      }
+      pluginPageBack?.();
       return;
     }
     goTo("root", "back");
@@ -659,7 +681,13 @@
           <span>{pluginPageTitle}</span>
         </nav>
 
-        <Plugins mode="manage" embedded hideNav on:page={handlePluginPage} />
+        <Plugins
+          mode="manage"
+          embedded
+          hideNav
+          openPluginRequest={forwardedPluginRequest}
+          on:page={handlePluginPage}
+        />
       </div>
     {:else if page === "sources"}
       <div class="settings-page settings-page-motion {pageDirection}">

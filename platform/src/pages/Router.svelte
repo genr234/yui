@@ -14,8 +14,12 @@
   export let settingDetails: DetailItem[] = [];
   export let config: any = null;
   export let diagnostics = "";
+  export let pluginSettingsRequest: { pluginId: string; nonce: number } | null =
+    null;
   const dispatch = createEventDispatcher<{
     appLaunched: { active: boolean };
+    pluginSettings: { pluginId: string };
+    pluginSettingsBack: void;
   }>();
 </script>
 
@@ -40,7 +44,9 @@
   hidden={section !== "plugins"}
   aria-hidden={section !== "plugins"}
 >
-  <Plugins />
+  <Plugins
+    on:settings={(event) => dispatch("pluginSettings", event.detail)}
+  />
 </div>
 
 <div
@@ -56,7 +62,12 @@
   hidden={section !== "settings"}
   aria-hidden={section !== "settings"}
 >
-  <Settings details={settingDetails} {config} />
+  <Settings
+    details={settingDetails}
+    {config}
+    {pluginSettingsRequest}
+    on:pluginSettingsBack={() => dispatch("pluginSettingsBack")}
+  />
 </div>
 
 <div
