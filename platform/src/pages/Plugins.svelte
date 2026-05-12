@@ -1,6 +1,8 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
   import { onMount } from "svelte";
+  import { tweened } from "svelte/motion";
+  import { cubicOut } from "svelte/easing";
   import ArrowLeftIcon from "lucide-svelte/icons/arrow-left";
   import CheckCircleIcon from "lucide-svelte/icons/check-circle-2";
   import ChevronRightIcon from "lucide-svelte/icons/chevron-right";
@@ -8,6 +10,7 @@
   import PlayIcon from "lucide-svelte/icons/play";
   import PlusIcon from "lucide-svelte/icons/plus";
   import RefreshCwIcon from "lucide-svelte/icons/refresh-cw";
+  import SettingsIcon from "lucide-svelte/icons/settings";
   import TrashIcon from "lucide-svelte/icons/trash-2";
   import XCircleIcon from "lucide-svelte/icons/x-circle";
   import PermissionCards from "../components/PermissionCards.svelte";
@@ -27,10 +30,18 @@
   export let mode: "toggle" | "manage" = "toggle";
   export let embedded = false;
   export let hideNav = false;
+  export let openPluginRequest: { pluginId: string; nonce: number } | null =
+    null;
 
   const dispatch = createEventDispatcher<{
     page: { title: string; canGoBack: boolean; back: () => void };
+    settings: { pluginId: string };
   }>();
+  const gaugeTicks = Array.from(
+    { length: 9 },
+    (_, index) => 200 + index * 17.5,
+  );
+  const needleAngle = tweened(200, { duration: 420, easing: cubicOut });
 
   let installed: YuiPlugin[] = [];
   let sources: YuiPluginSource[] = [];
@@ -48,15 +59,64 @@
   let runOutput = "";
   let pendingPluginInstall: YuiPluginCatalogEntry | null = null;
   let pendingPluginPermissions: string[] = [];
+  let gaugeInitialized = false;
+  let consumedOpenPluginNonce = 0;
 
   onMount(() => {
     void loadAll();
   });
 
-  $: selected = installed.find((plugin) => plugin.id === selectedId) ?? installed[0];
-  $: installedIds = new Set(installed.filter((plugin) => plugin.installed).map((plugin) => plugin.id));
+  $: selected =
+    installed.find((plugin) => plugin.id === selectedId) ?? installed[0];
+  $: installedIds = new Set(
+    installed.filter((plugin) => plugin.installed).map((plugin) => plugin.id),
+  );
   $: selectedPermissions = selected?.plugin.permissions ?? [];
   $: selectedSettings = Object.entries(selected?.plugin.settings ?? {});
+  $: runningPlugins = installed.filter((plugin) => plugin.enabled).length;
+  $: erroredPlugins = installed.filter((plugin) => plugin.lastError).length;
+  $: pluginRunRatio = installed.length ? runningPlugins / installed.length : 0;
+  $: pluginErrorRatio = installed.length
+    ? erroredPlugins / installed.length
+    : 0;
+  $: pluginNeedleTarget = 200 + pluginRunRatio * 140;
+  $: if (!loading) {
+    needleAngle.set(pluginNeedleTarget, {
+      duration: gaugeInitialized ? 420 : 0,
+      easing: cubicOut,
+    });
+    gaugeInitialized = true;
+  }
+  $: pluginNeedleRadians = ($needleAngle * Math.PI) / 180;
+  $: pluginNeedleX = 130 + 72 * Math.cos(pluginNeedleRadians);
+  $: pluginNeedleY = 100 + 72 * Math.sin(pluginNeedleRadians);
+  $: pluginHealthLabel =
+    installed.length === 0
+      ? "No plugins"
+      : erroredPlugins > 0
+        ? erroredPlugins === 1
+          ? "1 plugin needs attention"
+          : `${erroredPlugins} plugins need attention`
+        : runningPlugins === installed.length
+          ? "All running"
+          : runningPlugins === 0
+            ? "All stopped"
+            : `${runningPlugins} of ${installed.length} running`;
+  $: pluginGaugeTone =
+    pluginErrorRatio >= 0.5
+      ? "danger"
+      : pluginErrorRatio > 0
+        ? "warning"
+        : "healthy";
+  $: if (
+    mode === "manage" &&
+    openPluginRequest &&
+    openPluginRequest.nonce !== consumedOpenPluginNonce &&
+    installed.length > 0
+  ) {
+    consumedOpenPluginNonce = openPluginRequest.nonce;
+    openPluginFromRequest(openPluginRequest.pluginId);
+  }
   $: dispatch("page", {
     title:
       page === "sources"
@@ -83,8 +143,18 @@
         sources = [];
         catalog = [];
       }
-      if (!selectedId || !installed.some((plugin) => plugin.id === selectedId)) {
+      if (
+        !selectedId ||
+        !installed.some((plugin) => plugin.id === selectedId)
+      ) {
         selectedId = installed[0]?.id ?? "";
+      }
+      if (
+        openPluginRequest &&
+        openPluginRequest.nonce !== consumedOpenPluginNonce
+      ) {
+        consumedOpenPluginNonce = openPluginRequest.nonce;
+        openPluginFromRequest(openPluginRequest.pluginId);
       }
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -98,6 +168,13 @@
     page = "plugin";
     runOutput = "";
     await loadPluginDetails(plugin.id);
+  }
+
+  function openPluginFromRequest(pluginId: string) {
+    if (!pluginId) return;
+    const plugin = installed.find((item) => item.id === pluginId);
+    if (!plugin) return;
+    void openPlugin(plugin);
   }
 
   async function loadPluginDetails(id: string) {
@@ -121,7 +198,9 @@
     try {
       if (enabled) await plugins.enable(plugin.id);
       else await plugins.disable(plugin.id);
-      message = enabled ? `${plugin.name} enabled.` : `${plugin.name} disabled.`;
+      message = enabled
+        ? `${plugin.name} enabled.`
+        : `${plugin.name} disabled.`;
       await loadAll();
       if (page === "plugin") await loadPluginDetails(plugin.id);
     } catch (err) {
@@ -154,7 +233,11 @@
     error = "";
     message = "";
     try {
-      settingsDraft = await plugins.updateSettings(selected.id, settingsDraft, secretDraft);
+      settingsDraft = await plugins.updateSettings(
+        selected.id,
+        settingsDraft,
+        secretDraft,
+      );
       secretDraft = {};
       message = "Plugin settings saved.";
       await loadPluginDetails(selected.id);
@@ -221,7 +304,10 @@
     message = "";
     try {
       await pluginCatalog.install(pluginCatalogEntryId(entry));
-      await plugins.updatePermissions(entry.plugin.id, pendingPluginPermissions);
+      await plugins.updatePermissions(
+        entry.plugin.id,
+        pendingPluginPermissions,
+      );
       message = `${entry.plugin.name} installed.`;
       await loadAll();
     } catch (err) {
@@ -306,58 +392,142 @@
   }
 
   function pluginSubtitle(plugin: YuiPlugin) {
-    const kind = plugin.dev ? "local" : plugin.installed ? "installed" : "available";
+    const kind = plugin.dev
+      ? "local"
+      : plugin.installed
+        ? "installed"
+        : "available";
     return `${plugin.id} · ${plugin.version} · ${kind}`;
   }
 </script>
 
 {#if loading}
-  <EmptyState title="Loading plugins" body="Checking local and installed Starlark plugins." />
+  <EmptyState
+    title="Loading plugins"
+    body="Checking local and installed Starlark plugins."
+  />
 {:else if error && installed.length === 0}
   <EmptyState title="Plugin load failed" body={error} />
 {:else if mode === "toggle"}
-  <section class:settings-stack={!embedded} class:plugin-manager-shell={embedded}>
+  <section
+    class:settings-stack={!embedded}
+    class:plugin-manager-shell={embedded}
+  >
     <div class:settings-page={!embedded} class:plugin-manager-page={embedded}>
-      {#if error || message}
+      {#if error}
         <section class="settings-group">
           <div class="settings-row static">
             <span>
-              <span>{error ? "Plugin error" : "Plugin status"}</span>
-              <small>{error || message}</small>
+              <span>{"Plugin error"}</span>
+              <small>{error}</small>
             </span>
           </div>
         </section>
       {/if}
 
       {#if installed.length === 0}
-        <EmptyState title="No plugins installed" body="Manage plugin sources and installs in Settings." />
+        <EmptyState
+          title="No plugins installed"
+          body="Manage plugin sources and installs in Settings."
+        />
       {:else}
+        <section
+          class={`plugin-health-gauge ${pluginGaugeTone}`}
+          aria-label="Plugin health"
+        >
+          <svg
+            class="plugin-gauge-svg"
+            viewBox="0 0 260 116"
+            aria-hidden="true"
+          >
+            <path
+              class="plugin-gauge-outer"
+              d="M 32 102 A 98 98 0 0 1 228 102"
+            />
+            <path
+              class="plugin-gauge-inner"
+              d="M 50 102 A 80 80 0 0 1 210 102"
+            />
+            <path
+              class="plugin-gauge-band"
+              d="M 44 102 A 86 86 0 0 1 216 102"
+            />
+            {#each gaugeTicks as angle}
+              <line
+                class="plugin-gauge-tick"
+                x1={130 + 80 * Math.cos((angle * Math.PI) / 180)}
+                y1={100 + 80 * Math.sin((angle * Math.PI) / 180)}
+                x2={130 + 93 * Math.cos((angle * Math.PI) / 180)}
+                y2={100 + 93 * Math.sin((angle * Math.PI) / 180)}
+              />
+            {/each}
+            <line
+              class="plugin-gauge-needle"
+              x1="130"
+              y1="100"
+              x2={pluginNeedleX}
+              y2={pluginNeedleY}
+            />
+            <circle class="plugin-gauge-hub-ring" cx="130" cy="100" r="15" />
+            <circle class="plugin-gauge-hub" cx="130" cy="100" r="11" />
+          </svg>
+          <div class="plugin-gauge-copy">
+            <strong>{pluginHealthLabel}</strong>
+            <small>
+              {runningPlugins}/{installed.length} running · {erroredPlugins} errors
+            </small>
+          </div>
+        </section>
+
         <section class="settings-group">
           {#each installed as plugin}
-            <label class="settings-row permission-row">
+            <div class="settings-row permission-row plugin-toggle-row">
               <span>
                 <span>{plugin.name}</span>
-                <small>{pluginSubtitle(plugin)}{plugin.lastError ? ` · ${plugin.lastError}` : ""}</small>
+                <small
+                  >{pluginSubtitle(plugin)}{plugin.lastError
+                    ? ` · ${plugin.lastError}`
+                    : ""}</small
+                >
               </span>
-              <input
-                type="checkbox"
-                checked={plugin.enabled}
-                disabled={Boolean(busy)}
-                on:change={(event) =>
-                  togglePlugin(plugin, event.currentTarget.checked)}
-              />
-            </label>
+              <span class="settings-actions">
+                <button
+                  class="icon-button compact"
+                  aria-label={`Open ${plugin.name} settings`}
+                  title="Plugin settings"
+                  type="button"
+                  on:click={() => dispatch("settings", { pluginId: plugin.id })}
+                >
+                  <SettingsIcon size={16} strokeWidth={2.4} />
+                </button>
+                <input
+                  type="checkbox"
+                  checked={plugin.enabled}
+                  disabled={Boolean(busy)}
+                  on:change={(event) =>
+                    togglePlugin(plugin, event.currentTarget.checked)}
+                />
+              </span>
+            </div>
           {/each}
         </section>
       {/if}
     </div>
   </section>
 {:else if page === "sources"}
-  <section class:settings-stack={!embedded} class:plugin-manager-shell={embedded}>
+  <section
+    class:settings-stack={!embedded}
+    class:plugin-manager-shell={embedded}
+  >
     <div class:settings-page={!embedded} class:plugin-manager-page={embedded}>
       {#if !hideNav}
         <nav class="settings-nav" aria-label="Plugin source navigation">
-          <button class="icon-button" aria-label="Back to plugins" title="Back to plugins" on:click={() => (page = "plugins")}>
+          <button
+            class="icon-button"
+            aria-label="Back to plugins"
+            title="Back to plugins"
+            on:click={() => (page = "plugins")}
+          >
             <ArrowLeftIcon size={18} strokeWidth={2.4} />
           </button>
           <span>Plugin sources</span>
@@ -366,8 +536,18 @@
 
       <section class="settings-group">
         <div class="settings-row static settings-actions-row">
-          <input class="settings-text-input" placeholder="https://example.com/yui/plugin-catalog.json" bind:value={sourceURL} disabled={Boolean(busy)} />
-          <button class="settings-inline-button" disabled={Boolean(busy) || !sourceURL.trim()} title="Add plugin source" on:click={addSource}>
+          <input
+            class="settings-text-input"
+            placeholder="https://example.com/yui/plugin-catalog.json"
+            bind:value={sourceURL}
+            disabled={Boolean(busy)}
+          />
+          <button
+            class="settings-inline-button"
+            disabled={Boolean(busy) || !sourceURL.trim()}
+            title="Add plugin source"
+            on:click={addSource}
+          >
             <PlusIcon size={14} strokeWidth={2.4} />
             Add
           </button>
@@ -387,7 +567,9 @@
           <div class="settings-row static">
             <span>
               <span>No sources</span>
-              <small>Add a signed HTTPS plugin catalog to discover plugins.</small>
+              <small
+                >Add a signed HTTPS plugin catalog to discover plugins.</small
+              >
             </span>
           </div>
         {:else}
@@ -395,14 +577,30 @@
             <div class="settings-row static settings-actions-row">
               <span>
                 <span>{source.name || source.url}</span>
-                <small>{source.lastStatus}{source.publisher ? ` · ${source.publisher}` : ""}{source.lastError ? ` · ${source.lastError}` : ""}</small>
+                <small
+                  >{source.lastStatus}{source.publisher
+                    ? ` · ${source.publisher}`
+                    : ""}{source.lastError
+                    ? ` · ${source.lastError}`
+                    : ""}</small
+                >
               </span>
               <span class="settings-actions">
-                <button class="settings-inline-button" disabled={Boolean(busy)} title="Refresh source" on:click={() => refreshSource(source.id)}>
+                <button
+                  class="settings-inline-button"
+                  disabled={Boolean(busy)}
+                  title="Refresh source"
+                  on:click={() => refreshSource(source.id)}
+                >
                   <RefreshCwIcon size={14} strokeWidth={2.4} />
                   Refresh
                 </button>
-                <button class="settings-inline-button danger" disabled={Boolean(busy)} title="Remove source" on:click={() => removeSource(source.id)}>
+                <button
+                  class="settings-inline-button danger"
+                  disabled={Boolean(busy)}
+                  title="Remove source"
+                  on:click={() => removeSource(source.id)}
+                >
                   <TrashIcon size={14} strokeWidth={2.4} />
                   Remove
                 </button>
@@ -425,12 +623,24 @@
             <div class="settings-row static settings-actions-row">
               <span>
                 <span>{entry.plugin.name}</span>
-                <small>{entry.plugin.id} · {entry.plugin.version} · {entry.catalog}{entry.plugin.permissions?.length ? ` · ${entry.plugin.permissions.join(", ")}` : " · no permissions"}</small>
+                <small
+                  >{entry.plugin.id} · {entry.plugin.version} · {entry.catalog}{entry
+                    .plugin.permissions?.length
+                    ? ` · ${entry.plugin.permissions.join(", ")}`
+                    : " · no permissions"}</small
+                >
               </span>
               {#if installedIds.has(entry.plugin.id)}
-                <span class="settings-inline-button" aria-disabled="true">Installed</span>
+                <span class="settings-inline-button" aria-disabled="true"
+                  >Installed</span
+                >
               {:else}
-                <button class="settings-inline-button" disabled={Boolean(busy)} title="Install signed plugin" on:click={() => startPluginInstall(entry)}>
+                <button
+                  class="settings-inline-button"
+                  disabled={Boolean(busy)}
+                  title="Install signed plugin"
+                  on:click={() => startPluginInstall(entry)}
+                >
                   <DownloadIcon size={14} strokeWidth={2.4} />
                   Install
                 </button>
@@ -442,11 +652,19 @@
     </div>
   </section>
 {:else if page === "plugin" && selected}
-  <section class:settings-stack={!embedded} class:plugin-manager-shell={embedded}>
+  <section
+    class:settings-stack={!embedded}
+    class:plugin-manager-shell={embedded}
+  >
     <div class:settings-page={!embedded} class:plugin-manager-page={embedded}>
       {#if !hideNav}
         <nav class="settings-nav" aria-label="Plugin navigation">
-          <button class="icon-button" aria-label="Back to plugins" title="Back to plugins" on:click={() => (page = "plugins")}>
+          <button
+            class="icon-button"
+            aria-label="Back to plugins"
+            title="Back to plugins"
+            on:click={() => (page = "plugins")}
+          >
             <ArrowLeftIcon size={18} strokeWidth={2.4} />
           </button>
           <span>{selected.name}</span>
@@ -454,11 +672,20 @@
       {/if}
 
       <section class="settings-app-hero">
-        <span class="app-icon"><span>{selected.plugin.icon ?? selected.name.slice(0, 2)}</span></span>
+        <span class="app-icon"
+          ><span>{selected.plugin.icon ?? selected.name.slice(0, 2)}</span
+          ></span
+        >
         <div>
           <h2>{selected.name}</h2>
           <p>{selected.plugin.description ?? selected.id}</p>
-          <small>{selected.version} · {selected.enabled ? "enabled" : "disabled"}{selected.lastError ? ` · ${selected.lastError}` : ""}</small>
+          <small
+            >{selected.version} · {selected.enabled
+              ? "enabled"
+              : "disabled"}{selected.lastError
+              ? ` · ${selected.lastError}`
+              : ""}</small
+          >
         </div>
       </section>
 
@@ -479,15 +706,28 @@
             <span>Enabled</span>
             <small>Load this plugin in the controller runtime.</small>
           </span>
-          <input type="checkbox" checked={selected.enabled} disabled={Boolean(busy)} on:change={(event) => togglePlugin(selected, event.currentTarget.checked)} />
+          <input
+            type="checkbox"
+            checked={selected.enabled}
+            disabled={Boolean(busy)}
+            on:change={(event) =>
+              togglePlugin(selected, event.currentTarget.checked)}
+          />
         </label>
         {#if selected.installed}
           <div class="settings-row static settings-actions-row">
             <span>
               <span>Installed plugin</span>
-              <small>Uninstalling disables the runtime but keeps isolated storage and logs.</small>
+              <small
+                >Uninstalling disables the runtime but keeps isolated storage
+                and logs.</small
+              >
             </span>
-            <button class="settings-inline-button danger" disabled={Boolean(busy)} on:click={() => uninstall(selected.id)}>
+            <button
+              class="settings-inline-button danger"
+              disabled={Boolean(busy)}
+              on:click={() => uninstall(selected.id)}
+            >
               <TrashIcon size={14} strokeWidth={2.4} />
               Uninstall
             </button>
@@ -527,19 +767,47 @@
                 <small>{setting.description || key}</small>
               </span>
               {#if setting.type === "bool"}
-                <input type="checkbox" checked={Boolean(settingsDraft[key])} on:change={(event) => setSetting(key, event.currentTarget.checked)} />
+                <input
+                  type="checkbox"
+                  checked={Boolean(settingsDraft[key])}
+                  on:change={(event) =>
+                    setSetting(key, event.currentTarget.checked)}
+                />
               {:else if setting.type === "number"}
-                <input class="settings-text-input" type="number" value={Number(settingsDraft[key] ?? setting.default ?? 0)} on:input={(event) => setSetting(key, Number(event.currentTarget.value))} />
+                <input
+                  class="settings-text-input"
+                  type="number"
+                  value={Number(settingsDraft[key] ?? setting.default ?? 0)}
+                  on:input={(event) =>
+                    setSetting(key, Number(event.currentTarget.value))}
+                />
               {:else if setting.type === "select"}
-                <select class="settings-text-input" value={String(settingsDraft[key] ?? setting.default ?? "")} on:change={(event) => setSetting(key, event.currentTarget.value)}>
+                <select
+                  class="settings-text-input"
+                  value={String(settingsDraft[key] ?? setting.default ?? "")}
+                  on:change={(event) =>
+                    setSetting(key, event.currentTarget.value)}
+                >
                   {#each setting.options ?? [] as option}
                     <option value={option}>{option}</option>
                   {/each}
                 </select>
               {:else if setting.type === "secret"}
-                <input class="settings-text-input" type="password" placeholder={settingsDraft[key] ? "Stored secret" : ""} value={secretDraft[key] ?? ""} on:input={(event) => setSecret(key, event.currentTarget.value)} />
+                <input
+                  class="settings-text-input"
+                  type="password"
+                  placeholder={settingsDraft[key] ? "Stored secret" : ""}
+                  value={secretDraft[key] ?? ""}
+                  on:input={(event) =>
+                    setSecret(key, event.currentTarget.value)}
+                />
               {:else}
-                <input class="settings-text-input" value={String(settingsDraft[key] ?? setting.default ?? "")} on:input={(event) => setSetting(key, event.currentTarget.value)} />
+                <input
+                  class="settings-text-input"
+                  value={String(settingsDraft[key] ?? setting.default ?? "")}
+                  on:input={(event) =>
+                    setSetting(key, event.currentTarget.value)}
+                />
               {/if}
             </div>
           {/each}
@@ -548,7 +816,11 @@
               <span>Settings</span>
               <small>Saved values are available through ctx.settings.</small>
             </span>
-            <button class="settings-inline-button" disabled={Boolean(busy)} on:click={saveSettings}>Save</button>
+            <button
+              class="settings-inline-button"
+              disabled={Boolean(busy)}
+              on:click={saveSettings}>Save</button
+            >
           </div>
         </section>
       {/if}
@@ -561,7 +833,11 @@
                 <span>{command.title}</span>
                 <small>{command.subtitle || command.id}</small>
               </span>
-              <button class="settings-inline-button" disabled={Boolean(busy)} on:click={() => runCommand(command.id)}>
+              <button
+                class="settings-inline-button"
+                disabled={Boolean(busy)}
+                on:click={() => runCommand(command.id)}
+              >
                 <PlayIcon size={14} strokeWidth={2.4} />
                 Run
               </button>
@@ -583,7 +859,9 @@
           <div class="settings-row static">
             <span>
               <span>No audit entries</span>
-              <small>Runtime actions and permission denials will appear here.</small>
+              <small
+                >Runtime actions and permission denials will appear here.</small
+              >
             </span>
           </div>
         {:else}
@@ -598,7 +876,11 @@
               </span>
               <span class="plugin-log-copy">
                 <span>{item.action}</span>
-                <small>{new Date(item.at).toLocaleString()}{item.permission ? ` · ${item.permission}` : ""}</small>
+                <small
+                  >{new Date(item.at).toLocaleString()}{item.permission
+                    ? ` · ${item.permission}`
+                    : ""}</small
+                >
                 {#if item.error || item.detail}
                   <small>{item.error || item.detail}</small>
                 {/if}
@@ -610,13 +892,21 @@
     </div>
   </section>
 {:else}
-  <section class:settings-stack={!embedded} class:plugin-manager-shell={embedded}>
+  <section
+    class:settings-stack={!embedded}
+    class:plugin-manager-shell={embedded}
+  >
     <div class:settings-page={!embedded} class:plugin-manager-page={embedded}>
       <section class="settings-group">
         <button class="settings-row" on:click={() => (page = "sources")}>
           <span>
             <span>Federated sources</span>
-            <small>{sources.length === 1 ? "1 source" : `${sources.length} sources`} · {catalog.length === 1 ? "1 catalog plugin" : `${catalog.length} catalog plugins`}</small>
+            <small
+              >{sources.length === 1 ? "1 source" : `${sources.length} sources`}
+              · {catalog.length === 1
+                ? "1 catalog plugin"
+                : `${catalog.length} catalog plugins`}</small
+            >
           </span>
           <ChevronRightIcon size={18} strokeWidth={2.4} />
         </button>
@@ -634,15 +924,28 @@
       {/if}
 
       {#if installed.length === 0}
-        <EmptyState title="No plugins installed" body="Add signed plugin sources or create local plugins under /plugins." />
+        <EmptyState
+          title="No plugins installed"
+          body="Add signed plugin sources or create local plugins under /plugins."
+        />
       {:else}
         <section class="settings-group">
           {#each installed as plugin}
-            <button class="settings-row app-row" on:click={() => openPlugin(plugin)}>
-              <span class="app-icon"><span>{plugin.plugin.icon ?? plugin.name.slice(0, 2)}</span></span>
+            <button
+              class="settings-row app-row"
+              on:click={() => openPlugin(plugin)}
+            >
+              <span class="app-icon"
+                ><span>{plugin.plugin.icon ?? plugin.name.slice(0, 2)}</span
+                ></span
+              >
               <span>
                 <span>{plugin.name}</span>
-                <small>{pluginSubtitle(plugin)} · {plugin.enabled ? "on" : "off"}</small>
+                <small
+                  >{pluginSubtitle(plugin)} · {plugin.enabled
+                    ? "on"
+                    : "off"}</small
+                >
               </span>
               <ChevronRightIcon size={18} strokeWidth={2.4} />
             </button>
@@ -655,7 +958,11 @@
 
 {#if pendingPluginInstall}
   <div class="permission-scrim" role="presentation">
-    <section class="permission-dialog permission-dialog-wide" role="dialog" aria-modal="true">
+    <section
+      class="permission-dialog permission-dialog-wide"
+      role="dialog"
+      aria-modal="true"
+    >
       <div>
         <h2>Install {pendingPluginInstall.plugin.name}</h2>
         <p>Choose what starts enabled.</p>
@@ -665,11 +972,17 @@
         granted={pendingPluginPermissions}
         describe={describePluginPermission}
         onToggle={togglePendingPluginPermission}
-        onAllowAll={() => (pendingPluginPermissions = [...(pendingPluginInstall?.plugin.permissions ?? [])])}
+        onAllowAll={() =>
+          (pendingPluginPermissions = [
+            ...(pendingPluginInstall?.plugin.permissions ?? []),
+          ])}
         onDenyAll={() => (pendingPluginPermissions = [])}
       />
       <div class="permission-actions">
-        <button class="permission-secondary" on:click={() => (pendingPluginInstall = null)}>Cancel</button>
+        <button
+          class="permission-secondary"
+          on:click={() => (pendingPluginInstall = null)}>Cancel</button
+        >
         <button
           class="permission-primary"
           on:click={() => {

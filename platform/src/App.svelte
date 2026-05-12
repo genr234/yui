@@ -39,6 +39,8 @@
   let closeTimer: number | undefined;
   let appCount: number | null = null;
   let pluginCount: number | null = null;
+  let pluginSettingsRequest: { pluginId: string; nonce: number } | null = null;
+  let pluginSettingsNonce = 0;
 
   const sections: SectionItem[] = routes;
 
@@ -157,6 +159,12 @@
     permissionPrompt = null;
   }
 
+  function openPluginSettings(pluginId: string) {
+    pluginSettingsNonce += 1;
+    pluginSettingsRequest = { pluginId, nonce: pluginSettingsNonce };
+    section = "settings";
+  }
+
   $: activeRoute = findRoute(section);
   $: activeSubtitle = resolveSubtitle(activeRoute, { appCount, pluginCount });
   $: shellRendered = open || closing || alwaysOpen();
@@ -272,7 +280,11 @@
           {settingDetails}
           {config}
           {diagnostics}
+          {pluginSettingsRequest}
           on:appLaunched={(event) => (appRouteActive = event.detail.active)}
+          on:pluginSettings={(event) =>
+            openPluginSettings(event.detail.pluginId)}
+          on:pluginSettingsBack={() => (section = "plugins")}
         />
       </main>
     </div>
