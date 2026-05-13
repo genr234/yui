@@ -14,7 +14,7 @@ import (
 var ErrNotFound = errors.New("document not found")
 
 type DB struct {
-	db *bbolt.DB
+	backend Backend
 }
 
 type Collection struct {
@@ -27,7 +27,36 @@ type Document struct {
 	Value json.RawMessage `json:"value"`
 }
 
+type Backend interface {
+	Close() error
+	CollectionNames() ([]string, error)
+	Put(collection string, id string, value []byte) error
+	Create(collection string, value []byte) (Document, error)
+	Get(collection string, id string) (Document, bool, error)
+	Delete(collection string, id string) error
+	List(collection string, opts ListOptions) ([]Document, error)
+	Count(collection string, prefix string) (int, error)
+	Merge(collection string, id string, patch map[string]any) (Document, error)
+	Clear(collection string) error
+}
+
 func Open(path string) (*DB, error) {
+	backend, err := OpenBoltBackend(path)
+	if err != nil {
+		return nil, err
+	}
+	return OpenWithBackend(backend), nil
+}
+
+func OpenWithBackend(backend Backend) *DB {
+	return &DB{backend: backend}
+}
+
+type BoltBackend struct {
+	db *bbolt.DB
+}
+
+func OpenBoltBackend(path string) (*BoltBackend, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("create store dir: %w", err)
 	}
@@ -37,14 +66,14 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("open store %s: %w", path, err)
 	}
 
-	return &DB{db: db}, nil
+	return &BoltBackend{db: db}, nil
 }
 
 func (d *DB) Close() error {
-	if d == nil || d.db == nil {
+	if d == nil || d.backend == nil {
 		return nil
 	}
-	return d.db.Close()
+	return d.backend.Close()
 }
 
 func (d *DB) Collection(name string) Collection {
@@ -52,8 +81,23 @@ func (d *DB) Collection(name string) Collection {
 }
 
 func (d *DB) BucketNames() ([]string, error) {
+	return d.CollectionNames()
+}
+
+func (d *DB) CollectionNames() ([]string, error) {
+	return d.backend.CollectionNames()
+}
+
+func (b *BoltBackend) Close() error {
+	if b == nil || b.db == nil {
+		return nil
+	}
+	return b.db.Close()
+}
+
+func (b *BoltBackend) CollectionNames() ([]string, error) {
 	var names []string
-	err := d.db.View(func(tx *bbolt.Tx) error {
+	err := b.db.View(func(tx *bbolt.Tx) error {
 		return tx.ForEach(func(name []byte, _ *bbolt.Bucket) error {
 			names = append(names, string(name))
 			return nil
@@ -75,12 +119,16 @@ func (c Collection) Put(id string, value any) error {
 		return err
 	}
 
-	return c.db.db.Update(func(tx *bbolt.Tx) error {
-		bucket, err := tx.CreateBucketIfNotExists([]byte(c.name))
+	return c.db.backend.Put(c.name, id, data)
+}
+
+func (b *BoltBackend) Put(collection string, id string, value []byte) error {
+	return b.db.Update(func(tx *bbolt.Tx) error {
+		bucket, err := tx.CreateBucketIfNotExists([]byte(collection))
 		if err != nil {
 			return err
 		}
-		return bucket.Put([]byte(id), data)
+		return bucket.Put([]byte(id), value)
 	})
 }
 
@@ -94,9 +142,13 @@ func (c Collection) Create(value any) (Document, error) {
 		return Document{}, err
 	}
 
+	return c.db.backend.Create(c.name, data)
+}
+
+func (b *BoltBackend) Create(collection string, value []byte) (Document, error) {
 	var id string
-	err = c.db.db.Update(func(tx *bbolt.Tx) error {
-		bucket, err := tx.CreateBucketIfNotExists([]byte(c.name))
+	err := b.db.Update(func(tx *bbolt.Tx) error {
+		bucket, err := tx.CreateBucketIfNotExists([]byte(collection))
 		if err != nil {
 			return err
 		}
@@ -105,13 +157,13 @@ func (c Collection) Create(value any) (Document, error) {
 			return err
 		}
 		id = fmt.Sprintf("%d", nextID)
-		return bucket.Put([]byte(id), data)
+		return bucket.Put([]byte(id), value)
 	})
 	if err != nil {
 		return Document{}, err
 	}
 
-	return Document{ID: id, Value: data}, nil
+	return Document{ID: id, Value: clone(value)}, nil
 }
 
 func (c Collection) Get(id string) (Document, bool, error) {
@@ -122,9 +174,13 @@ func (c Collection) Get(id string) (Document, bool, error) {
 		return Document{}, false, err
 	}
 
+	return c.db.backend.Get(c.name, id)
+}
+
+func (b *BoltBackend) Get(collection string, id string) (Document, bool, error) {
 	var doc Document
-	err := c.db.db.View(func(tx *bbolt.Tx) error {
-		bucket := tx.Bucket([]byte(c.name))
+	err := b.db.View(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket([]byte(collection))
 		if bucket == nil {
 			return nil
 		}
@@ -154,8 +210,12 @@ func (c Collection) Delete(id string) error {
 		return err
 	}
 
-	return c.db.db.Update(func(tx *bbolt.Tx) error {
-		bucket := tx.Bucket([]byte(c.name))
+	return c.db.backend.Delete(c.name, id)
+}
+
+func (b *BoltBackend) Delete(collection string, id string) error {
+	return b.db.Update(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket([]byte(collection))
 		if bucket == nil {
 			return nil
 		}
@@ -168,9 +228,13 @@ func (c Collection) List(opts ListOptions) ([]Document, error) {
 		return nil, err
 	}
 
+	return c.db.backend.List(c.name, opts)
+}
+
+func (b *BoltBackend) List(collection string, opts ListOptions) ([]Document, error) {
 	var docs []Document
-	err := c.db.db.View(func(tx *bbolt.Tx) error {
-		bucket := tx.Bucket([]byte(c.name))
+	err := b.db.View(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket([]byte(collection))
 		if bucket == nil {
 			return nil
 		}
@@ -201,9 +265,13 @@ func (c Collection) Count(prefix string) (int, error) {
 		return 0, err
 	}
 
+	return c.db.backend.Count(c.name, prefix)
+}
+
+func (b *BoltBackend) Count(collection string, prefix string) (int, error) {
 	count := 0
-	err := c.db.db.View(func(tx *bbolt.Tx) error {
-		bucket := tx.Bucket([]byte(c.name))
+	err := b.db.View(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket([]byte(collection))
 		if bucket == nil {
 			return nil
 		}
@@ -228,9 +296,13 @@ func (c Collection) Merge(id string, patch map[string]any) (Document, error) {
 		return Document{}, err
 	}
 
+	return c.db.backend.Merge(c.name, id, patch)
+}
+
+func (b *BoltBackend) Merge(collection string, id string, patch map[string]any) (Document, error) {
 	var doc Document
-	err := c.db.db.Update(func(tx *bbolt.Tx) error {
-		bucket, err := tx.CreateBucketIfNotExists([]byte(c.name))
+	err := b.db.Update(func(tx *bbolt.Tx) error {
+		bucket, err := tx.CreateBucketIfNotExists([]byte(collection))
 		if err != nil {
 			return err
 		}
@@ -262,11 +334,15 @@ func (c Collection) Clear() error {
 	if err := validateName("collection", c.name); err != nil {
 		return err
 	}
-	return c.db.db.Update(func(tx *bbolt.Tx) error {
-		if tx.Bucket([]byte(c.name)) == nil {
+	return c.db.backend.Clear(c.name)
+}
+
+func (b *BoltBackend) Clear(collection string) error {
+	return b.db.Update(func(tx *bbolt.Tx) error {
+		if tx.Bucket([]byte(collection)) == nil {
 			return nil
 		}
-		return tx.DeleteBucket([]byte(c.name))
+		return tx.DeleteBucket([]byte(collection))
 	})
 }
 
