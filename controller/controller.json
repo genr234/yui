@@ -26,7 +26,7 @@
   "platform_http_addr": "127.0.0.1:7072",
   "platform_bridge_addr": "127.0.0.1:7071",
   "platform_remote_debugging_port": 9222,
-  "platform_dev_server": "",
+  "platform_dev_server": "http://127.0.0.1:5173",
   "auto_update_enabled": true,
   "auto_update_repo": "genr234/yui",
   "auto_update_interval_minutes": 30
