@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import OnScreenKeyboard from "./components/OnScreenKeyboard.svelte";
+  import FederatedStoreModal from "./components/FederatedStoreModal.svelte";
   import PermissionCards from "./components/PermissionCards.svelte";
   import Sidebar from "./components/Sidebar.svelte";
   import TitleBar from "./components/TitleBar.svelte";
@@ -15,7 +16,11 @@
     SectionItem,
   } from "./types";
   import ChromeIcon from "lucide-svelte/icons/chrome";
+  import BlocksIcon from "lucide-svelte/icons/blocks";
+  import CheckIcon from "lucide-svelte/icons/check";
+  import EditIcon from "lucide-svelte/icons/pencil";
   import FolderIcon from "lucide-svelte/icons/folder";
+  import PlusIcon from "lucide-svelte/icons/plus";
   import RefreshCwIcon from "lucide-svelte/icons/refresh-cw";
   import { loadApps } from "./apps";
   import { resolveSubtitle } from "@/pages/subtitle";
@@ -23,7 +28,7 @@
     describePermission,
     type PermissionRequest,
   } from "@/sdk/apps/permissions";
-  import { plugins } from "@/sdk/plugins";
+  import { plugins, type YuiPluginExtensions, type YuiPluginShellAction } from "@/sdk/plugins";
 
   let open = false;
   let section: Section = "home";
@@ -39,10 +44,14 @@
   let closeTimer: number | undefined;
   let appCount: number | null = null;
   let pluginCount: number | null = null;
+  let appOpenRequest: { appId: string; nonce: number } | null = null;
+  let appOpenNonce = 0;
+  let homeEditing = false;
   let pluginSettingsRequest: { pluginId: string; nonce: number } | null = null;
   let pluginSettingsNonce = 0;
+  let storeKind: "apps" | "plugins" | null = null;
 
-  const sections: SectionItem[] = routes;
+  let extensions: YuiPluginExtensions = { pages: [], actions: [], css: [] };
 
   onMount(() => {
     void refresh();
@@ -56,12 +65,14 @@
     };
     window.addEventListener("yui:shell-fullscreen", offFullscreen);
     window.addEventListener("yui:permission-request", offPermissionRequest);
+    window.addEventListener("yui:apps-changed", refreshSubtitles);
     return () => {
       window.removeEventListener("yui:shell-fullscreen", offFullscreen);
       window.removeEventListener(
         "yui:permission-request",
         offPermissionRequest,
       );
+      window.removeEventListener("yui:apps-changed", refreshSubtitles);
     };
   });
 
@@ -83,6 +94,7 @@
       config = configResult;
       bridgeState = "online";
       void refreshSubtitles();
+      void refreshExtensions();
     } catch (error) {
       bridgeState = "offline";
       diagnostics = error instanceof Error ? error.message : String(error);
@@ -96,6 +108,15 @@
     ]);
     appCount = appsResult;
     pluginCount = pluginsResult;
+  }
+
+  async function refreshExtensions() {
+    const result = await plugins.extensions().catch(() => null);
+    extensions = {
+      pages: result?.pages ?? [],
+      actions: result?.actions ?? [],
+      css: result?.css ?? [],
+    };
   }
 
   function startPress() {
@@ -122,6 +143,7 @@
     closing = false;
     open = true;
     void refreshSubtitles();
+    void refreshExtensions();
   }
 
   function closeMenu() {
@@ -165,7 +187,45 @@
     section = "settings";
   }
 
-  $: activeRoute = findRoute(section);
+  function openAppFromHome(appId: string) {
+    appOpenNonce += 1;
+    appOpenRequest = { appId, nonce: appOpenNonce };
+    section = "apps";
+  }
+
+  function openStore(kind: "apps" | "plugins") {
+    storeKind = kind;
+  }
+
+  function storeChanged() {
+    void refreshSubtitles();
+    void refreshExtensions();
+  }
+
+  function pluginActionIcon(_action: YuiPluginShellAction) {
+    return BlocksIcon;
+  }
+
+  function pluginActions(location: string): ActionItem[] {
+    return (extensions.actions ?? [])
+      .filter((action) => action.location === location && action.command)
+      .map((action) => ({
+        label: action.title,
+        icon: pluginActionIcon(action),
+        tone: "violet",
+        run: () => plugins.run(action.pluginId, action.command ?? ""),
+      }));
+  }
+
+  $: pluginSections = (extensions.pages ?? []).map((page) => ({
+    id: page.id,
+    label: page.title,
+    subtitle: page.pluginId,
+    icon: BlocksIcon,
+  })) satisfies SectionItem[];
+  $: sections = [...routes, ...pluginSections] satisfies SectionItem[];
+  $: activeRoute =
+    pluginSections.find((route) => route.id === section) ?? findRoute(section);
   $: activeSubtitle = resolveSubtitle(activeRoute, { appCount, pluginCount });
   $: shellRendered = open || closing || alwaysOpen();
   $: shellClosing = closing && !open && !alwaysOpen();
@@ -189,26 +249,7 @@
       tone: "violet",
       run: selectChrome,
     },
-  ] satisfies ActionItem[];
-  $: toolActions = [
-    {
-      label: "Refresh Diagnostics",
-      icon: RefreshCwIcon,
-      tone: "blue",
-      run: refresh,
-    },
-    {
-      label: "Re-import Kiosk Batch",
-      icon: FolderIcon,
-      tone: "green",
-      run: reimportConfig,
-    },
-    {
-      label: "Select Chrome",
-      icon: ChromeIcon,
-      tone: "orange",
-      run: selectChrome,
-    },
+    ...pluginActions("home"),
   ] satisfies ActionItem[];
   $: settingDetails = [
     { label: "HTTP", value: metric(config?.platform_http_addr) },
@@ -271,24 +312,72 @@
             title={activeRoute.label}
             subtitle={activeSubtitle}
             on:refresh={refresh}
-          />
+          >
+            <svelte:fragment slot="actions">
+              {#if section === "home"}
+                <button
+                  class:active={homeEditing}
+                  class="icon-button title-action-button"
+                  aria-label={homeEditing ? "Done editing widgets" : "Edit widgets"}
+                  title={homeEditing ? "Done" : "Edit widgets"}
+                  on:click={() => (homeEditing = !homeEditing)}
+                >
+                  {#if homeEditing}
+                    <CheckIcon size={18} strokeWidth={2.4} />
+                  {:else}
+                    <EditIcon size={18} strokeWidth={2.4} />
+                  {/if}
+                </button>
+              {:else if section === "apps"}
+                <button
+                  class="icon-button title-action-button"
+                  aria-label="Open app store"
+                  title="Open app store"
+                  on:click={() => openStore("apps")}
+                >
+                  <PlusIcon size={18} strokeWidth={2.4} />
+                </button>
+              {:else if section === "plugins"}
+                <button
+                  class="icon-button title-action-button"
+                  aria-label="Open plugin store"
+                  title="Open plugin store"
+                  on:click={() => openStore("plugins")}
+                >
+                  <PlusIcon size={18} strokeWidth={2.4} />
+                </button>
+              {/if}
+            </svelte:fragment>
+          </TitleBar>
         {/if}
-        <Router
+          <Router
           {section}
           {homeActions}
-          {toolActions}
           {settingDetails}
           {config}
-          {diagnostics}
+          {appOpenRequest}
+          bind:homeEditing
           {pluginSettingsRequest}
+          pluginPages={extensions.pages}
           on:appLaunched={(event) => (appRouteActive = event.detail.active)}
+          on:launchApp={(event) => openAppFromHome(event.detail.appId)}
+          on:navigate={(event) => (section = event.detail.section)}
           on:pluginSettings={(event) =>
             openPluginSettings(event.detail.pluginId)}
           on:pluginSettingsBack={() => (section = "plugins")}
+          on:store={(event) => openStore(event.detail.kind)}
         />
       </main>
     </div>
   </section>
+
+  {#if storeKind}
+    <FederatedStoreModal
+      kind={storeKind}
+      on:close={() => (storeKind = null)}
+      on:changed={storeChanged}
+    />
+  {/if}
 
   {#if permissionPrompt}
     <div class="permission-scrim" role="presentation">

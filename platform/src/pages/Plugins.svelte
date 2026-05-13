@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { tweened } from "svelte/motion";
   import { cubicOut } from "svelte/easing";
   import ArrowLeftIcon from "lucide-svelte/icons/arrow-left";
@@ -16,6 +16,9 @@
   import PermissionCards from "../components/PermissionCards.svelte";
   import {
     describePluginPermission,
+    clearPluginStorage,
+    isAdministratorPermission,
+    listPluginStorageKeys,
     pluginCatalog,
     pluginCatalogEntryId,
     pluginSources,
@@ -36,6 +39,7 @@
   const dispatch = createEventDispatcher<{
     page: { title: string; canGoBack: boolean; back: () => void };
     settings: { pluginId: string };
+    store: void;
   }>();
   const gaugeTicks = Array.from(
     { length: 9 },
@@ -56,14 +60,37 @@
   let settingsDraft: Record<string, unknown> = {};
   let secretDraft: Record<string, string> = {};
   let logs: YuiPluginLog[] = [];
+  let storageKeys: string[] = [];
   let runOutput = "";
   let pendingPluginInstall: YuiPluginCatalogEntry | null = null;
   let pendingPluginPermissions: string[] = [];
   let gaugeInitialized = false;
   let consumedOpenPluginNonce = 0;
+  let refreshTimer: number | undefined;
+  let detailPollTimer: number | undefined;
+  let detailPollKey = "";
 
   onMount(() => {
     void loadAll();
+    const refresh = (event: Event) => {
+      window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => {
+        void refreshAfterPluginChange(
+          (event as CustomEvent<{ pluginId?: string }>).detail?.pluginId,
+        );
+      }, 40);
+    };
+    window.addEventListener("yui:plugins-changed", refresh);
+    return () => {
+      window.clearTimeout(refreshTimer);
+      window.clearInterval(detailPollTimer);
+      window.removeEventListener("yui:plugins-changed", refresh);
+    };
+  });
+
+  onDestroy(() => {
+    window.clearTimeout(refreshTimer);
+    window.clearInterval(detailPollTimer);
   });
 
   $: selected =
@@ -72,6 +99,9 @@
     installed.filter((plugin) => plugin.installed).map((plugin) => plugin.id),
   );
   $: selectedPermissions = selected?.plugin.permissions ?? [];
+  $: selectedAdministratorPermissions = selectedPermissions.filter(
+    isAdministratorPermission,
+  );
   $: selectedSettings = Object.entries(selected?.plugin.settings ?? {});
   $: runningPlugins = installed.filter((plugin) => plugin.enabled).length;
   $: erroredPlugins = installed.filter((plugin) => plugin.lastError).length;
@@ -127,22 +157,17 @@
     canGoBack: page !== "plugins",
     back: () => (page = "plugins"),
   });
+  $: syncDetailPolling(page === "plugin" ? selected?.id ?? "" : "");
 
   async function loadAll() {
     loading = true;
     error = "";
     try {
-      if (mode === "manage") {
-        [installed, sources, catalog] = await Promise.all([
-          plugins.list(),
-          pluginSources.list().catch(() => []),
-          pluginCatalog.list().catch(() => []),
-        ]);
-      } else {
-        installed = await plugins.list();
-        sources = [];
-        catalog = [];
-      }
+      [installed, sources, catalog] = await Promise.all([
+        plugins.list(),
+        pluginSources.list().catch(() => []),
+        pluginCatalog.list().catch(() => []),
+      ]);
       if (
         !selectedId ||
         !installed.some((plugin) => plugin.id === selectedId)
@@ -179,15 +204,35 @@
 
   async function loadPluginDetails(id: string) {
     try {
-      const [settings, audit] = await Promise.all([
+      const [settings, audit, keys] = await Promise.all([
         plugins.getSettings(id).catch(() => ({})),
         plugins.logs(id).catch(() => []),
+        listPluginStorageKeys(id).catch(() => []),
       ]);
       settingsDraft = { ...settings };
       secretDraft = {};
       logs = audit;
+      storageKeys = keys;
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  function syncDetailPolling(pluginId: string) {
+    if (pluginId === detailPollKey) return;
+    detailPollKey = pluginId;
+    window.clearInterval(detailPollTimer);
+    detailPollTimer = undefined;
+    if (!pluginId) return;
+    detailPollTimer = window.setInterval(() => {
+      void loadPluginDetails(pluginId);
+    }, 5000);
+  }
+
+  async function refreshAfterPluginChange(pluginId?: string) {
+    await loadAll();
+    if (page === "plugin" && selected?.id && (!pluginId || pluginId === selected.id)) {
+      await loadPluginDetails(selected.id);
     }
   }
 
@@ -227,6 +272,25 @@
     }
   }
 
+  async function toggleAdministrator(trusted: boolean) {
+    if (!selected) return;
+    busy = "administrator";
+    error = "";
+    message = "";
+    try {
+      await plugins.updateAdministrator(selected.id, trusted);
+      message = trusted
+        ? "Administrator access granted."
+        : "Administrator access revoked.";
+      await loadAll();
+      if (page === "plugin") await loadPluginDetails(selected.id);
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      busy = "";
+    }
+  }
+
   async function saveSettings() {
     if (!selected) return;
     busy = "settings";
@@ -240,6 +304,23 @@
       );
       secretDraft = {};
       message = "Plugin settings saved.";
+      await loadPluginDetails(selected.id);
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      busy = "";
+    }
+  }
+
+  async function clearSelectedPluginStorage() {
+    if (!selected) return;
+    busy = "storage";
+    error = "";
+    message = "";
+    try {
+      await clearPluginStorage(selected.id);
+      storageKeys = [];
+      message = "Plugin storage cleared.";
       await loadPluginDetails(selected.id);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -397,7 +478,7 @@
       : plugin.installed
         ? "installed"
         : "available";
-    return `${plugin.id} · ${plugin.version} · ${kind}`;
+    return `${plugin.id} · ${plugin.version} · ${kind}${plugin.administratorTrusted ? " · admin" : ""}`;
   }
 </script>
 
@@ -426,10 +507,12 @@
       {/if}
 
       {#if installed.length === 0}
-        <EmptyState
-          title="No plugins installed"
-          body="Manage plugin sources and installs in Settings."
-        />
+        <section class="empty-with-action">
+          <EmptyState
+            title="No plugins installed"
+            body="Add signed plugins from trusted catalogs."
+          />
+        </section>
       {:else}
         <section
           class={`plugin-health-gauge ${pluginGaugeTone}`}
@@ -735,6 +818,28 @@
         {/if}
       </section>
 
+      {#if selectedAdministratorPermissions.length > 0}
+        <section class="settings-group">
+          <label class="settings-row permission-row">
+            <span>
+              <span>Administrator access</span>
+              <small
+                >Required for risky capabilities: {selectedAdministratorPermissions.join(
+                  ", ",
+                )}.</small
+              >
+            </span>
+            <input
+              type="checkbox"
+              checked={selected.administratorTrusted}
+              disabled={Boolean(busy)}
+              on:change={(event) =>
+                toggleAdministrator(event.currentTarget.checked)}
+            />
+          </label>
+        </section>
+      {/if}
+
       <section class="settings-group">
         {#if selectedPermissions.length === 0}
           <div class="settings-row static">
@@ -825,6 +930,29 @@
         </section>
       {/if}
 
+      <section class="settings-group">
+        <div class="settings-row static">
+          <span>
+            <span>Plugin storage</span>
+            <small>
+              {storageKeys.length === 1
+                ? "1 isolated record"
+                : `${storageKeys.length} isolated records`}
+            </small>
+          </span>
+          {#if storageKeys.length > 0}
+            <button
+              class="settings-inline-button danger"
+              disabled={Boolean(busy)}
+              type="button"
+              on:click={clearSelectedPluginStorage}
+            >
+              Clear
+            </button>
+          {/if}
+        </div>
+      </section>
+
       {#if selected.commands?.length}
         <section class="settings-group">
           {#each selected.commands as command}
@@ -897,21 +1025,6 @@
     class:plugin-manager-shell={embedded}
   >
     <div class:settings-page={!embedded} class:plugin-manager-page={embedded}>
-      <section class="settings-group">
-        <button class="settings-row" on:click={() => (page = "sources")}>
-          <span>
-            <span>Federated sources</span>
-            <small
-              >{sources.length === 1 ? "1 source" : `${sources.length} sources`}
-              · {catalog.length === 1
-                ? "1 catalog plugin"
-                : `${catalog.length} catalog plugins`}</small
-            >
-          </span>
-          <ChevronRightIcon size={18} strokeWidth={2.4} />
-        </button>
-      </section>
-
       {#if error || message}
         <section class="settings-group">
           <div class="settings-row static">
@@ -924,10 +1037,12 @@
       {/if}
 
       {#if installed.length === 0}
-        <EmptyState
-          title="No plugins installed"
-          body="Add signed plugin sources or create local plugins under /plugins."
-        />
+        <section class="empty-with-action">
+          <EmptyState
+            title="No plugins installed"
+            body="Add signed plugin sources or create local plugins under /plugins."
+          />
+        </section>
       {:else}
         <section class="settings-group">
           {#each installed as plugin}
