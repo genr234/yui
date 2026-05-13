@@ -3,30 +3,19 @@
   import ChevronRightIcon from "lucide-svelte/icons/chevron-right";
   import ArrowLeftIcon from "lucide-svelte/icons/arrow-left";
   import DownloadIcon from "lucide-svelte/icons/download";
-  import PlusIcon from "lucide-svelte/icons/plus";
   import RefreshCwIcon from "lucide-svelte/icons/refresh-cw";
   import TrashIcon from "lucide-svelte/icons/trash-2";
   import PermissionCards from "../components/PermissionCards.svelte";
   import Plugins from "./Plugins.svelte";
   import {
-    addAppSource,
-    appCatalogEntryId,
     fallbackAppIcon,
     findApp,
     firstAvailableAppId,
-    installedAppIds,
-    installCatalogApp as installAppFromCatalog,
     isImageAppIcon,
     loadAppsLibrary,
-    refreshAppSource,
-    removeAppSource,
     uninstallApp as uninstallInstalledApp,
   } from "../apps";
-  import {
-    type YuiAppSource,
-    type YuiCatalogEntry,
-    type YuiDevApp,
-  } from "../sdk/apps";
+  import { type YuiDevApp } from "../sdk/apps";
   import { bridge } from "../sdk/bridge";
   import {
     declaredPermissions,
@@ -47,7 +36,10 @@
   export let pluginSettingsRequest: { pluginId: string; nonce: number } | null =
     null;
 
-  const dispatch = createEventDispatcher<{ pluginSettingsBack: void }>();
+  const dispatch = createEventDispatcher<{
+    pluginSettingsBack: void;
+    store: { kind: "plugins" };
+  }>();
 
   type UpdateStatus = {
     enabled: boolean;
@@ -62,11 +54,10 @@
   };
 
   let apps: YuiDevApp[] = [];
-  let sources: YuiAppSource[] = [];
-  let catalog: YuiCatalogEntry[] = [];
   let selectedId = "";
-  let page: "root" | "apps" | "app" | "plugins" | "update" | "sources" = "root";
+  let page: "root" | "apps" | "app" | "plugins" | "update" = "root";
   let pageDirection: "forward" | "back" = "forward";
+  let hasNavigated = false;
   let dragging = false;
   let dragStartX = 0;
   let dragX = 0;
@@ -81,12 +72,9 @@
   let updateApplying = false;
   let updateMessage = "";
   let updateError = "";
-  let sourceURL = "";
   let appBusy = "";
   let appMessage = "";
   let appError = "";
-  let pendingAppInstall: YuiCatalogEntry | null = null;
-  let pendingAppPermissions: string[] = [];
   let pluginPageTitle = "Plugins";
   let pluginPageCanGoBack = false;
   let pluginPageBack: (() => void) | null = null;
@@ -104,9 +92,13 @@
     const refreshAppStorage = () => {
       appStorageVersion += 1;
     };
+    const refreshApps = () => {
+      void loadAppsArea();
+    };
     window.addEventListener("yui:permissions-changed", refresh);
     window.addEventListener("yui:embed-storage-changed", refreshEmbedStorage);
     window.addEventListener("yui:app-storage-changed", refreshAppStorage);
+    window.addEventListener("yui:apps-changed", refreshApps);
 
     void (async () => {
       await loadAppsArea();
@@ -120,6 +112,7 @@
         refreshEmbedStorage,
       );
       window.removeEventListener("yui:app-storage-changed", refreshAppStorage);
+      window.removeEventListener("yui:apps-changed", refreshApps);
     };
   });
 
@@ -133,7 +126,6 @@
     returnToPluginsTab = true;
     goTo("plugins", "forward");
   }
-  $: installedIds = installedAppIds(apps);
   $: selectedPermissions = selected ? declaredPermissions(selected.app) : [];
   $: selectedPermissionState = selected
     ? getAppPermissionState(selected.id)
@@ -151,80 +143,7 @@
   async function loadAppsArea() {
     const library = await loadAppsLibrary();
     apps = library.apps;
-    sources = library.sources;
-    catalog = library.catalog;
     selectedId = firstAvailableAppId(apps, selectedId);
-  }
-
-  async function addSource() {
-    const url = sourceURL.trim();
-    if (!url) return;
-    appBusy = "source:add";
-    appError = "";
-    appMessage = "";
-    try {
-      await addAppSource(url);
-      sourceURL = "";
-      appMessage = "App source added and refreshed.";
-      await loadAppsArea();
-    } catch (error) {
-      appError = error instanceof Error ? error.message : String(error);
-    } finally {
-      appBusy = "";
-    }
-  }
-
-  async function refreshSource(id: string) {
-    appBusy = `source:refresh:${id}`;
-    appError = "";
-    appMessage = "";
-    try {
-      await refreshAppSource(id);
-      appMessage = "App source refreshed.";
-      await loadAppsArea();
-    } catch (error) {
-      appError = error instanceof Error ? error.message : String(error);
-      await loadAppsArea();
-    } finally {
-      appBusy = "";
-    }
-  }
-
-  async function removeSource(id: string) {
-    appBusy = `source:remove:${id}`;
-    appError = "";
-    appMessage = "";
-    try {
-      await removeAppSource(id);
-      appMessage = "App source removed.";
-      await loadAppsArea();
-    } catch (error) {
-      appError = error instanceof Error ? error.message : String(error);
-    } finally {
-      appBusy = "";
-    }
-  }
-
-  async function installCatalogApp(entry: YuiCatalogEntry) {
-    appBusy = `install:${appCatalogEntryId(entry)}`;
-    appError = "";
-    appMessage = "";
-    try {
-      await installAppFromCatalog(entry);
-      for (const permission of entry.app.permissions ?? []) {
-        setAppPermission(
-          entry.app.id,
-          permission,
-          pendingAppPermissions.includes(permission),
-        );
-      }
-      appMessage = `${entry.app.name} installed.`;
-      await loadAppsArea();
-    } catch (error) {
-      appError = error instanceof Error ? error.message : String(error);
-    } finally {
-      appBusy = "";
-    }
   }
 
   async function uninstallApp(id: string) {
@@ -279,18 +198,6 @@
     permissionVersion += 1;
   }
 
-  function startAppInstall(entry: YuiCatalogEntry) {
-    pendingAppInstall = entry;
-    pendingAppPermissions = [...(entry.app.permissions ?? [])];
-  }
-
-  function togglePendingAppPermission(permission: string, granted: boolean) {
-    const next = new Set(pendingAppPermissions);
-    if (granted) next.add(permission);
-    else next.delete(permission);
-    pendingAppPermissions = [...next];
-  }
-
   async function clearEmbedOrigin(origin?: string) {
     if (!selected) return;
     await clearEmbedStorage(selected.id, origin);
@@ -316,10 +223,11 @@
   }
 
   function goTo(
-    nextPage: "root" | "apps" | "app" | "plugins" | "update" | "sources",
+    nextPage: "root" | "apps" | "app" | "plugins" | "update",
     direction: "forward" | "back",
   ) {
     pageDirection = direction;
+    hasNavigated = true;
     page = nextPage;
     dragX = 0;
   }
@@ -327,7 +235,6 @@
   function previousPage() {
     if (page === "app") return "apps";
     if (page === "plugins") return pluginPageCanGoBack ? "plugins" : "root";
-    if (page === "sources") return "apps";
     if (page === "update") return "root";
     if (page === "apps") return "root";
     return "root";
@@ -466,7 +373,7 @@
 >
   {#key page}
     {#if page === "root"}
-      <div class="settings-page settings-page-motion {pageDirection}">
+      <div class:settings-page-motion={hasNavigated} class="settings-page {pageDirection}">
         <section class="settings-group">
           <button class="settings-row" on:click={() => goTo("apps", "forward")}>
             <span>
@@ -493,7 +400,7 @@
           >
             <span>
               <span>Plugins</span>
-              <small>Sources, installs, permissions, settings</small>
+              <small>Permissions, settings, storage</small>
             </span>
             <ChevronRightIcon size={18} strokeWidth={2.4} />
           </button>
@@ -511,7 +418,7 @@
         </section>
       </div>
     {:else if page === "update"}
-      <div class="settings-page settings-page-motion {pageDirection}">
+      <div class:settings-page-motion={hasNavigated} class="settings-page {pageDirection}">
         <nav class="settings-nav" aria-label="Settings navigation">
           <button
             class="icon-button"
@@ -593,7 +500,7 @@
         </section>
       </div>
     {:else if page === "apps"}
-      <div class="settings-page settings-page-motion {pageDirection}">
+      <div class:settings-page-motion={hasNavigated} class="settings-page {pageDirection}">
         <nav class="settings-nav" aria-label="Settings navigation">
           <button
             class="icon-button"
@@ -605,25 +512,6 @@
           </button>
           <span>Apps</span>
         </nav>
-
-        <section class="settings-group">
-          <button
-            class="settings-row"
-            on:click={() => goTo("sources", "forward")}
-          >
-            <span>
-              <span>Federated sources</span>
-              <small>
-                {sources.length === 1
-                  ? "1 source"
-                  : `${sources.length} sources`} · {catalog.length === 1
-                  ? "1 catalog app"
-                  : `${catalog.length} catalog apps`}
-              </small>
-            </span>
-            <ChevronRightIcon size={18} strokeWidth={2.4} />
-          </button>
-        </section>
 
         {#if apps.length === 0}
           <section class="settings-group">
@@ -666,7 +554,7 @@
         {/if}
       </div>
     {:else if page === "plugins"}
-      <div class="settings-page settings-page-motion {pageDirection}">
+      <div class:settings-page-motion={hasNavigated} class="settings-page {pageDirection}">
         <nav class="settings-nav" aria-label="Settings navigation">
           <button
             class="icon-button"
@@ -687,150 +575,11 @@
           hideNav
           openPluginRequest={forwardedPluginRequest}
           on:page={handlePluginPage}
+          on:store={() => dispatch("store", { kind: "plugins" })}
         />
       </div>
-    {:else if page === "sources"}
-      <div class="settings-page settings-page-motion {pageDirection}">
-        <nav class="settings-nav" aria-label="Settings navigation">
-          <button
-            class="icon-button"
-            aria-label="Back to apps"
-            title="Back to apps"
-            on:click={() => goTo("apps", "back")}
-          >
-            <ArrowLeftIcon size={18} strokeWidth={2.4} />
-          </button>
-          <span>App sources</span>
-        </nav>
-
-        <section class="settings-group">
-          <div class="settings-row static settings-actions-row">
-            <span>
-              <span>Add source</span>
-            </span>
-          </div>
-          <div class="settings-row static settings-actions-row">
-            <input
-              class="settings-text-input"
-              placeholder="https://example.com/yui/catalog.json"
-              bind:value={sourceURL}
-              disabled={Boolean(appBusy)}
-            />
-            <button
-              class="settings-inline-button"
-              disabled={Boolean(appBusy) || !sourceURL.trim()}
-              title="Add app source"
-              on:click={addSource}
-            >
-              <PlusIcon size={14} strokeWidth={2.4} />
-              Add
-            </button>
-          </div>
-          {#if appError || appMessage}
-            <div class="settings-row static">
-              <span>
-                <span>{appError ? "Source error" : "Source status"}</span>
-                <small>{appError || appMessage}</small>
-              </span>
-            </div>
-          {/if}
-        </section>
-
-        <section class="settings-group">
-          {#if sources.length === 0}
-            <div class="settings-row static">
-              <span>
-                <span>No sources</span>
-                <small
-                  >Add a signed HTTPS catalog to discover downloadable apps.</small
-                >
-              </span>
-            </div>
-          {:else}
-            {#each sources as source}
-              <div class="settings-row static settings-actions-row">
-                <span>
-                  <span>{source.name || source.url}</span>
-                  <small>
-                    {source.lastStatus}{source.publisher
-                      ? ` · ${source.publisher}`
-                      : ""}
-                    {source.lastError ? ` · ${source.lastError}` : ""}
-                  </small>
-                </span>
-                <span class="settings-actions">
-                  <button
-                    class="settings-inline-button"
-                    disabled={Boolean(appBusy)}
-                    title="Refresh source"
-                    on:click={() => refreshSource(source.id)}
-                  >
-                    <RefreshCwIcon size={14} strokeWidth={2.4} />
-                    Refresh
-                  </button>
-                  <button
-                    class="settings-inline-button danger"
-                    disabled={Boolean(appBusy)}
-                    title="Remove source"
-                    on:click={() => removeSource(source.id)}
-                  >
-                    <TrashIcon size={14} strokeWidth={2.4} />
-                    Remove
-                  </button>
-                </span>
-              </div>
-            {/each}
-          {/if}
-        </section>
-
-        <section class="settings-group">
-          {#if catalog.length === 0}
-            <div class="settings-row static">
-              <span>
-                <span>No catalog apps</span>
-                <small>Refresh a source to load signed app listings.</small>
-              </span>
-            </div>
-          {:else}
-            {#each catalog as entry}
-              <div class="settings-row static settings-actions-row">
-                <span>
-                  <span>{entry.app.name}</span>
-                  <small>
-                    {entry.app.id} · {entry.app.version} · {entry.catalog}
-                    {entry.app.permissions?.length
-                      ? ` · ${entry.app.permissions.join(", ")}`
-                      : " · no permissions"}
-                  </small>
-                </span>
-                {#if installedIds.has(entry.app.id)}
-                  <button
-                    class="settings-inline-button danger"
-                    disabled={Boolean(appBusy)}
-                    title="Uninstall app"
-                    on:click={() => uninstallApp(entry.app.id)}
-                  >
-                    <TrashIcon size={14} strokeWidth={2.4} />
-                    Uninstall
-                  </button>
-                {:else}
-                  <button
-                    class="settings-inline-button"
-                    disabled={Boolean(appBusy)}
-                    title="Install signed app"
-                    on:click={() => startAppInstall(entry)}
-                  >
-                    <DownloadIcon size={14} strokeWidth={2.4} />
-                    Install
-                  </button>
-                {/if}
-              </div>
-            {/each}
-          {/if}
-        </section>
-      </div>
     {:else}
-      <div class="settings-page settings-page-motion {pageDirection}">
+      <div class:settings-page-motion={hasNavigated} class="settings-page {pageDirection}">
         <nav class="settings-nav" aria-label="Settings navigation">
           <button
             class="icon-button"
@@ -979,43 +728,3 @@
     {/if}
   {/key}
 </section>
-
-{#if pendingAppInstall}
-  <div class="permission-scrim" role="presentation">
-    <section
-      class="permission-dialog permission-dialog-wide"
-      role="dialog"
-      aria-modal="true"
-    >
-      <div>
-        <h2>Install {pendingAppInstall.app.name}</h2>
-        <p>Choose what starts enabled.</p>
-      </div>
-      <PermissionCards
-        permissions={pendingAppInstall.app.permissions ?? []}
-        granted={pendingAppPermissions}
-        describe={describePermission}
-        onToggle={togglePendingAppPermission}
-        onAllowAll={() =>
-          (pendingAppPermissions = [
-            ...(pendingAppInstall?.app.permissions ?? []),
-          ])}
-        onDenyAll={() => (pendingAppPermissions = [])}
-      />
-      <div class="permission-actions">
-        <button
-          class="permission-secondary"
-          on:click={() => (pendingAppInstall = null)}>Cancel</button
-        >
-        <button
-          class="permission-primary"
-          on:click={() => {
-            const entry = pendingAppInstall;
-            pendingAppInstall = null;
-            if (entry) void installCatalogApp(entry);
-          }}>Install</button
-        >
-      </div>
-    </section>
-  </div>
-{/if}

@@ -17,13 +17,20 @@
   } from "../apps";
   import type { YuiDevApp } from "../sdk/apps";
 
+  export let openAppRequest: { appId: string; nonce: number } | null = null;
+
   let apps: YuiDevApp[] = [];
   let launchedId = "";
   let reloadKey = 0;
   let error = "";
   let loading = true;
   let shellFullscreen = false;
-  const dispatch = createEventDispatcher<{ launched: { active: boolean } }>();
+  let consumedOpenAppNonce = 0;
+  let refreshTimer: number | undefined;
+  const dispatch = createEventDispatcher<{
+    launched: { active: boolean };
+    store: void;
+  }>();
 
   onMount(() => {
     const offFullscreen = (event: Event) => {
@@ -32,28 +39,40 @@
       );
     };
     window.addEventListener("yui:shell-fullscreen", offFullscreen);
+    const onAppsChanged = () => {
+      window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => {
+        void refreshApps();
+      }, 40);
+    };
+    window.addEventListener("yui:apps-changed", onAppsChanged);
 
-    void (async () => {
-      try {
-        apps = await loadApps();
-      } catch (err) {
-        error = err instanceof Error ? err.message : String(err);
-      } finally {
-        loading = false;
-      }
-    })();
+    void refreshApps();
 
-    return () =>
+    return () => {
+      window.clearTimeout(refreshTimer);
       window.removeEventListener("yui:shell-fullscreen", offFullscreen);
+      window.removeEventListener("yui:apps-changed", onAppsChanged);
+    };
   });
 
   onDestroy(() => {
+    window.clearTimeout(refreshTimer);
     announceLaunched(false);
     setShellFullscreen(false);
   });
 
   $: launched = findApp(apps, launchedId);
   $: categories = groupAppsByCategory(apps);
+  $: if (
+    openAppRequest &&
+    openAppRequest.nonce !== consumedOpenAppNonce &&
+    apps.length > 0
+  ) {
+    consumedOpenAppNonce = openAppRequest.nonce;
+    const requested = findApp(apps, openAppRequest.appId);
+    if (requested) launch(requested);
+  }
 
   function launch(app: YuiDevApp) {
     launchedId = app.id;
@@ -83,6 +102,17 @@
   function announceLaunched(active: boolean) {
     dispatch("launched", { active });
   }
+
+  async function refreshApps() {
+    loading = true;
+    try {
+      apps = await loadApps();
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      loading = false;
+    }
+  }
 </script>
 
 {#if loading}
@@ -90,10 +120,12 @@
 {:else if error}
   <EmptyState title="App discovery failed" body={error} />
 {:else if apps.length === 0}
-  <EmptyState
-    title="No simple apps found"
-    body="Add apps under /apps with a yui.app.json manifest and app.yui.js entry."
-  />
+  <section class="empty-with-action">
+    <EmptyState
+      title="No simple apps found"
+      body="Add apps from trusted catalogs or create local apps under /apps."
+    />
+  </section>
 {:else if launched}
   <section class="app-route-view">
     <nav class="app-route-controls" aria-label="App navigation">

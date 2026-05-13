@@ -3,13 +3,11 @@ import HouseIcon from "lucide-svelte/icons/house";
 import InfoIcon from "lucide-svelte/icons/info";
 import LayoutGridIcon from "lucide-svelte/icons/layout-grid";
 import SettingsIcon from "lucide-svelte/icons/settings";
-import WrenchIcon from "lucide-svelte/icons/wrench";
 import BlocksIcon from "lucide-svelte/icons/blocks";
 import About from "./About.svelte";
 import Apps from "./Apps.svelte";
 import Home from "./Home.svelte";
 import Settings from "./Settings.svelte";
-import Tools from "./Tools.svelte";
 import type { Section, SectionItem } from "../types";
 import Plugins from "./Plugins.svelte";
 
