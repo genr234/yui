@@ -55,9 +55,11 @@ func PluginCommands() []Command {
 		PluginEnableCommand{},
 		PluginDisableCommand{},
 		PluginPermissionsUpdateCommand{},
+		PluginAdministratorUpdateCommand{},
 		PluginSettingsGetCommand{},
 		PluginSettingsUpdateCommand{},
 		PluginLogsListCommand{},
+		PluginExtensionsListCommand{},
 		PluginRunCommand{},
 	}
 }
@@ -71,13 +73,14 @@ type PluginManager struct {
 }
 
 type pluginInstance struct {
-	record    pluginViewRecord
-	globals   starlark.StringDict
-	commands  map[string]pluginCommand
-	events    map[string][]starlark.Callable
-	cancel    context.CancelFunc
-	timers    []context.CancelFunc
-	lastError string
+	record     pluginViewRecord
+	globals    starlark.StringDict
+	commands   map[string]pluginCommand
+	extensions pluginExtensions
+	events     map[string][]starlark.Callable
+	cancel     context.CancelFunc
+	timers     []context.CancelFunc
+	lastError  string
 }
 
 type pluginCommand struct {
@@ -165,53 +168,81 @@ type pluginScheduleRecord struct {
 }
 
 type installedPluginRecord struct {
-	ID                 string               `json:"id"`
-	Name               string               `json:"name"`
-	Version            string               `json:"version"`
-	Type               string               `json:"type"`
-	Entry              string               `json:"entry"`
-	SourceID           string               `json:"sourceId"`
-	SourceURL          string               `json:"sourceUrl"`
-	InstalledAt        string               `json:"installedAt"`
-	Plugin             pluginMetadataRecord `json:"plugin"`
-	Source             string               `json:"source"`
-	Signature          string               `json:"signature"`
-	SourceSHA256       string               `json:"sourceSha256"`
-	Enabled            bool                 `json:"enabled"`
-	GrantedPermissions []string             `json:"grantedPermissions"`
+	ID                   string               `json:"id"`
+	Name                 string               `json:"name"`
+	Version              string               `json:"version"`
+	Type                 string               `json:"type"`
+	Entry                string               `json:"entry"`
+	SourceID             string               `json:"sourceId"`
+	SourceURL            string               `json:"sourceUrl"`
+	InstalledAt          string               `json:"installedAt"`
+	Plugin               pluginMetadataRecord `json:"plugin"`
+	Source               string               `json:"source"`
+	Signature            string               `json:"signature"`
+	SourceSHA256         string               `json:"sourceSha256"`
+	Enabled              bool                 `json:"enabled"`
+	GrantedPermissions   []string             `json:"grantedPermissions"`
+	AdministratorTrusted bool                 `json:"administratorTrusted"`
 }
 
 type pluginStateRecord struct {
-	ID                 string   `json:"id"`
-	Enabled            bool     `json:"enabled"`
-	GrantedPermissions []string `json:"grantedPermissions"`
-	UpdatedAt          string   `json:"updatedAt"`
+	ID                   string   `json:"id"`
+	Enabled              bool     `json:"enabled"`
+	GrantedPermissions   []string `json:"grantedPermissions"`
+	AdministratorTrusted bool     `json:"administratorTrusted"`
+	UpdatedAt            string   `json:"updatedAt"`
 }
 
 type pluginViewRecord struct {
-	ID                 string               `json:"id"`
-	Name               string               `json:"name"`
-	Version            string               `json:"version"`
-	Type               string               `json:"type"`
-	Entry              string               `json:"entry"`
-	Dev                bool                 `json:"dev"`
-	Installed          bool                 `json:"installed"`
-	SourceID           string               `json:"sourceId,omitempty"`
-	SourceURL          string               `json:"sourceUrl,omitempty"`
-	InstalledAt        string               `json:"installedAt,omitempty"`
-	Plugin             pluginMetadataRecord `json:"plugin"`
-	Source             string               `json:"source,omitempty"`
-	Enabled            bool                 `json:"enabled"`
-	GrantedPermissions []string             `json:"grantedPermissions"`
-	Commands           []pluginCommandView  `json:"commands,omitempty"`
-	LastError          string               `json:"lastError,omitempty"`
-	Settings           map[string]any       `json:"settings,omitempty"`
+	ID                   string               `json:"id"`
+	Name                 string               `json:"name"`
+	Version              string               `json:"version"`
+	Type                 string               `json:"type"`
+	Entry                string               `json:"entry"`
+	Dev                  bool                 `json:"dev"`
+	Installed            bool                 `json:"installed"`
+	SourceID             string               `json:"sourceId,omitempty"`
+	SourceURL            string               `json:"sourceUrl,omitempty"`
+	InstalledAt          string               `json:"installedAt,omitempty"`
+	Plugin               pluginMetadataRecord `json:"plugin"`
+	Source               string               `json:"source,omitempty"`
+	Enabled              bool                 `json:"enabled"`
+	GrantedPermissions   []string             `json:"grantedPermissions"`
+	AdministratorTrusted bool                 `json:"administratorTrusted"`
+	Commands             []pluginCommandView  `json:"commands,omitempty"`
+	LastError            string               `json:"lastError,omitempty"`
+	Settings             map[string]any       `json:"settings,omitempty"`
 }
 
 type pluginCommandView struct {
 	ID       string `json:"id"`
 	Title    string `json:"title"`
 	Subtitle string `json:"subtitle,omitempty"`
+}
+
+type pluginShellPage struct {
+	ID       string `json:"id"`
+	PluginID string `json:"pluginId"`
+	Title    string `json:"title"`
+	Icon     string `json:"icon,omitempty"`
+	Order    int    `json:"order,omitempty"`
+	Blocks   []any  `json:"blocks,omitempty"`
+	CSS      string `json:"css,omitempty"`
+}
+
+type pluginShellAction struct {
+	ID       string `json:"id"`
+	PluginID string `json:"pluginId"`
+	Location string `json:"location"`
+	Title    string `json:"title"`
+	Icon     string `json:"icon,omitempty"`
+	Command  string `json:"command,omitempty"`
+}
+
+type pluginExtensions struct {
+	Pages   []pluginShellPage   `json:"pages"`
+	Actions []pluginShellAction `json:"actions"`
+	CSS     []string            `json:"css"`
 }
 
 type pluginAuditRecord struct {
@@ -271,7 +302,7 @@ func (m *PluginManager) Stop() {
 		cancel()
 	}
 	for _, id := range ids {
-		_ = m.disable(id)
+		m.stopInstance(id, false)
 	}
 }
 
@@ -331,6 +362,7 @@ func (m *PluginManager) listInstalledPlugins() ([]pluginViewRecord, error) {
 			ID: record.ID, Name: record.Name, Version: record.Version, Type: record.Type, Entry: record.Entry,
 			Installed: true, SourceID: record.SourceID, SourceURL: record.SourceURL, InstalledAt: record.InstalledAt,
 			Plugin: record.Plugin, Source: record.Source, Enabled: state.Enabled, GrantedPermissions: state.GrantedPermissions,
+			AdministratorTrusted: state.AdministratorTrusted,
 		})
 	}
 	return result, nil
@@ -384,6 +416,7 @@ func (m *PluginManager) discoverLocalPlugins() ([]pluginViewRecord, error) {
 			result = append(result, pluginViewRecord{
 				ID: meta.ID, Name: meta.Name, Version: meta.Version, Type: "starlark", Entry: entryPath,
 				Dev: true, Plugin: meta, Source: string(source), Enabled: state.Enabled, GrantedPermissions: state.GrantedPermissions,
+				AdministratorTrusted: state.AdministratorTrusted,
 			})
 		}
 	}
@@ -427,13 +460,14 @@ func (m *PluginManager) stateFor(id string, declared []string) pluginStateRecord
 	return state
 }
 
-func (m *PluginManager) setState(id string, enabled bool, permissions []string) error {
+func (m *PluginManager) setState(id string, enabled bool, permissions []string, administratorTrusted bool) error {
 	db, err := m.r.Store()
 	if err != nil {
 		return err
 	}
 	return db.Collection(pluginStateCollection).Put(id, pluginStateRecord{
-		ID: id, Enabled: enabled, GrantedPermissions: permissions, UpdatedAt: time.Now().UTC().Format(time.RFC3339),
+		ID: id, Enabled: enabled, GrantedPermissions: permissions, AdministratorTrusted: administratorTrusted,
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
 	})
 }
 
@@ -461,7 +495,7 @@ func (m *PluginManager) enable(id string) error {
 	}
 	instCtx, cancel := context.WithCancel(ctx)
 	inst := &pluginInstance{
-		record: plugin, globals: globals, commands: map[string]pluginCommand{}, events: map[string][]starlark.Callable{}, cancel: cancel,
+		record: plugin, globals: globals, commands: map[string]pluginCommand{}, extensions: pluginExtensions{}, events: map[string][]starlark.Callable{}, cancel: cancel,
 	}
 	m.mu.Lock()
 	m.instances[id] = inst
@@ -476,20 +510,28 @@ func (m *PluginManager) enable(id string) error {
 		m.audit(id, "activate", "", true, "", "")
 	}
 	m.startSchedules(instCtx, inst)
-	return m.setState(id, true, plugin.GrantedPermissions)
+	return m.setState(id, true, plugin.GrantedPermissions, plugin.AdministratorTrusted)
 }
 
 func (m *PluginManager) disable(id string) error {
-	m.mu.Lock()
-	inst := m.instances[id]
-	delete(m.instances, id)
-	m.mu.Unlock()
+	inst := m.stopInstance(id, true)
 	if inst == nil {
 		plugin, err := m.findPlugin(id)
 		if err != nil {
 			return err
 		}
-		return m.setState(id, false, plugin.GrantedPermissions)
+		return m.setState(id, false, plugin.GrantedPermissions, plugin.AdministratorTrusted)
+	}
+	return m.setState(id, false, inst.record.GrantedPermissions, inst.record.AdministratorTrusted)
+}
+
+func (m *PluginManager) stopInstance(id string, persistAudit bool) *pluginInstance {
+	m.mu.Lock()
+	inst := m.instances[id]
+	delete(m.instances, id)
+	m.mu.Unlock()
+	if inst == nil {
+		return nil
 	}
 	for _, cancel := range inst.timers {
 		cancel()
@@ -498,8 +540,10 @@ func (m *PluginManager) disable(id string) error {
 		inst.cancel()
 	}
 	_ = m.callHook(context.Background(), inst, "deactivate")
-	m.audit(id, "deactivate", "", true, "", "")
-	return m.setState(id, false, inst.record.GrantedPermissions)
+	if persistAudit {
+		m.audit(id, "deactivate", "", true, "", "")
+	}
+	return inst
 }
 
 func (m *PluginManager) findPlugin(id string) (pluginViewRecord, error) {
@@ -668,6 +712,7 @@ func (m *PluginManager) contextValue(inst *pluginInstance) starlark.Value {
 		"fs":       m.fsModule(inst),
 		"process":  m.processModule(inst),
 		"shell":    m.shellModule(inst),
+		"ui":       m.shellUIModule(inst),
 		"logs":     m.logsModule(inst),
 		"config":   m.configModule(inst),
 		"system":   m.systemModule(inst),
@@ -978,7 +1023,102 @@ func (m *PluginManager) shellModule(inst *pluginInstance) starlark.Value {
 			}
 			return toStarlark(result)
 		}),
+		"register_page": starlark.NewBuiltin("shell.register_page", func(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+			return m.registerShellPage(inst, "shell.register_page", args, kwargs)
+		}),
+		"register_action": starlark.NewBuiltin("shell.register_action", func(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+			return m.registerShellAction(inst, "shell.register_action", args, kwargs)
+		}),
+		"add_css": starlark.NewBuiltin("shell.add_css", func(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+			return m.addShellCSS(inst, "shell.add_css", args, kwargs)
+		}),
 	})
+}
+
+func (m *PluginManager) shellUIModule(inst *pluginInstance) starlark.Value {
+	return m.module("ui", starlark.StringDict{
+		"register_page": starlark.NewBuiltin("ui.register_page", func(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+			return m.registerShellPage(inst, "ui.register_page", args, kwargs)
+		}),
+		"register_action": starlark.NewBuiltin("ui.register_action", func(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+			return m.registerShellAction(inst, "ui.register_action", args, kwargs)
+		}),
+		"add_css": starlark.NewBuiltin("ui.add_css", func(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+			return m.addShellCSS(inst, "ui.add_css", args, kwargs)
+		}),
+	})
+}
+
+func (m *PluginManager) registerShellPage(inst *pluginInstance, name string, args starlark.Tuple, _ []starlark.Tuple) (starlark.Value, error) {
+	if err := m.require(inst, "shell.pages"); err != nil {
+		return nil, err
+	}
+	var spec starlark.Value
+	if err := starlark.UnpackPositionalArgs(name, args, nil, 1, &spec); err != nil {
+		return nil, err
+	}
+	obj, err := starlarkDict(spec)
+	if err != nil {
+		return nil, err
+	}
+	page := pluginShellPage{
+		ID:       pluginExtensionID(inst.record.ID, stringMapValue(obj, "id")),
+		PluginID: inst.record.ID,
+		Title:    stringMapValue(obj, "title"),
+		Icon:     stringMapValue(obj, "icon"),
+		Order:    intMapValue(obj, "order"),
+		CSS:      stringMapValue(obj, "css"),
+	}
+	if page.ID == "" || page.Title == "" {
+		return nil, fmt.Errorf("page id and title are required")
+	}
+	if blocks, ok := obj["blocks"].([]any); ok {
+		page.Blocks = blocks
+	}
+	inst.extensions.Pages = append(inst.extensions.Pages, page)
+	m.audit(inst.record.ID, name, "shell.pages", true, "", page.ID)
+	return starlark.None, nil
+}
+
+func (m *PluginManager) registerShellAction(inst *pluginInstance, name string, args starlark.Tuple, _ []starlark.Tuple) (starlark.Value, error) {
+	if err := m.require(inst, "shell.actions"); err != nil {
+		return nil, err
+	}
+	var spec starlark.Value
+	if err := starlark.UnpackPositionalArgs(name, args, nil, 1, &spec); err != nil {
+		return nil, err
+	}
+	obj, err := starlarkDict(spec)
+	if err != nil {
+		return nil, err
+	}
+	action := pluginShellAction{
+		ID:       pluginExtensionID(inst.record.ID, stringMapValue(obj, "id")),
+		PluginID: inst.record.ID,
+		Location: stringMapValue(obj, "location"),
+		Title:    stringMapValue(obj, "title"),
+		Icon:     stringMapValue(obj, "icon"),
+		Command:  stringMapValue(obj, "command"),
+	}
+	if action.ID == "" || action.Location == "" || action.Title == "" {
+		return nil, fmt.Errorf("action id, location, and title are required")
+	}
+	inst.extensions.Actions = append(inst.extensions.Actions, action)
+	m.audit(inst.record.ID, name, "shell.actions", true, "", action.ID)
+	return starlark.None, nil
+}
+
+func (m *PluginManager) addShellCSS(inst *pluginInstance, name string, args starlark.Tuple, _ []starlark.Tuple) (starlark.Value, error) {
+	if err := m.require(inst, "shell.css"); err != nil {
+		return nil, err
+	}
+	var css string
+	if err := starlark.UnpackPositionalArgs(name, args, nil, 1, &css); err != nil {
+		return nil, err
+	}
+	inst.extensions.CSS = append(inst.extensions.CSS, css)
+	m.audit(inst.record.ID, name, "shell.css", true, "", truncate(css, 120))
+	return starlark.None, nil
 }
 
 func (m *PluginManager) logsModule(inst *pluginInstance) starlark.Value {
@@ -1040,12 +1180,34 @@ func (m *PluginManager) timeModule(inst *pluginInstance) starlark.Value {
 func (m *PluginManager) require(inst *pluginInstance, permission string) error {
 	for _, granted := range inst.record.GrantedPermissions {
 		if granted == permission {
+			if isAdminGatedPermission(permission) && !inst.record.AdministratorTrusted {
+				err := fmt.Errorf("plugin %s requires administrator access: %s", inst.record.ID, permission)
+				m.audit(inst.record.ID, "administrator.denied", permission, false, err.Error(), "")
+				return err
+			}
 			return nil
 		}
 	}
 	err := fmt.Errorf("plugin %s permission denied: %s", inst.record.ID, permission)
 	m.audit(inst.record.ID, "permission.denied", permission, false, err.Error(), "")
 	return err
+}
+
+func isAdminGatedPermission(permission string) bool {
+	switch permission {
+	case "process.run", "shell.run", "fs.write", "shell.pages", "shell.css", "shell.actions":
+		return true
+	default:
+		return false
+	}
+}
+
+func pluginExtensionID(pluginID, id string) string {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return ""
+	}
+	return pluginID + ":" + id
 }
 
 func (m *PluginManager) pluginKV(collectionName, pluginID, key string) (any, bool, error) {
@@ -1327,7 +1489,7 @@ func (PluginInstallCommand) Handle(r *Registry, params json.RawMessage) (any, er
 	if err := db.Collection(installedPluginsCollection).Put(installed.ID, installed); err != nil {
 		return nil, err
 	}
-	if err := r.plugins.setState(installed.ID, false, installed.GrantedPermissions); err != nil {
+	if err := r.plugins.setState(installed.ID, false, installed.GrantedPermissions, false); err != nil {
 		return nil, err
 	}
 	return installed, nil
@@ -1393,7 +1555,7 @@ func (PluginPermissionsUpdateCommand) Handle(r *Registry, params json.RawMessage
 		return nil, err
 	}
 	granted := filterDeclared(p.Permissions, plugin.Plugin.Permissions)
-	if err := r.plugins.setState(p.ID, plugin.Enabled, granted); err != nil {
+	if err := r.plugins.setState(p.ID, plugin.Enabled, granted, plugin.AdministratorTrusted); err != nil {
 		return nil, err
 	}
 	r.plugins.mu.Lock()
@@ -1402,6 +1564,41 @@ func (PluginPermissionsUpdateCommand) Handle(r *Registry, params json.RawMessage
 	}
 	r.plugins.mu.Unlock()
 	return granted, nil
+}
+
+type PluginAdministratorUpdateCommand struct{}
+
+func (PluginAdministratorUpdateCommand) Name() string { return "plugins.administrator.update" }
+func (PluginAdministratorUpdateCommand) Handle(r *Registry, params json.RawMessage) (any, error) {
+	var p struct {
+		ID      string `json:"id"`
+		Trusted bool   `json:"trusted"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, err
+	}
+	plugin, err := r.plugins.findPlugin(p.ID)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.plugins.setState(p.ID, plugin.Enabled, plugin.GrantedPermissions, p.Trusted); err != nil {
+		return nil, err
+	}
+	r.plugins.mu.Lock()
+	if inst := r.plugins.instances[p.ID]; inst != nil {
+		inst.record.AdministratorTrusted = p.Trusted
+	}
+	r.plugins.mu.Unlock()
+	r.plugins.audit(p.ID, "administrator.update", "", true, "", fmt.Sprintf("trusted=%t", p.Trusted))
+	if plugin.Enabled {
+		if err := r.plugins.disable(p.ID); err != nil {
+			return nil, err
+		}
+		if err := r.plugins.enable(p.ID); err != nil {
+			return nil, err
+		}
+	}
+	return p.Trusted, nil
 }
 
 type PluginSettingsGetCommand struct{}
@@ -1491,7 +1688,7 @@ func (PluginLogsListCommand) Handle(r *Registry, params json.RawMessage) (any, e
 	if err != nil {
 		return nil, err
 	}
-	docs, err := db.Collection(pluginAuditCollection).List(store.ListOptions{Prefix: p.ID + ":", Limit: p.Limit})
+	docs, err := db.Collection(pluginAuditCollection).List(store.ListOptions{Prefix: p.ID + ":"})
 	if err != nil {
 		return nil, err
 	}
@@ -1503,8 +1700,46 @@ func (PluginLogsListCommand) Handle(r *Registry, params json.RawMessage) (any, e
 		}
 		result = append(result, record)
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i].At > result[j].At })
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].At == result[j].At {
+			return result[i].ID > result[j].ID
+		}
+		return result[i].At > result[j].At
+	})
+	if len(result) > p.Limit {
+		result = result[:p.Limit]
+	}
 	return result, nil
+}
+
+type PluginExtensionsListCommand struct{}
+
+func (PluginExtensionsListCommand) Name() string { return "plugins.extensions.list" }
+func (PluginExtensionsListCommand) Handle(r *Registry, _ json.RawMessage) (any, error) {
+	extensions := pluginExtensions{
+		Pages:   []pluginShellPage{},
+		Actions: []pluginShellAction{},
+		CSS:     []string{},
+	}
+	r.plugins.mu.Lock()
+	instances := make([]*pluginInstance, 0, len(r.plugins.instances))
+	for _, inst := range r.plugins.instances {
+		instances = append(instances, inst)
+	}
+	r.plugins.mu.Unlock()
+	sort.Slice(instances, func(i, j int) bool { return instances[i].record.Name < instances[j].record.Name })
+	for _, inst := range instances {
+		extensions.Pages = append(extensions.Pages, inst.extensions.Pages...)
+		extensions.Actions = append(extensions.Actions, inst.extensions.Actions...)
+		extensions.CSS = append(extensions.CSS, inst.extensions.CSS...)
+	}
+	sort.Slice(extensions.Pages, func(i, j int) bool {
+		if extensions.Pages[i].Order == extensions.Pages[j].Order {
+			return extensions.Pages[i].Title < extensions.Pages[j].Title
+		}
+		return extensions.Pages[i].Order < extensions.Pages[j].Order
+	})
+	return extensions, nil
 }
 
 type PluginRunCommand struct{}
