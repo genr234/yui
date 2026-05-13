@@ -14,6 +14,7 @@ export type YuiAppSource = {
 	url: string;
 	name?: string;
 	publisher?: string;
+	dev?: boolean;
 	signingKeys?: string[];
 	lastRefreshed?: string;
 	lastStatus: "pending" | "ok" | "error" | string;
@@ -51,6 +52,9 @@ type InstalledAppRecord = YuiDevApp & {
 	installedAt: string;
 	app: Omit<YuiSimpleApp, "mount">;
 };
+
+const DEV_APP_SOURCE_ID = "dev-apps";
+const DEV_APP_SOURCE_URL = "yui://dev/apps";
 
 const manifests = import.meta.glob("../../../../apps/*/yui.app.json", {
 	query: "?raw",
@@ -134,6 +138,50 @@ export async function discoverLocalDevApps(): Promise<YuiDevApp[]> {
 	return apps.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+function localAppToCatalogEntry(app: YuiDevApp): YuiCatalogEntry {
+	return {
+		sourceId: DEV_APP_SOURCE_ID,
+		sourceUrl: DEV_APP_SOURCE_URL,
+		catalog: "Dev apps",
+		publisher: "Local workspace",
+		verified: true,
+		updatedAt: "",
+		app: {
+			id: app.id,
+			name: app.name,
+			version: app.version,
+			description: app.app.description,
+			icon: app.app.icon,
+			category: app.app.category,
+			permissions: app.app.permissions,
+			sourceUrl: app.entry,
+			sourceSha256: "",
+			signature: "",
+		},
+	};
+}
+
+export async function listDevAppSources(): Promise<YuiAppSource[]> {
+	const apps = await discoverLocalDevApps();
+	if (apps.length === 0) return [];
+	return [
+		{
+			id: DEV_APP_SOURCE_ID,
+			url: DEV_APP_SOURCE_URL,
+			name: "Dev apps",
+			publisher: "Local workspace",
+			dev: true,
+			lastStatus: "ok",
+			discoveredApps: apps.length,
+		},
+	];
+}
+
+export async function listDevAppCatalog(): Promise<YuiCatalogEntry[]> {
+	const apps = await discoverLocalDevApps();
+	return apps.map(localAppToCatalogEntry);
+}
+
 function installedRecordToApp(record: InstalledAppRecord): YuiDevApp {
 	const app = {
 		...record.app,
@@ -156,20 +204,39 @@ function installedRecordToApp(record: InstalledAppRecord): YuiDevApp {
 	};
 }
 
+function dispatchAppsChanged(appId?: string) {
+	window.dispatchEvent(new CustomEvent("yui:apps-changed", { detail: { appId } }));
+}
+
+async function mutateApps<T>(appId: string | undefined, action: Promise<T>) {
+	const result = await action;
+	dispatchAppsChanged(appId);
+	return result;
+}
+
 export async function listInstalledApps(): Promise<YuiDevApp[]> {
 	const records = await bridge.send<InstalledAppRecord[]>("apps.installed.list");
 	return records.map(installedRecordToApp);
 }
 
 export async function discoverApps(): Promise<YuiDevApp[]> {
-	const [localApps, installedApps] = await Promise.all([
-		discoverLocalDevApps(),
+	const [installedApps, localApps] = await Promise.all([
 		listInstalledApps().catch(() => []),
+		discoverLocalDevApps().catch(() => []),
 	]);
-	const byID = new Map<string, YuiDevApp>();
-	for (const app of localApps) byID.set(app.id, app);
-	for (const app of installedApps) byID.set(app.id, app);
-	return [...byID.values()].sort((a, b) => a.name.localeCompare(b.name));
+	const localByID = new Map(localApps.map((app) => [app.id, app]));
+	for (const app of installedApps) {
+		if (app.sourceId !== DEV_APP_SOURCE_ID) continue;
+		const local = localByID.get(app.id);
+		if (!local) continue;
+		app.name = local.name;
+		app.version = local.version;
+		app.entry = local.entry;
+		app.app = local.app;
+		app.source = local.source;
+		app.sourceUrl = local.entry;
+	}
+	return installedApps.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function discoverDevApps(): Promise<YuiDevApp[]> {
@@ -178,15 +245,34 @@ export async function discoverDevApps(): Promise<YuiDevApp[]> {
 
 export const appSources = {
 	list: () => bridge.send<YuiAppSource[]>("apps.sources.list"),
-	add: (url: string) => bridge.send<YuiAppSource>("apps.sources.add", { url }),
-	remove: (id: string) => bridge.send<void>("apps.sources.remove", { id }),
-	refresh: (id: string) => bridge.send<YuiAppSource>("apps.sources.refresh", { id }),
+	add: (url: string) => mutateApps(undefined, bridge.send<YuiAppSource>("apps.sources.add", { url })),
+	remove: (id: string) => mutateApps(undefined, bridge.send<void>("apps.sources.remove", { id })),
+	refresh: (id: string) => mutateApps(undefined, bridge.send<YuiAppSource>("apps.sources.refresh", { id })),
 };
 
 export const appCatalog = {
 	list: () => bridge.send<YuiCatalogEntry[]>("apps.catalog.list"),
-	install: (catalogId: string) => bridge.send<InstalledAppRecord>("apps.install", { catalogId }),
-	uninstall: (id: string) => bridge.send<void>("apps.uninstall", { id }),
+	install: (catalogId: string) => mutateApps(undefined, bridge.send<InstalledAppRecord>("apps.install", { catalogId })),
+	installDev: async (entry: YuiCatalogEntry) => {
+		const localApps = await discoverLocalDevApps();
+		const app = localApps.find(
+			(candidate) =>
+				candidate.id === entry.app.id &&
+				candidate.version === entry.app.version &&
+				candidate.entry === entry.app.sourceUrl,
+		);
+		if (!app) {
+			throw new Error(`Dev app not found: ${entry.app.id}`);
+		}
+		return mutateApps(
+			app.id,
+			bridge.send<InstalledAppRecord>("apps.dev.install", {
+				entry: app.entry,
+				source: app.source,
+			}),
+		);
+	},
+	uninstall: (id: string) => mutateApps(id, bridge.send<void>("apps.uninstall", { id })),
 };
 
 export function catalogEntryId(entry: YuiCatalogEntry) {

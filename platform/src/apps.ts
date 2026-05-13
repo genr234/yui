@@ -3,6 +3,8 @@ import {
 	appSources,
 	catalogEntryId,
 	discoverApps,
+	listDevAppCatalog,
+	listDevAppSources,
 	type YuiAppSource,
 	type YuiCatalogEntry,
 	type YuiDevApp,
@@ -25,13 +27,19 @@ export function loadApps() {
 }
 
 export async function loadAppsLibrary(): Promise<AppsLibrary> {
-	const [apps, sources, catalog] = await Promise.all([
+	const [apps, sources, catalog, devSources, devCatalog] = await Promise.all([
 		loadApps(),
 		appSources.list().catch(() => []),
 		appCatalog.list().catch(() => []),
+		listDevAppSources(),
+		listDevAppCatalog(),
 	]);
 
-	return { apps, sources, catalog };
+	return {
+		apps,
+		sources: [...devSources, ...sources],
+		catalog: [...devCatalog, ...catalog],
+	};
 }
 
 export async function addAppSource(url: string) {
@@ -49,6 +57,9 @@ export function removeAppSource(id: string) {
 }
 
 export function installCatalogApp(entry: YuiCatalogEntry) {
+	if (entry.sourceId === "dev-apps") {
+		return appCatalog.installDev(entry);
+	}
 	return appCatalog.install(catalogEntryId(entry));
 }
 
