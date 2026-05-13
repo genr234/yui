@@ -1,0 +1,39 @@
+:host,
+#yui-shadow-root {
+	all: initial;
+}
+
+@font-face {
+	font-family: "YuiAvenirNext";
+	src: url("../assets/fonts/AvenirNext.woff2") format("woff2");
+	font-weight: 400 850;
+	font-style: normal;
+	font-display: swap;
+}
+
+@font-face {
+	font-family: "YuiModak";
+	src: url("./assets/fonts/Modak.ttf") format("truetype");
+	font-style: normal;
+	font-display: swap;
+}
+
+* {
+	box-sizing: border-box;
+	-webkit-tap-highlight-color: transparent;
+}
+
+button,
+input,
+textarea,
+select {
+	font: inherit;
+}
+
+h1,
+h2,
+p,
+pre,
+dl {
+	margin: 0;
+}

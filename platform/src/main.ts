@@ -1,5 +1,31 @@
 import App from "./App.svelte";
-import css from "./overlay.css?inline";
+import appsCss from "./styles/apps.css?inline";
+import baseCss from "./styles/base.css?inline";
+import dashboardCss from "./styles/dashboard.css?inline";
+import interactionsCss from "./styles/interactions.css?inline";
+import keyboardCss from "./styles/keyboard.css?inline";
+import overlayPermissionsCss from "./styles/overlay-permissions.css?inline";
+import pluginsCss from "./styles/plugins.css?inline";
+import settingsCss from "./styles/settings.css?inline";
+import shellCss from "./styles/shell.css?inline";
+import sidebarCss from "./styles/sidebar.css?inline";
+import workspaceCss from "./styles/workspace.css?inline";
+import yuiAppCss from "./styles/yui-app.css?inline";
+
+const css = [
+	baseCss,
+	overlayPermissionsCss,
+	keyboardCss,
+	shellCss,
+	sidebarCss,
+	workspaceCss,
+	dashboardCss,
+	appsCss,
+	settingsCss,
+	pluginsCss,
+	yuiAppCss,
+	interactionsCss,
+].join("\n");
 
 declare global {
 	interface Window {

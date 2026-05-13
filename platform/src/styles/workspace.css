@@ -1,0 +1,74 @@
+.workspace {
+	display: flex;
+	min-width: 0;
+	min-height: 0;
+	flex-direction: column;
+	background:
+		radial-gradient(circle at 28% 10%, rgba(49, 116, 210, 0.08), transparent 32%),
+		#f7f9fb;
+}
+
+.router-panel {
+	display: contents;
+}
+
+.router-panel[hidden] {
+	display: none;
+}
+
+.main {
+	min-height: 0;
+	padding: 36px 40px 42px;
+	overflow: auto;
+}
+
+.title-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 24px;
+	margin-bottom: 30px;
+}
+
+.title-row h1 {
+	color: #111925;
+	font-size: 36px;
+	font-weight: 600;
+	line-height: 1.1;
+}
+
+.title-row p {
+	margin-top: 6px;
+	color: #667689;
+	font-size: 18px;
+	font-weight: 600;
+}
+
+.subtitle {
+	font-weight: 500;
+}
+
+.card {
+	margin-bottom: 30px;
+	padding: 26px;
+	border: 1px solid #e0e6ee;
+	border-radius: 14px;
+	background: rgba(255, 255, 255, 0.92);
+}
+
+.card-title {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	margin-bottom: 28px;
+	color: #111925;
+	font-size: 18px;
+	font-weight: 600;
+}
+
+.big-button {
+	width: 100%;
+	padding: 12px;
+	border: none;
+	border-radius: 4px;
+}
