@@ -6,6 +6,8 @@ export {
 	discoverApps,
 	discoverDevApps,
 	discoverLocalDevApps,
+	listDevAppCatalog,
+	listDevAppSources,
 } from "./registry";
 export type {
 	YuiAppSource,

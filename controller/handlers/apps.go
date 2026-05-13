@@ -22,6 +22,7 @@ const (
 	appSourcesCollection    = "app-sources"
 	appCatalogCollection    = "app-catalog"
 	installedAppsCollection = "installed-apps"
+	appStorageCollection    = "app-storage"
 	maxAppFetchBytes        = 2 * 1024 * 1024
 )
 
@@ -51,6 +52,7 @@ func AppsCommands() []Command {
 		AppSourcesRefreshCommand{},
 		AppCatalogListCommand{},
 		AppInstallCommand{},
+		AppDevInstallCommand{},
 		AppUninstallCommand{},
 		AppInstalledListCommand{},
 	}
@@ -281,6 +283,42 @@ func (AppInstallCommand) Handle(r *Registry, params json.RawMessage) (any, error
 		ID: meta.ID, Name: meta.Name, Version: meta.Version, Type: "simple-js", Entry: entry.App.SourceURL,
 		SourceID: entry.SourceID, SourceURL: entry.App.SourceURL, InstalledAt: time.Now().UTC().Format(time.RFC3339),
 		App: meta, Source: source, Signature: entry.App.Signature, SourceSHA256: strings.ToLower(entry.App.SourceSHA256),
+	}
+	if err := db.Collection(installedAppsCollection).Put(installed.ID, installed); err != nil {
+		return nil, err
+	}
+	return installed, nil
+}
+
+type AppDevInstallCommand struct{}
+
+func (AppDevInstallCommand) Name() string { return "apps.dev.install" }
+func (AppDevInstallCommand) Handle(r *Registry, params json.RawMessage) (any, error) {
+	var p struct {
+		Entry  string `json:"entry"`
+		Source string `json:"source"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(p.Entry) == "" {
+		return nil, fmt.Errorf("dev app entry is required")
+	}
+	if strings.TrimSpace(p.Source) == "" {
+		return nil, fmt.Errorf("dev app source is required")
+	}
+	meta, err := metadataFromAppSource(p.Source)
+	if err != nil {
+		return nil, err
+	}
+	db, err := r.Store()
+	if err != nil {
+		return nil, err
+	}
+	installed := installedAppRecord{
+		ID: meta.ID, Name: meta.Name, Version: meta.Version, Type: "simple-js", Entry: p.Entry,
+		SourceID: "dev-apps", SourceURL: p.Entry, InstalledAt: time.Now().UTC().Format(time.RFC3339),
+		App: meta, Source: p.Source,
 	}
 	if err := db.Collection(installedAppsCollection).Put(installed.ID, installed); err != nil {
 		return nil, err

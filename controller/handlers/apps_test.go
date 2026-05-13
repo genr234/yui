@@ -125,6 +125,21 @@ func TestAppInstallStoresSignedApp(t *testing.T) {
 	})
 }
 
+func TestAppDevInstallStoresLocalApp(t *testing.T) {
+	registry := testRegistry(t)
+	installed, err := (AppDevInstallCommand{}).Handle(registry, mustJSON(t, map[string]string{
+		"entry":  "/workspace/apps/signed-test/app.yui.js",
+		"source": signedTestAppSource,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := installed.(installedAppRecord)
+	if app.ID != "signed.test" || app.SourceID != "dev-apps" || app.Source == "" {
+		t.Fatalf("unexpected dev installed app: %+v", app)
+	}
+}
+
 func TestAppUninstallDoesNotClearAppStorage(t *testing.T) {
 	registry := testRegistry(t)
 	db, err := registry.Store()
@@ -134,7 +149,7 @@ func TestAppUninstallDoesNotClearAppStorage(t *testing.T) {
 	if err := db.Collection(installedAppsCollection).Put("signed.test", installedAppRecord{ID: "signed.test"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Collection("app-storage").Put("signed.test:key", map[string]string{"value": "kept"}); err != nil {
+	if err := db.Collection(appStorageCollection).Put("signed.test:key", map[string]string{"value": "kept"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := (AppUninstallCommand{}).Handle(registry, mustJSON(t, map[string]string{"id": "signed.test"})); err != nil {
@@ -143,7 +158,7 @@ func TestAppUninstallDoesNotClearAppStorage(t *testing.T) {
 	if _, ok, err := db.Collection(installedAppsCollection).Get("signed.test"); err != nil || ok {
 		t.Fatalf("installed app was not removed: ok=%t err=%v", ok, err)
 	}
-	if _, ok, err := db.Collection("app-storage").Get("signed.test:key"); err != nil || !ok {
+	if _, ok, err := db.Collection(appStorageCollection).Get("signed.test:key"); err != nil || !ok {
 		t.Fatalf("app storage was cleared unexpectedly: ok=%t err=%v", ok, err)
 	}
 }
