@@ -59,6 +59,7 @@ let handlerId = 0;
 const handlers = new Map();
 const disposables = new Set();
 const eventHandlers = new Map();
+const maxSerializedNodes = 5000;
 
 Object.defineProperty(globalThis, "fetch", {
   configurable: false,
@@ -164,10 +165,11 @@ function createUiApi() {
 function scheduleRender() {
   if (scheduled || !render) return;
   scheduled = true;
-  queueMicrotask(() => {
+  requestAnimationFrame(() => {
     scheduled = false;
     try {
-      post({ type: "render", node: serialize(render()) });
+      handlers.clear();
+      post({ type: "render", node: serialize(render(), { nodes: 0 }) });
     } catch (error) {
       post({ type: "error", error: String(error?.message || error) });
     }
@@ -189,17 +191,19 @@ function state(initial) {
   });
 }
 
-function serialize(value) {
+function serialize(value, budget) {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
+  budget.nodes += 1;
+  if (budget.nodes > maxSerializedNodes) throw new Error("YUI_RENDER_ERROR: render tree is too large");
   if (typeof value === "function") {
     const id = "h" + ++handlerId;
     handlers.set(id, value);
     return { __yuiHandler: id };
   }
-  if (Array.isArray(value)) return value.map(serialize);
+  if (Array.isArray(value)) return value.map((item) => serialize(item, budget));
   if (typeof value === "object") {
     const result = {};
-    for (const [key, item] of Object.entries(value)) result[key] = serialize(item);
+    for (const [key, item] of Object.entries(value)) result[key] = serialize(item, budget);
     return result;
   }
   return null;

@@ -7,17 +7,19 @@ import (
 )
 
 type Manager struct {
-	mu      sync.RWMutex
-	origins map[string]map[string]bool
-	engine  *Engine
+	mu             sync.RWMutex
+	origins        map[string]map[string]bool
+	enabledOrigins map[string]int
+	engine         *Engine
 }
 
 var DefaultManager = NewManager(NewEngine(DefaultRules()))
 
 func NewManager(engine *Engine) *Manager {
 	return &Manager{
-		origins: make(map[string]map[string]bool),
-		engine:  engine,
+		origins:        make(map[string]map[string]bool),
+		enabledOrigins: make(map[string]int),
+		engine:         engine,
 	}
 }
 
@@ -34,10 +36,19 @@ func (m *Manager) SetEmbed(appID string, origin string, enabled bool) bool {
 		if m.origins[appID] == nil {
 			m.origins[appID] = make(map[string]bool)
 		}
+		if !m.origins[appID][normalized] {
+			m.enabledOrigins[normalized]++
+		}
 		m.origins[appID][normalized] = true
 		return true
 	}
 
+	if m.origins[appID][normalized] {
+		m.enabledOrigins[normalized]--
+		if m.enabledOrigins[normalized] <= 0 {
+			delete(m.enabledOrigins, normalized)
+		}
+	}
 	delete(m.origins[appID], normalized)
 	if len(m.origins[appID]) == 0 {
 		delete(m.origins, appID)
@@ -54,12 +65,7 @@ func (m *Manager) IsOriginEnabled(origin string) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	for _, origins := range m.origins {
-		if origins[normalized] {
-			return true
-		}
-	}
-	return false
+	return m.enabledOrigins[normalized] > 0
 }
 
 func (m *Manager) ShouldBlock(frameOrigin string, requestURL string, resourceType string) bool {

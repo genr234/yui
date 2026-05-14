@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -80,21 +81,27 @@ func (r *Runtime) serve(ctx context.Context) {
 }
 
 func (r *Runtime) handle(conn *websocket.Conn) {
+	var writeMu sync.Mutex
+	dispatchSlots := make(chan struct{}, 16)
 	for {
 		var req rpcRequest
 		if err := conn.ReadJSON(&req); err != nil {
 			return
 		}
 
-		result, err := r.dispatch(req.Method, req.Params)
-		resp := rpcResponse{ID: req.ID, Result: result}
-		if err != nil {
-			resp.Error = err.Error()
-			resp.Result = nil
-		}
-		if err := conn.WriteJSON(resp); err != nil {
-			return
-		}
+		go func(req rpcRequest) {
+			dispatchSlots <- struct{}{}
+			defer func() { <-dispatchSlots }()
+			result, err := r.dispatch(req.Method, req.Params)
+			resp := rpcResponse{ID: req.ID, Result: result}
+			if err != nil {
+				resp.Error = err.Error()
+				resp.Result = nil
+			}
+			writeMu.Lock()
+			defer writeMu.Unlock()
+			_ = conn.WriteJSON(resp)
+		}(req)
 	}
 }
 

@@ -23,6 +23,7 @@ func StorageCommands() []Command {
 		StorePutCommand{},
 		StoreDeleteCommand{},
 		StoreListCommand{},
+		StoreKeysCommand{},
 	}
 }
 
@@ -170,6 +171,26 @@ func (StoreListCommand) Handle(r *Registry, params json.RawMessage) (any, error)
 		return nil, err
 	}
 	return decodeDocuments(docs)
+}
+
+type StoreKeysCommand struct{}
+
+func (StoreKeysCommand) Name() string { return "store.keys" }
+
+func (StoreKeysCommand) Handle(r *Registry, params json.RawMessage) (any, error) {
+	var p struct {
+		Collection string `json:"collection"`
+		Prefix     string `json:"prefix"`
+		Limit      int    `json:"limit"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, err
+	}
+	collection, err := collection(r, p.Collection)
+	if err != nil {
+		return nil, err
+	}
+	return collection.Keys(store.ListOptions{Prefix: p.Prefix, Limit: p.Limit})
 }
 
 type documentParams struct {

@@ -35,6 +35,7 @@ type Backend interface {
 	Get(collection string, id string) (Document, bool, error)
 	Delete(collection string, id string) error
 	List(collection string, opts ListOptions) ([]Document, error)
+	Keys(collection string, opts ListOptions) ([]string, error)
 	Count(collection string, prefix string) (int, error)
 	Merge(collection string, id string, patch map[string]any) (Document, error)
 	Clear(collection string) error
@@ -246,7 +247,11 @@ func (b *BoltBackend) List(collection string, opts ListOptions) ([]Document, err
 			limit = 0
 		}
 
-		for key, value := first(cursor, prefix); key != nil; key, value = cursor.Next() {
+		next := cursor.Next
+		if opts.Reverse {
+			next = cursor.Prev
+		}
+		for key, value := first(cursor, prefix, opts.Reverse); key != nil; key, value = next() {
 			if len(prefix) > 0 && !hasPrefix(key, prefix) {
 				break
 			}
@@ -258,6 +263,47 @@ func (b *BoltBackend) List(collection string, opts ListOptions) ([]Document, err
 		return nil
 	})
 	return docs, err
+}
+
+func (c Collection) Keys(opts ListOptions) ([]string, error) {
+	if err := validateName("collection", c.name); err != nil {
+		return nil, err
+	}
+
+	return c.db.backend.Keys(c.name, opts)
+}
+
+func (b *BoltBackend) Keys(collection string, opts ListOptions) ([]string, error) {
+	var keys []string
+	err := b.db.View(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket([]byte(collection))
+		if bucket == nil {
+			return nil
+		}
+
+		cursor := bucket.Cursor()
+		prefix := []byte(opts.Prefix)
+		limit := opts.Limit
+		if limit < 0 {
+			limit = 0
+		}
+
+		next := cursor.Next
+		if opts.Reverse {
+			next = cursor.Prev
+		}
+		for key, _ := first(cursor, prefix, opts.Reverse); key != nil; key, _ = next() {
+			if len(prefix) > 0 && !hasPrefix(key, prefix) {
+				break
+			}
+			keys = append(keys, string(key))
+			if limit > 0 && len(keys) >= limit {
+				break
+			}
+		}
+		return nil
+	})
+	return keys, err
 }
 
 func (c Collection) Count(prefix string) (int, error) {
@@ -277,7 +323,7 @@ func (b *BoltBackend) Count(collection string, prefix string) (int, error) {
 		}
 		cursor := bucket.Cursor()
 		prefixBytes := []byte(prefix)
-		for key, _ := first(cursor, prefixBytes); key != nil; key, _ = cursor.Next() {
+		for key, _ := first(cursor, prefixBytes, false); key != nil; key, _ = cursor.Next() {
 			if len(prefixBytes) > 0 && !hasPrefix(key, prefixBytes) {
 				break
 			}
@@ -347,8 +393,9 @@ func (b *BoltBackend) Clear(collection string) error {
 }
 
 type ListOptions struct {
-	Prefix string
-	Limit  int
+	Prefix  string
+	Limit   int
+	Reverse bool
 }
 
 func marshal(value any) ([]byte, error) {
@@ -372,11 +419,36 @@ func validateName(label string, value string) error {
 	return nil
 }
 
-func first(cursor *bbolt.Cursor, prefix []byte) ([]byte, []byte) {
+func first(cursor *bbolt.Cursor, prefix []byte, reverse bool) ([]byte, []byte) {
+	if reverse {
+		if len(prefix) == 0 {
+			return cursor.Last()
+		}
+		end := prefixEnd(prefix)
+		if end == nil {
+			return cursor.Last()
+		}
+		key, _ := cursor.Seek(end)
+		if key == nil {
+			return cursor.Last()
+		}
+		return cursor.Prev()
+	}
 	if len(prefix) == 0 {
 		return cursor.First()
 	}
 	return cursor.Seek(prefix)
+}
+
+func prefixEnd(prefix []byte) []byte {
+	end := clone(prefix)
+	for i := len(end) - 1; i >= 0; i-- {
+		if end[i] < 0xff {
+			end[i]++
+			return end[:i+1]
+		}
+	}
+	return nil
 }
 
 func hasPrefix(value []byte, prefix []byte) bool {

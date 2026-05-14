@@ -50,6 +50,14 @@ class StoreCollection<T = unknown> {
 			limit: options.limit ?? 0,
 		});
 	}
+
+	keys(options: ListOptions = {}): Promise<string[]> {
+		return bridge.send<string[]>("store.keys", {
+			collection: this.name,
+			prefix: options.prefix ?? "",
+			limit: options.limit ?? 0,
+		});
+	}
 }
 
 export const internalStore = {

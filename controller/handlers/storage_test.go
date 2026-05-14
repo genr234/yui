@@ -38,4 +38,16 @@ func TestStoreCommandsAllowScopedStorageCollections(t *testing.T) {
 	if doc["id"] != "demo:score" || doc["value"] != float64(42) {
 		t.Fatalf("unexpected document: %+v", doc)
 	}
+
+	keys, err := StoreKeysCommand{}.Handle(registry, mustJSON(t, map[string]any{
+		"collection": "app-storage",
+		"prefix":     "demo:",
+	}))
+	if err != nil {
+		t.Fatalf("keys app storage: %v", err)
+	}
+	keyList := keys.([]string)
+	if len(keyList) != 1 || keyList[0] != "demo:score" {
+		t.Fatalf("unexpected keys: %+v", keyList)
+	}
 }

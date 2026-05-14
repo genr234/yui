@@ -14,11 +14,20 @@ type Rule struct {
 }
 
 type Engine struct {
-	rules []Rule
+	rulesByResource map[string][]Rule
+	genericRules    []Rule
 }
 
 func NewEngine(rules []Rule) *Engine {
-	return &Engine{rules: rules}
+	engine := &Engine{rulesByResource: make(map[string][]Rule)}
+	for _, rule := range rules {
+		if rule.Resource == "" {
+			engine.genericRules = append(engine.genericRules, rule)
+			continue
+		}
+		engine.rulesByResource[rule.Resource] = append(engine.rulesByResource[rule.Resource], rule)
+	}
+	return engine
 }
 
 func (e *Engine) ShouldBlock(rawURL string, resourceType string) bool {
@@ -36,10 +45,16 @@ func (e *Engine) ShouldBlock(rawURL string, resourceType string) bool {
 	normalizedResource := strings.ToLower(resourceType)
 	blocked := false
 
-	for _, rule := range e.rules {
-		if rule.Resource != "" && rule.Resource != normalizedResource {
+	for _, rule := range e.genericRules {
+		if !rule.matches(host, normalizedURL) {
 			continue
 		}
+		if rule.Exception {
+			return false
+		}
+		blocked = true
+	}
+	for _, rule := range e.rulesByResource[normalizedResource] {
 		if !rule.matches(host, normalizedURL) {
 			continue
 		}
