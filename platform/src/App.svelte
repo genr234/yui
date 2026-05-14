@@ -20,6 +20,8 @@
   import CheckIcon from "lucide-svelte/icons/check";
   import EditIcon from "lucide-svelte/icons/pencil";
   import FolderIcon from "lucide-svelte/icons/folder";
+  import LockIcon from "lucide-svelte/icons/lock";
+  import DeleteIcon from "lucide-svelte/icons/delete";
   import PlusIcon from "lucide-svelte/icons/plus";
   import RefreshCwIcon from "lucide-svelte/icons/refresh-cw";
   import { loadApps } from "./apps";
@@ -28,7 +30,11 @@
     describePermission,
     type PermissionRequest,
   } from "@/sdk/apps/permissions";
-  import { plugins, type YuiPluginExtensions, type YuiPluginShellAction } from "@/sdk/plugins";
+  import {
+    plugins,
+    type YuiPluginExtensions,
+    type YuiPluginShellAction,
+  } from "@/sdk/plugins";
 
   let open = false;
   let section: Section = "home";
@@ -50,8 +56,34 @@
   let pluginSettingsRequest: { pluginId: string; nonce: number } | null = null;
   let pluginSettingsNonce = 0;
   let storeKind: "apps" | "plugins" | null = null;
+  let authConfigured = false;
+  let authUnlocked = false;
+  let authVisible = false;
+  let authMode: "setup" | "unlock" = "unlock";
+  let authSetupStep: "create" | "confirm" = "create";
+  let authPin = "";
+  let authConfirmPin = "";
+  let authMessage = "";
+  let authBusy = false;
+  let authRetryAfter = 0;
+  let authPad = shuffleDigits();
+  let authRetryTimer: number | undefined;
+  let authEntry = "";
+  let authEntryLength = 0;
+  let authDotIndexes = [0, 1, 2, 3, 4, 5];
+  let authSubmitLabel = "Enter";
 
   let extensions: YuiPluginExtensions = { pages: [], actions: [], css: [] };
+
+  type AuthResult = {
+    ok: boolean;
+    token?: string;
+    status: {
+      configured: boolean;
+      locked: boolean;
+      retry_after_seconds: number;
+    };
+  };
 
   onMount(() => {
     void refresh();
@@ -78,6 +110,7 @@
 
   onDestroy(() => {
     appFullscreen = false;
+    if (authRetryTimer) window.clearInterval(authRetryTimer);
   });
 
   async function refresh() {
@@ -93,6 +126,7 @@
       diagnostics = diagnosticsResult?.text ?? "";
       config = configResult;
       bridgeState = "online";
+      await refreshAuthStatus();
       void refreshSubtitles();
       void refreshExtensions();
     } catch (error) {
@@ -103,8 +137,13 @@
 
   async function refreshSubtitles() {
     const [appsResult, pluginsResult] = await Promise.all([
-      loadApps().then((items) => items.length).catch(() => null),
-      plugins.list().then((items) => items.length).catch(() => null),
+      loadApps()
+        .then((items) => items.length)
+        .catch(() => null),
+      plugins
+        .list()
+        .then((items) => items.length)
+        .catch(() => null),
     ]);
     appCount = appsResult;
     pluginCount = pluginsResult;
@@ -141,19 +180,207 @@
   function openMenu() {
     window.clearTimeout(closeTimer);
     closing = false;
-    open = true;
-    void refreshSubtitles();
-    void refreshExtensions();
+    void requestAdminEntry();
   }
 
   function closeMenu() {
     if (alwaysOpen()) return;
     open = false;
+    authUnlocked = false;
+    authVisible = false;
+    bridge.clearAuthToken();
+    resetAuthEntry();
     closing = true;
     closeTimer = window.setTimeout(() => {
       closing = false;
     }, 240);
   }
+
+  async function refreshAuthStatus() {
+    const result = await bridge
+      .send<{
+        configured: boolean;
+        locked: boolean;
+        retry_after_seconds: number;
+      }>("auth.status")
+      .catch(() => null);
+    if (!result) return;
+    authConfigured = result.configured;
+    authRetryAfter = result.retry_after_seconds ?? 0;
+    if (!authConfigured) {
+      authUnlocked = false;
+    }
+  }
+
+  async function requestAdminEntry() {
+    await refreshAuthStatus();
+    if (!authConfigured) {
+      showAuth("setup", "Create an admin PIN to protect Yui.");
+      return;
+    }
+    if (authUnlocked) {
+      showShell();
+      return;
+    }
+    showAuth("unlock", authRetryAfter > 0 ? lockoutMessage() : "");
+  }
+
+  function showShell() {
+    authVisible = false;
+    authUnlocked = true;
+    open = true;
+    void refreshSubtitles();
+    void refreshExtensions();
+  }
+
+  function showAuth(mode: "setup" | "unlock", message = "") {
+    open = false;
+    authVisible = true;
+    authMode = mode;
+    authMessage = message;
+    resetAuthEntry();
+    authPad = shuffleDigits();
+  }
+
+  function resetAuthEntry() {
+    authPin = "";
+    authConfirmPin = "";
+    authSetupStep = "create";
+  }
+
+  function shuffleDigits() {
+    const digits = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
+    for (let index = digits.length - 1; index > 0; index -= 1) {
+      const random = crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32;
+      const swap = Math.floor(random * (index + 1));
+      [digits[index], digits[swap]] = [digits[swap], digits[index]];
+    }
+    return digits;
+  }
+
+  function activePin() {
+    return authMode === "setup" && authSetupStep === "confirm"
+      ? authConfirmPin
+      : authPin;
+  }
+
+  function setActivePin(value: string) {
+    if (authMode === "setup" && authSetupStep === "confirm") {
+      authConfirmPin = value;
+    } else {
+      authPin = value;
+    }
+  }
+
+  function enterDigit(digit: string) {
+    if (authBusy || authRetryAfter > 0) return;
+    const next = `${activePin()}${digit}`.slice(0, 6);
+    setActivePin(next);
+    authMessage = "";
+    authPad = shuffleDigits();
+  }
+
+  function deleteDigit() {
+    if (authBusy) return;
+    setActivePin(activePin().slice(0, -1));
+    authPad = shuffleDigits();
+  }
+
+  function clearAuthPin() {
+    if (authBusy) return;
+    if (authMode === "setup" && authSetupStep === "confirm") {
+      authConfirmPin = "";
+      authSetupStep = "create";
+    } else {
+      setActivePin("");
+    }
+    authPad = shuffleDigits();
+  }
+
+  function lockoutMessage() {
+    return authRetryAfter > 0
+      ? `Too many attempts. Try again in ${authRetryAfter}s.`
+      : "";
+  }
+
+  async function submitAuth() {
+    if (authBusy || authRetryAfter > 0) return;
+    authBusy = true;
+    authMessage = "";
+    try {
+      if (authMode === "setup") {
+        if (authSetupStep === "create") {
+          if (authPin.length < 6) {
+            authMessage = "Use at least 6 digits.";
+            return;
+          }
+          authSetupStep = "confirm";
+          authMessage = "";
+          authPad = shuffleDigits();
+          return;
+        }
+        if (authConfirmPin.length < 6) {
+          authMessage = "Use at least 6 digits.";
+          return;
+        }
+        if (authPin !== authConfirmPin) {
+          authMessage = "PINs do not match.";
+          authConfirmPin = "";
+          authPad = shuffleDigits();
+          return;
+        }
+        const result = await bridge.send<AuthResult>("auth.setPin", {
+          pin: authPin,
+        });
+        if (result.token) bridge.setAuthToken(result.token);
+        authConfigured = true;
+        showShell();
+        return;
+      }
+      const result = await bridge.send<AuthResult>("auth.verifyPin", {
+        pin: authPin,
+      });
+      if (result.token) bridge.setAuthToken(result.token);
+      showShell();
+    } catch (error) {
+      await refreshAuthStatus();
+      authMessage =
+        authRetryAfter > 0
+          ? lockoutMessage()
+          : error instanceof Error
+            ? error.message
+            : String(error);
+      resetAuthEntry();
+      authPad = shuffleDigits();
+    } finally {
+      authBusy = false;
+    }
+  }
+
+  $: if (authRetryAfter > 0 && !authRetryTimer) {
+    authRetryTimer = window.setInterval(() => {
+      authRetryAfter = Math.max(0, authRetryAfter - 1);
+      authMessage = lockoutMessage();
+      if (authRetryAfter === 0 && authRetryTimer) {
+        window.clearInterval(authRetryTimer);
+        authRetryTimer = undefined;
+      }
+    }, 1000);
+  }
+  $: authEntry =
+    authMode === "setup" && authSetupStep === "confirm"
+      ? authConfirmPin
+      : authPin;
+  $: authEntryLength = authEntry.length;
+  $: authDotIndexes = Array.from(
+    { length: Math.max(authEntryLength, 6) },
+    (_, index) => index,
+  );
+  $: authSubmitLabel = authBusy
+    ? "Checking..."
+    : authMode === "setup" && authSetupStep === "create"
+      ? "Continue"
+      : "Enter";
 
   async function reimportConfig() {
     await bridge.send("platform.reimport");
@@ -227,9 +454,17 @@
   $: activeRoute =
     pluginSections.find((route) => route.id === section) ?? findRoute(section);
   $: activeSubtitle = resolveSubtitle(activeRoute, { appCount, pluginCount });
-  $: shellRendered = open || closing || alwaysOpen();
+  $: shellRendered = open || closing || alwaysOpen() || authVisible;
   $: shellClosing = closing && !open && !alwaysOpen();
   $: showTitleBar = !(section === "apps" && appRouteActive);
+  $: if (
+    bridgeState === "online" &&
+    alwaysOpen() &&
+    !authUnlocked &&
+    !authVisible
+  ) {
+    void requestAdminEntry();
+  }
   $: homeActions = [
     {
       label: "Refresh Status",
@@ -291,85 +526,158 @@
     on:click={closeMenu}
   ></button>
 
-  <section
-    class:app-route-active={section === "apps" && appRouteActive}
-    class:app-fullscreen={appFullscreen}
-    class:closing={shellClosing}
-    class="shell"
-    aria-label="Yui Platform"
-  >
-    <Sidebar
-      {sections}
-      active={section}
-      version={status?.version ?? "0.1.0"}
-      on:select={(event) => (section = event.detail)}
-    />
+  {#if authVisible}
+    <section
+      class="auth-panel"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="auth-title"
+    >
+      <div class="auth-header">
+        <span class="auth-icon"><LockIcon size={20} strokeWidth={2.4} /></span>
+        <div>
+          <h2 id="auth-title">
+            {authMode === "setup" ? "Set PIN" : "Enter PIN"}
+          </h2>
+          <p>
+            {authMode === "setup"
+              ? authSetupStep === "confirm"
+                ? "Please confirm the PIN you just entered."
+                : "Use 6 digits."
+              : "The keypad reshuffles after every tap."}
+          </p>
+        </div>
+      </div>
 
-    <div class="workspace">
-      <main class="main">
-        {#if showTitleBar}
-          <TitleBar
-            title={activeRoute.label}
-            subtitle={activeSubtitle}
-            on:refresh={refresh}
+      <div class="auth-dots" aria-label="PIN entry">
+        {#each authDotIndexes as index}
+          <span class:filled={index < authEntryLength}></span>
+        {/each}
+      </div>
+
+      {#if authMessage}
+        <p class="auth-message">{authMessage}</p>
+      {/if}
+
+      <div class="auth-pad" aria-label="Randomized PIN keypad">
+        {#each authPad as digit}
+          <button
+            class="auth-key"
+            disabled={authBusy || authRetryAfter > 0}
+            aria-label={`Digit ${digit}`}
+            on:click={() => enterDigit(digit)}
           >
-            <svelte:fragment slot="actions">
-              {#if section === "home"}
-                <button
-                  class:active={homeEditing}
-                  class="icon-button title-action-button"
-                  aria-label={homeEditing ? "Done editing widgets" : "Edit widgets"}
-                  title={homeEditing ? "Done" : "Edit widgets"}
-                  on:click={() => (homeEditing = !homeEditing)}
-                >
-                  {#if homeEditing}
-                    <CheckIcon size={18} strokeWidth={2.4} />
-                  {:else}
-                    <EditIcon size={18} strokeWidth={2.4} />
-                  {/if}
-                </button>
-              {:else if section === "apps"}
-                <button
-                  class="icon-button title-action-button"
-                  aria-label="Open app store"
-                  title="Open app store"
-                  on:click={() => openStore("apps")}
-                >
-                  <PlusIcon size={18} strokeWidth={2.4} />
-                </button>
-              {:else if section === "plugins"}
-                <button
-                  class="icon-button title-action-button"
-                  aria-label="Open plugin store"
-                  title="Open plugin store"
-                  on:click={() => openStore("plugins")}
-                >
-                  <PlusIcon size={18} strokeWidth={2.4} />
-                </button>
-              {/if}
-            </svelte:fragment>
-          </TitleBar>
-        {/if}
+            {digit}
+          </button>
+        {/each}
+        <button
+          class="auth-key utility"
+          disabled={authBusy || authEntryLength < 6}
+          on:click={clearAuthPin}
+        >
+          Clear
+        </button>
+        <button
+          class="auth-key utility"
+          disabled={authBusy || authEntryLength === 0}
+          aria-label="Delete digit"
+          on:click={deleteDigit}
+        >
+          <DeleteIcon size={18} strokeWidth={2.4} />
+        </button>
+      </div>
+
+      <button
+        class="auth-submit"
+        disabled={authBusy || authRetryAfter > 0 || authEntryLength < 6}
+        on:click={submitAuth}
+      >
+        {authSubmitLabel}
+      </button>
+    </section>
+  {:else if authUnlocked}
+    <section
+      class:app-route-active={section === "apps" && appRouteActive}
+      class:app-fullscreen={appFullscreen}
+      class:closing={shellClosing}
+      class="shell"
+      aria-label="Yui Platform"
+    >
+      <Sidebar
+        {sections}
+        active={section}
+        version={status?.version ?? "0.1.0"}
+        on:select={(event) => (section = event.detail)}
+      />
+
+      <div class="workspace">
+        <main class="main">
+          {#if showTitleBar}
+            <TitleBar
+              title={activeRoute.label}
+              subtitle={activeSubtitle}
+              on:refresh={refresh}
+            >
+              <svelte:fragment slot="actions">
+                {#if section === "home"}
+                  <button
+                    class:active={homeEditing}
+                    class="icon-button title-action-button"
+                    aria-label={homeEditing
+                      ? "Done editing widgets"
+                      : "Edit widgets"}
+                    title={homeEditing ? "Done" : "Edit widgets"}
+                    on:click={() => (homeEditing = !homeEditing)}
+                  >
+                    {#if homeEditing}
+                      <CheckIcon size={18} strokeWidth={2.4} />
+                    {:else}
+                      <EditIcon size={18} strokeWidth={2.4} />
+                    {/if}
+                  </button>
+                {:else if section === "apps"}
+                  <button
+                    class="icon-button title-action-button"
+                    aria-label="Open app store"
+                    title="Open app store"
+                    on:click={() => openStore("apps")}
+                  >
+                    <PlusIcon size={18} strokeWidth={2.4} />
+                  </button>
+                {:else if section === "plugins"}
+                  <button
+                    class="icon-button title-action-button"
+                    aria-label="Open plugin store"
+                    title="Open plugin store"
+                    on:click={() => openStore("plugins")}
+                  >
+                    <PlusIcon size={18} strokeWidth={2.4} />
+                  </button>
+                {/if}
+              </svelte:fragment>
+            </TitleBar>
+          {/if}
           <Router
-          {section}
-          {homeActions}
-          {settingDetails}
-          {config}
-          {appOpenRequest}
-          bind:homeEditing
-          {pluginSettingsRequest}
-          pluginPages={extensions.pages}
-          on:appLaunched={(event) => (appRouteActive = event.detail.active)}
-          on:launchApp={(event) => openAppFromHome(event.detail.appId)}
-          on:navigate={(event) => (section = event.detail.section)}
-          on:pluginSettings={(event) =>
-            openPluginSettings(event.detail.pluginId)}
-          on:pluginSettingsBack={() => (section = "plugins")}
-          on:store={(event) => openStore(event.detail.kind)}
-        />
-      </main>
-    </div>
-  </section>
+            {section}
+            {homeActions}
+            {settingDetails}
+            {config}
+            {appOpenRequest}
+            bind:homeEditing
+            {pluginSettingsRequest}
+            pluginPages={extensions.pages}
+            on:appLaunched={(event) => (appRouteActive = event.detail.active)}
+            on:launchApp={(event) => openAppFromHome(event.detail.appId)}
+            on:navigate={(event) => (section = event.detail.section)}
+            on:pluginSettings={(event) =>
+              openPluginSettings(event.detail.pluginId)}
+            on:pluginSettingsBack={() => (section = "plugins")}
+            on:store={(event) => openStore(event.detail.kind)}
+          />
+        </main>
+      </div>
+    </section>
+  {/if}
 
   {#if storeKind}
     <FederatedStoreModal
@@ -388,11 +696,15 @@
         aria-labelledby="permission-title"
       >
         <div>
-          <h2 id="permission-title">{permissionPrompt.app.name} wants access</h2>
+          <h2 id="permission-title">
+            {permissionPrompt.app.name} wants access
+          </h2>
           <p>You can change this later in Settings.</p>
         </div>
         <PermissionCards
-          permissions={permissionPrompt.permissions ?? [permissionPrompt.permission]}
+          permissions={permissionPrompt.permissions ?? [
+            permissionPrompt.permission,
+          ]}
           granted={[permissionPrompt.permission]}
           describe={describePermission}
           readonly

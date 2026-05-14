@@ -21,13 +21,18 @@ export class Bridge {
 	private socket?: WebSocket;
 	private pending = new Map<string, Pending<unknown>>();
 	private opened?: Promise<void>;
+	private authToken = "";
 
 	send<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
 		return this.connect().then(
 			() =>
 				new Promise<T>((resolve, reject) => {
 					const id = crypto.randomUUID();
-					const message: Message = { id, method, params };
+					const nextParams = { ...params };
+					if (this.authToken && !method.startsWith("auth.")) {
+						nextParams._auth_token = this.authToken;
+					}
+					const message: Message = { id, method, params: nextParams };
 					this.pending.set(id, {
 						resolve: resolve as (value: unknown) => void,
 						reject,
@@ -71,6 +76,14 @@ export class Bridge {
 		});
 
 		return this.opened;
+	}
+
+	setAuthToken(token: string) {
+		this.authToken = token;
+	}
+
+	clearAuthToken() {
+		this.authToken = "";
 	}
 }
 

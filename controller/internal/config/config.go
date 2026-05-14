@@ -30,12 +30,21 @@ type Config struct {
 	AutoUpdateEnabled   bool     `json:"auto_update_enabled"`
 	AutoUpdateRepo      string   `json:"auto_update_repo"`
 	AutoUpdateInterval  int      `json:"auto_update_interval_minutes"`
+	AdminPIN            PINHash  `json:"admin_pin,omitempty"`
 
 	ConfigPath    string `json:"-"`
 	ConfigDir     string `json:"-"`
 	ImportedFrom  string `json:"-"`
 	ImportWarning string `json:"-"`
 	UsingDefaults bool   `json:"-"`
+}
+
+type PINHash struct {
+	Algorithm  string `json:"algorithm"`
+	Salt       string `json:"salt"`
+	Hash       string `json:"hash"`
+	Iterations int    `json:"iterations"`
+	KeyLength  int    `json:"key_length"`
 }
 
 func Default() Config {
