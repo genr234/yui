@@ -68,6 +68,8 @@ const appModules = import.meta.glob("../../../../apps/*/*.yui.js", {
 	eager: true,
 }) as Record<string, string>;
 
+let localDevAppsCache: YuiDevApp[] | undefined;
+
 function appDirectory(manifestPath: string) {
 	return manifestPath.slice(0, manifestPath.lastIndexOf("/") + 1);
 }
@@ -108,6 +110,8 @@ function metadataFromSource(source: string) {
 }
 
 export async function discoverLocalDevApps(): Promise<YuiDevApp[]> {
+	if (localDevAppsCache) return localDevAppsCache.map(cloneDevApp);
+
 	const apps = await Promise.all(
 		Object.entries(manifests).map(async ([path, raw]) => {
 			const manifest = JSON.parse(raw) as Manifest;
@@ -135,7 +139,12 @@ export async function discoverLocalDevApps(): Promise<YuiDevApp[]> {
 		}),
 	);
 
-	return apps.sort((a, b) => a.name.localeCompare(b.name));
+	localDevAppsCache = apps.sort((a, b) => a.name.localeCompare(b.name));
+	return localDevAppsCache.map(cloneDevApp);
+}
+
+function cloneDevApp(app: YuiDevApp): YuiDevApp {
+	return { ...app, app: { ...app.app } };
 }
 
 function localAppToCatalogEntry(app: YuiDevApp): YuiCatalogEntry {

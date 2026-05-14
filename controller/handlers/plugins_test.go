@@ -3,6 +3,8 @@ package handlers
 import (
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -267,6 +269,33 @@ plugin = {
 	if len(logs) == 0 || logs[0].Action != "schedule:heartbeat" {
 		t.Fatalf("newest log missing from limited result: %#v", logs)
 	}
+}
+
+func TestRunProcessLimitsCapturedOutput(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a POSIX shell pipeline")
+	}
+	result, err := runProcess(map[string]any{
+		"command":    "yes x | head -c 50000",
+		"timeout_ms": 5000,
+	}, true)
+	if err != nil {
+		t.Fatalf("run process: %v", err)
+	}
+	stdout := result["stdout"].(string)
+	if len(stdout) != maxProcessOutputBytes {
+		t.Fatalf("stdout was not limited: got %d", len(stdout))
+	}
+	if !strings.HasPrefix(stdout, "x\n") {
+		t.Fatalf("unexpected stdout prefix: %q", stdout[:min(10, len(stdout))])
+	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func TestEnabledPluginStartsAfterRegistryRestart(t *testing.T) {

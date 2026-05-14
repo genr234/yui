@@ -44,6 +44,13 @@ func TestCollectionPutGetListMergeDelete(t *testing.T) {
 	if len(docs) != 1 || docs[0].ID != "terminal" {
 		t.Fatalf("unexpected docs: %+v", docs)
 	}
+	keys, err := apps.Keys(ListOptions{Prefix: "term"})
+	if err != nil {
+		t.Fatalf("keys: %v", err)
+	}
+	if len(keys) != 1 || keys[0] != "terminal" {
+		t.Fatalf("unexpected keys: %+v", keys)
+	}
 
 	count, err := apps.Count("")
 	if err != nil {
@@ -58,6 +65,29 @@ func TestCollectionPutGetListMergeDelete(t *testing.T) {
 	}
 	if _, ok, err := apps.Get("terminal"); err != nil || ok {
 		t.Fatalf("expected document to be gone: ok=%t err=%v", ok, err)
+	}
+}
+
+func TestCollectionListReverseLimit(t *testing.T) {
+	db, err := Open(t.TempDir() + "/store.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer db.Close()
+
+	logs := db.Collection("logs")
+	for _, id := range []string{"plugin:001", "plugin:002", "plugin:003", "other:999"} {
+		if err := logs.Put(id, map[string]any{"id": id}); err != nil {
+			t.Fatalf("put %s: %v", id, err)
+		}
+	}
+
+	docs, err := logs.List(ListOptions{Prefix: "plugin:", Limit: 2, Reverse: true})
+	if err != nil {
+		t.Fatalf("reverse list: %v", err)
+	}
+	if len(docs) != 2 || docs[0].ID != "plugin:003" || docs[1].ID != "plugin:002" {
+		t.Fatalf("unexpected reverse docs: %+v", docs)
 	}
 }
 

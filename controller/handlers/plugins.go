@@ -40,6 +40,7 @@ const (
 	maxPluginFetchBytes        = 2 * 1024 * 1024
 	defaultPluginTimeout       = 30 * time.Second
 	defaultPluginMaxSteps      = 500000
+	maxProcessOutputBytes      = 20000
 )
 
 func PluginCommands() []Command {
@@ -65,11 +66,17 @@ func PluginCommands() []Command {
 }
 
 type PluginManager struct {
-	r         *Registry
-	ctx       context.Context
-	cancel    context.CancelFunc
-	mu        sync.Mutex
-	instances map[string]*pluginInstance
+	r          *Registry
+	ctx        context.Context
+	cancel     context.CancelFunc
+	mu         sync.Mutex
+	instances  map[string]*pluginInstance
+	localCache localPluginCache
+}
+
+type localPluginCache struct {
+	signature string
+	plugins   []pluginViewRecord
 }
 
 type pluginInstance struct {
@@ -369,6 +376,18 @@ func (m *PluginManager) listInstalledPlugins() ([]pluginViewRecord, error) {
 }
 
 func (m *PluginManager) discoverLocalPlugins() ([]pluginViewRecord, error) {
+	signature, err := m.localPluginSignature()
+	if err != nil {
+		return nil, err
+	}
+	m.mu.Lock()
+	if signature == m.localCache.signature {
+		plugins := clonePluginViews(m.localCache.plugins)
+		m.mu.Unlock()
+		return m.withCurrentPluginState(plugins)
+	}
+	m.mu.Unlock()
+
 	var result []pluginViewRecord
 	seen := map[string]bool{}
 	for _, root := range m.localPluginRoots() {
@@ -412,15 +431,88 @@ func (m *PluginManager) discoverLocalPlugins() ([]pluginViewRecord, error) {
 				continue
 			}
 			seen[meta.ID] = true
-			state := m.stateFor(meta.ID, meta.Permissions)
 			result = append(result, pluginViewRecord{
 				ID: meta.ID, Name: meta.Name, Version: meta.Version, Type: "starlark", Entry: entryPath,
-				Dev: true, Plugin: meta, Source: string(source), Enabled: state.Enabled, GrantedPermissions: state.GrantedPermissions,
-				AdministratorTrusted: state.AdministratorTrusted,
+				Dev: true, Plugin: meta, Source: string(source),
 			})
 		}
 	}
-	return result, nil
+	m.mu.Lock()
+	m.localCache = localPluginCache{signature: signature, plugins: clonePluginViews(result)}
+	m.mu.Unlock()
+	return m.withCurrentPluginState(result)
+}
+
+func (m *PluginManager) withCurrentPluginState(plugins []pluginViewRecord) ([]pluginViewRecord, error) {
+	for i := range plugins {
+		state := m.stateFor(plugins[i].ID, plugins[i].Plugin.Permissions)
+		plugins[i].Enabled = state.Enabled
+		plugins[i].GrantedPermissions = state.GrantedPermissions
+		plugins[i].AdministratorTrusted = state.AdministratorTrusted
+	}
+	return plugins, nil
+}
+
+func clonePluginViews(plugins []pluginViewRecord) []pluginViewRecord {
+	cloned := make([]pluginViewRecord, len(plugins))
+	copy(cloned, plugins)
+	return cloned
+}
+
+func (m *PluginManager) localPluginSignature() (string, error) {
+	var parts []string
+	for _, root := range m.localPluginRoots() {
+		entries, err := os.ReadDir(root)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return "", err
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			dir := filepath.Join(root, entry.Name())
+			manifestPath := filepath.Join(dir, "yui.plugin.json")
+			manifestInfo, err := os.Stat(manifestPath)
+			if err != nil {
+				if os.IsNotExist(err) {
+					continue
+				}
+				return "", err
+			}
+			parts = append(parts, fileSignature(manifestPath, manifestInfo))
+
+			data, err := os.ReadFile(manifestPath)
+			if err != nil {
+				return "", err
+			}
+			var manifest localPluginManifest
+			if err := json.Unmarshal(data, &manifest); err != nil {
+				return "", fmt.Errorf("parse %s: %w", manifestPath, err)
+			}
+			if manifest.Entry == "" {
+				continue
+			}
+			entryPath := filepath.Join(dir, strings.TrimPrefix(manifest.Entry, "./"))
+			entryInfo, err := os.Stat(entryPath)
+			if err != nil {
+				if os.IsNotExist(err) {
+					parts = append(parts, entryPath+":missing")
+					continue
+				}
+				return "", err
+			}
+			parts = append(parts, fileSignature(entryPath, entryInfo))
+		}
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, "|"), nil
+}
+
+func fileSignature(path string, info os.FileInfo) string {
+	return fmt.Sprintf("%s:%d:%d", path, info.Size(), info.ModTime().UnixNano())
 }
 
 func (m *PluginManager) localPluginRoots() []string {
@@ -1245,13 +1337,13 @@ func (m *PluginManager) pluginKeys(collectionName, pluginID string) ([]string, e
 		return nil, err
 	}
 	prefix := pluginID + ":"
-	docs, err := db.Collection(collectionName).List(store.ListOptions{Prefix: prefix})
+	ids, err := db.Collection(collectionName).Keys(store.ListOptions{Prefix: prefix})
 	if err != nil {
 		return nil, err
 	}
-	keys := make([]string, 0, len(docs))
-	for _, doc := range docs {
-		keys = append(keys, strings.TrimPrefix(doc.ID, prefix))
+	keys := make([]string, 0, len(ids))
+	for _, id := range ids {
+		keys = append(keys, strings.TrimPrefix(id, prefix))
 	}
 	return keys, nil
 }
@@ -1688,7 +1780,7 @@ func (PluginLogsListCommand) Handle(r *Registry, params json.RawMessage) (any, e
 	if err != nil {
 		return nil, err
 	}
-	docs, err := db.Collection(pluginAuditCollection).List(store.ListOptions{Prefix: p.ID + ":"})
+	docs, err := db.Collection(pluginAuditCollection).List(store.ListOptions{Prefix: p.ID + ":", Limit: p.Limit, Reverse: true})
 	if err != nil {
 		return nil, err
 	}
@@ -1699,15 +1791,6 @@ func (PluginLogsListCommand) Handle(r *Registry, params json.RawMessage) (any, e
 			return nil, err
 		}
 		result = append(result, record)
-	}
-	sort.Slice(result, func(i, j int) bool {
-		if result[i].At == result[j].At {
-			return result[i].ID > result[j].ID
-		}
-		return result[i].At > result[j].At
-	})
-	if len(result) > p.Limit {
-		result = result[:p.Limit]
 	}
 	return result, nil
 }
@@ -1939,9 +2022,10 @@ func runProcess(obj map[string]any, shell bool) (map[string]any, error) {
 	if cwd := stringMapValue(obj, "cwd"); cwd != "" {
 		cmd.Dir = cwd
 	}
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	stdout := &limitedBuffer{limit: maxProcessOutputBytes}
+	stderr := &limitedBuffer{limit: maxProcessOutputBytes}
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 	err := cmd.Run()
 	code := 0
 	if err != nil {
@@ -1951,7 +2035,29 @@ func runProcess(obj map[string]any, shell bool) (map[string]any, error) {
 			err = nil
 		}
 	}
-	return map[string]any{"code": code, "stdout": truncate(stdout.String(), 20000), "stderr": truncate(stderr.String(), 20000)}, err
+	return map[string]any{"code": code, "stdout": stdout.String(), "stderr": stderr.String()}, err
+}
+
+type limitedBuffer struct {
+	buf   bytes.Buffer
+	limit int
+}
+
+func (w *limitedBuffer) Write(p []byte) (int, error) {
+	if w.limit <= 0 || w.buf.Len() >= w.limit {
+		return len(p), nil
+	}
+	remaining := w.limit - w.buf.Len()
+	if len(p) > remaining {
+		_, _ = w.buf.Write(p[:remaining])
+		return len(p), nil
+	}
+	_, _ = w.buf.Write(p)
+	return len(p), nil
+}
+
+func (w *limitedBuffer) String() string {
+	return w.buf.String()
 }
 
 func starlarkDict(value starlark.Value) (map[string]any, error) {
