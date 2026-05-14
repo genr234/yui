@@ -13,30 +13,43 @@ const fileName = "controller.json"
 const envConfigPath = "YUI_KIOSK_CONFIG"
 
 type Config struct {
-	ChromePath          string   `json:"chrome_path"`
-	URL                 string   `json:"url"`
-	Flags               []string `json:"flags"`
-	UserDataDir         string   `json:"user_data_dir"`
-	RestartDelaySeconds int      `json:"restart_delay_seconds"`
-	RestartMaxSeconds   int      `json:"restart_max_seconds"`
-	LogPath             string   `json:"log_path"`
-	StatusPath          string   `json:"status_path"`
-	StorePath           string   `json:"store_path"`
-	PlatformEnabled     bool     `json:"platform_enabled"`
-	PlatformHTTPAddr    string   `json:"platform_http_addr"`
-	PlatformBridgeAddr  string   `json:"platform_bridge_addr"`
-	PlatformDebugPort   int      `json:"platform_remote_debugging_port"`
-	PlatformDevServer   string   `json:"platform_dev_server"`
-	AutoUpdateEnabled   bool     `json:"auto_update_enabled"`
-	AutoUpdateRepo      string   `json:"auto_update_repo"`
-	AutoUpdateInterval  int      `json:"auto_update_interval_minutes"`
-	AdminPIN            PINHash  `json:"admin_pin,omitempty"`
+	ChromePath          string          `json:"chrome_path"`
+	URL                 string          `json:"url"`
+	Flags               []string        `json:"flags"`
+	UserDataDir         string          `json:"user_data_dir"`
+	RestartDelaySeconds int             `json:"restart_delay_seconds"`
+	RestartMaxSeconds   int             `json:"restart_max_seconds"`
+	LogPath             string          `json:"log_path"`
+	StatusPath          string          `json:"status_path"`
+	StorePath           string          `json:"store_path"`
+	PlatformEnabled     bool            `json:"platform_enabled"`
+	PlatformHTTPAddr    string          `json:"platform_http_addr"`
+	PlatformBridgeAddr  string          `json:"platform_bridge_addr"`
+	PlatformDebugPort   int             `json:"platform_remote_debugging_port"`
+	PlatformDevServer   string          `json:"platform_dev_server"`
+	AutoUpdateEnabled   bool            `json:"auto_update_enabled"`
+	AutoUpdateRepo      string          `json:"auto_update_repo"`
+	AutoUpdateInterval  int             `json:"auto_update_interval_minutes"`
+	AdminPIN            PINHash         `json:"admin_pin,omitempty"`
+	ServerURL           string          `json:"server_url,omitempty"`
+	DeviceUID           string          `json:"device_uid,omitempty"`
+	ActiveAccountID     string          `json:"active_account_id,omitempty"`
+	Accounts            []AccountConfig `json:"accounts,omitempty"`
 
 	ConfigPath    string `json:"-"`
 	ConfigDir     string `json:"-"`
 	ImportedFrom  string `json:"-"`
 	ImportWarning string `json:"-"`
 	UsingDefaults bool   `json:"-"`
+}
+
+type AccountConfig struct {
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	ProfileImageURL string `json:"profile_image_url,omitempty"`
+	KioskID         string `json:"kiosk_id"`
+	DeviceToken     string `json:"device_token"`
+	SyncCursor      int64  `json:"sync_cursor"`
 }
 
 type PINHash struct {

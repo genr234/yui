@@ -28,6 +28,7 @@
   import { resolveSubtitle } from "@/pages/subtitle";
   import {
     describePermission,
+    setPermissionAccountScope,
     type PermissionRequest,
   } from "@/sdk/apps/permissions";
   import {
@@ -55,6 +56,8 @@
   let homeEditing = false;
   let pluginSettingsRequest: { pluginId: string; nonce: number } | null = null;
   let pluginSettingsNonce = 0;
+  let accountOpenRequest: { nonce: number } | null = null;
+  let accountOpenNonce = 0;
   let storeKind: "apps" | "plugins" | null = null;
   let authConfigured = false;
   let authUnlocked = false;
@@ -72,6 +75,7 @@
   let authEntryLength = 0;
   let authDotIndexes = [0, 1, 2, 3, 4, 5];
   let authSubmitLabel = "Enter";
+  let accountStatus: AccountStatus | null = null;
 
   let extensions: YuiPluginExtensions = { pages: [], actions: [], css: [] };
 
@@ -83,6 +87,30 @@
       locked: boolean;
       retry_after_seconds: number;
     };
+  };
+
+  type AccountStatus = {
+    server_url?: string;
+    connected: boolean;
+    needs_pairing: boolean;
+    anonymous: boolean;
+    syncing: boolean;
+    last_sync_at?: string;
+    last_sync_error?: string;
+    active_account?: {
+      id: string;
+      name: string;
+      profile_image_url?: string;
+      kiosk_id: string;
+      sync_cursor: number;
+    };
+    accounts: Array<{
+      id: string;
+      name: string;
+      profile_image_url?: string;
+      kiosk_id: string;
+      sync_cursor: number;
+    }>;
   };
 
   onMount(() => {
@@ -127,6 +155,7 @@
       config = configResult;
       bridgeState = "online";
       await refreshAuthStatus();
+      await refreshAccountStatus();
       void refreshSubtitles();
       void refreshExtensions();
     } catch (error) {
@@ -212,10 +241,17 @@
     }
   }
 
+  async function refreshAccountStatus() {
+    accountStatus = await bridge
+      .send<AccountStatus>("accounts.status")
+      .catch(() => accountStatus);
+    setPermissionAccountScope(accountStatus?.active_account?.id ?? null);
+  }
+
   async function requestAdminEntry() {
     await refreshAuthStatus();
     if (!authConfigured) {
-      showAuth("setup", "Create an admin PIN to protect Yui.");
+      showAuth("setup");
       return;
     }
     if (authUnlocked) {
@@ -229,6 +265,7 @@
     authVisible = false;
     authUnlocked = true;
     open = true;
+    void refreshAccountStatus();
     void refreshSubtitles();
     void refreshExtensions();
   }
@@ -424,6 +461,12 @@
     storeKind = kind;
   }
 
+  function openAccountSettings() {
+    accountOpenNonce += 1;
+    accountOpenRequest = { nonce: accountOpenNonce };
+    section = "settings";
+  }
+
   function storeChanged() {
     void refreshSubtitles();
     void refreshExtensions();
@@ -457,6 +500,15 @@
   $: shellRendered = open || closing || alwaysOpen() || authVisible;
   $: shellClosing = closing && !open && !alwaysOpen();
   $: showTitleBar = !(section === "apps" && appRouteActive);
+  $: accountName = accountStatus?.active_account?.name ?? "Anonymous";
+  $: accountImage = accountStatus?.active_account?.profile_image_url ?? "";
+  $: accountState = accountStatus?.needs_pairing
+    ? "Reconnect"
+    : accountStatus?.last_sync_error
+      ? "Sync error"
+      : accountStatus?.connected
+        ? accountStatus.server_url ?? "Connected"
+        : "Local only";
   $: if (
     bridgeState === "online" &&
     alwaysOpen() &&
@@ -539,13 +591,6 @@
           <h2 id="auth-title">
             {authMode === "setup" ? "Set PIN" : "Enter PIN"}
           </h2>
-          <p>
-            {authMode === "setup"
-              ? authSetupStep === "confirm"
-                ? "Please confirm the PIN you just entered."
-                : "Use 6 digits."
-              : "The keypad reshuffles after every tap."}
-          </p>
         </div>
       </div>
 
@@ -607,7 +652,12 @@
         {sections}
         active={section}
         version={status?.version ?? "0.1.0"}
+        {accountName}
+        accountImage={accountImage}
+        {accountState}
+        accountSyncing={Boolean(accountStatus?.syncing)}
         on:select={(event) => (section = event.detail)}
+        on:account={openAccountSettings}
       />
 
       <div class="workspace">
@@ -665,6 +715,7 @@
             {appOpenRequest}
             bind:homeEditing
             {pluginSettingsRequest}
+            {accountOpenRequest}
             pluginPages={extensions.pages}
             on:appLaunched={(event) => (appRouteActive = event.detail.active)}
             on:launchApp={(event) => openAppFromHome(event.detail.appId)}
@@ -673,6 +724,15 @@
               openPluginSettings(event.detail.pluginId)}
             on:pluginSettingsBack={() => (section = "plugins")}
             on:store={(event) => openStore(event.detail.kind)}
+            on:accountChanged={() => {
+              window.dispatchEvent(new CustomEvent("yui:account-changed"));
+              window.dispatchEvent(new CustomEvent("yui:apps-changed"));
+              window.dispatchEvent(new CustomEvent("yui:plugins-changed"));
+              window.dispatchEvent(new CustomEvent("yui:app-storage-changed"));
+              window.dispatchEvent(new CustomEvent("yui:embed-storage-changed"));
+              void refresh();
+              void refreshAccountStatus();
+            }}
           />
         </main>
       </div>

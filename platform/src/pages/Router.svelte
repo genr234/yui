@@ -17,6 +17,7 @@
   export let homeEditing = false;
   export let pluginSettingsRequest: { pluginId: string; nonce: number } | null =
     null;
+  export let accountOpenRequest: { nonce: number } | null = null;
   export let pluginPages: YuiPluginShellPage[] = [];
   const dispatch = createEventDispatcher<{
     appLaunched: { active: boolean };
@@ -25,6 +26,7 @@
     pluginSettings: { pluginId: string };
     pluginSettingsBack: void;
     store: { kind: "apps" | "plugins" };
+    accountChanged: void;
   }>();
 </script>
 
@@ -74,8 +76,10 @@
     details={settingDetails}
     {config}
     {pluginSettingsRequest}
+    {accountOpenRequest}
     on:pluginSettingsBack={() => dispatch("pluginSettingsBack")}
     on:store={(event) => dispatch("store", event.detail)}
+    on:accountChanged={() => dispatch("accountChanged")}
   />
 </div>
 

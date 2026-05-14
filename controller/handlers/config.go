@@ -74,6 +74,9 @@ func publicConfig(cfg config.Config) any {
 	type public config.Config
 	out := public(cfg)
 	out.AdminPIN = config.PINHash{}
+	for i := range out.Accounts {
+		out.Accounts[i].DeviceToken = ""
+	}
 	return out
 }
 

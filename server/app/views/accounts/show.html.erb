@@ -1,0 +1,95 @@
+<p><%= link_to "Accounts", accounts_path %></p>
+
+<h1><%= @account.name %></h1>
+<p><%= link_to "Edit account", edit_account_path(@account) %></p>
+
+<% if @account.profile_image_url.present? %>
+  <p><img src="<%= @account.profile_image_url %>" alt="" width="72" height="72"></p>
+<% end %>
+
+<% if notice.present? %>
+  <p><strong><%= notice %></strong></p>
+<% end %>
+
+<h2>Pairing</h2>
+<%= button_to "Create pairing code", account_pairing_codes_path(@account), method: :post %>
+
+<h2>Kiosks</h2>
+<% if @kiosks.any? %>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Device</th>
+        <th>Last seen</th>
+        <th>Command</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% @kiosks.each do |kiosk| %>
+        <tr>
+          <td><%= kiosk.name %></td>
+          <td><code><%= kiosk.device_uid %></code></td>
+          <td><%= kiosk.last_seen_at || "Never" %></td>
+          <td>
+            <%= form_with url: account_kiosk_commands_path(@account), method: :post do |form| %>
+              <%= hidden_field_tag :kiosk_id, kiosk.id %>
+              <%= select_tag :command_type, options_for_select(KioskCommand::ALLOWED_TYPES) %><br>
+              <%= text_area_tag :payload, "{}", rows: 4, cols: 48 %><br>
+              <%= submit_tag "Queue command" %>
+            <% end %>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+<% else %>
+  <p>No kiosks paired yet.</p>
+<% end %>
+
+<h2>State</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Collection</th>
+      <th>Record</th>
+      <th>Deleted</th>
+      <th>Value</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% @state_records.each do |record| %>
+      <tr>
+        <td><%= record.collection %></td>
+        <td><code><%= record.record_id %></code></td>
+        <td><%= record.deleted %></td>
+        <td><pre><%= JSON.pretty_generate(record.value) if record.value.present? %></pre></td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
+
+<h2>Recent commands</h2>
+<ul>
+  <% @commands.each do |command| %>
+    <li>
+      <code><%= command.command_type %></code>
+      for <%= command.kiosk.name %>:
+      <%= command.status %>
+      <% if command.error.present? %>
+        - <%= command.error %>
+      <% end %>
+    </li>
+  <% end %>
+</ul>
+
+<h2>Recent operations</h2>
+<ol>
+  <% @operations.each do |operation| %>
+    <li>
+      #<%= operation.server_seq %>
+      <code><%= operation.action %></code>
+      <%= operation.collection %>/<%= operation.record_id %>
+    </li>
+  <% end %>
+</ol>

@@ -45,7 +45,12 @@
         void refreshApps();
       }, 40);
     };
+    const onAccountChanged = () => {
+      closeApp();
+      void refreshApps();
+    };
     window.addEventListener("yui:apps-changed", onAppsChanged);
+    window.addEventListener("yui:account-changed", onAccountChanged);
 
     void refreshApps();
 
@@ -53,6 +58,7 @@
       window.clearTimeout(refreshTimer);
       window.removeEventListener("yui:shell-fullscreen", offFullscreen);
       window.removeEventListener("yui:apps-changed", onAppsChanged);
+      window.removeEventListener("yui:account-changed", onAccountChanged);
     };
   });
 

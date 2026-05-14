@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -30,6 +31,9 @@ type Registry struct {
 	authMu    sync.Mutex
 	authState AuthState
 	authToken string
+	pluginCtx context.Context
+	syncMu    sync.Mutex
+	syncState accountSyncState
 }
 
 func NewRegistry(cfg config.Config) *Registry {
@@ -41,6 +45,7 @@ func NewRegistry(cfg config.Config) *Registry {
 	r.Register(StatusCommands()...)
 	r.Register(ConfigCommands()...)
 	r.Register(AuthCommands()...)
+	r.Register(AccountCommands()...)
 	r.Register(StorageCommands()...)
 	r.Register(FSCommands()...)
 	r.Register(ProcessCommands()...)
@@ -71,7 +76,22 @@ func (r *Registry) DispatchAuthenticated(method string, params json.RawMessage) 
 	if err := r.Authorize(method, params); err != nil {
 		return nil, err
 	}
-	return r.Dispatch(method, params)
+	result, err := r.Dispatch(method, params)
+	if err == nil {
+		r.recordMutation(method, params, result)
+	}
+	return result, err
+}
+
+func (r *Registry) DispatchRemote(method string, params json.RawMessage) (any, error) {
+	if !remoteCommandAllowed(method) {
+		return nil, fmt.Errorf("remote command %q is not allowed", method)
+	}
+	result, err := r.Dispatch(method, params)
+	if err == nil {
+		r.recordMutation(method, params, result)
+	}
+	return result, err
 }
 
 func (r *Registry) Store() (*store.DB, error) {
@@ -82,7 +102,7 @@ func (r *Registry) Store() (*store.DB, error) {
 		return r.store, nil
 	}
 
-	db, err := store.Open(r.cfg.StorePath)
+	db, err := store.Open(r.activeStorePath())
 	if err != nil {
 		return nil, err
 	}
@@ -110,6 +130,20 @@ func (r *Registry) Close() error {
 	}
 	err := r.store.Close()
 	r.store = nil
+	return err
+}
+
+func (r *Registry) resetStore() error {
+	r.storeMu.Lock()
+	defer r.storeMu.Unlock()
+
+	if r.store == nil {
+		r.migrated = false
+		return nil
+	}
+	err := r.store.Close()
+	r.store = nil
+	r.migrated = false
 	return err
 }
 

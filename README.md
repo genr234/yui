@@ -5,11 +5,33 @@ Yui is a Go-based kiosk controller with a Svelte overlay injected into the live 
 ## Build
 
 ```sh
-just deps
+just deps-all
 just build
 ```
 
-This builds the Svelte overlay into `controller/static/platform.js`, embeds it into `controller.exe`, and packages the Windows installer.
+This installs platform and Rails dependencies, builds the Svelte overlay into `controller/static/platform.js`, builds the Rails server container image, embeds the overlay into `controller.exe`, and packages the Windows installer.
+
+The server image is tagged as `yui-server:dev` locally by default. Set `YUI_SERVER_IMAGE` to override it:
+
+```sh
+YUI_SERVER_IMAGE=ghcr.io/owner/yui-server:local just build-server
+```
+
+CI publishes the Rails server image to GitHub Container Registry as `ghcr.io/<owner>/<repo>-server` with commit SHA, branch, and default-branch `latest` tags.
+
+`just package` remains kiosk-only for the installer release path.
+
+## Development
+
+```sh
+just dev
+```
+
+This starts the Go controller, Vite overlay, and Rails server together. To run only the Rails app:
+
+```sh
+just dev-server
+```
 
 ## macOS Overlay Test
 
@@ -39,6 +61,12 @@ cd controller && go run . --check
 
 The controller keeps durable local state in a Bolt-backed store at `store_path` in `controller.json`.
 That store is an implementation detail for platform records such as app catalogs, plugin catalogs, installed items, settings, and audit data.
+
+## Accounts and Sync
+
+Kiosks can run anonymously or pair with a Rails-managed account. Create the account and pairing code in Rails, then unlock the kiosk with the local admin PIN and use the account control at the bottom of the Yui sidebar to connect.
+
+When an account is active, the kiosk opens an account-specific Bolt DB under `accounts/<account id>/yui-store.db`, syncs app/plugin/storage changes to Rails, and polls Rails for allowed app/plugin management commands. The admin PIN stays local to the kiosk and is required before connecting, disconnecting, or changing accounts.
 
 Apps and plugins get scoped storage instead of direct access to arbitrary collections:
 

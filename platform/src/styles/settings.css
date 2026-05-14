@@ -238,8 +238,18 @@
 
 .settings-row.app-row .app-icon,
 .settings-app-hero .app-icon {
+	display: grid;
+	place-items: center;
 	width: 42px;
 	height: 42px;
+	overflow: hidden;
+	border-radius: 50%;
+}
+
+.settings-app-hero .app-icon img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
 }
 
 .settings-app-hero {
@@ -417,6 +427,15 @@
 	background: #fff7f7;
 }
 
+.settings-row.active-account {
+	background: #f5f9ff;
+}
+
+.settings-row:disabled {
+	cursor: not-allowed;
+	opacity: 0.62;
+}
+
 .settings-text-input {
 	width: min(100%, 440px);
 	min-height: 36px;
@@ -442,4 +461,34 @@
 	gap: 8px;
 	align-items: center;
 	justify-content: flex-end;
+}
+
+.account-form {
+	display: grid;
+	gap: 12px;
+	padding: 14px 16px;
+}
+
+.account-form label {
+	display: grid;
+	gap: 6px;
+	color: #172334;
+	font-size: 13px;
+	font-weight: 500;
+}
+
+.account-form-actions {
+	display: flex;
+	justify-content: flex-end;
+}
+
+.settings-message {
+	margin: -4px 4px 0;
+	color: #526477;
+	font-size: 13px;
+	font-weight: 500;
+}
+
+.settings-message.error {
+	color: #a73535;
 }

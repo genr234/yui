@@ -300,6 +300,8 @@ func (m *PluginManager) Start(ctx context.Context) {
 func (m *PluginManager) Stop() {
 	m.mu.Lock()
 	cancel := m.cancel
+	m.cancel = nil
+	m.ctx = nil
 	ids := make([]string, 0, len(m.instances))
 	for id := range m.instances {
 		ids = append(ids, id)
@@ -310,12 +312,6 @@ func (m *PluginManager) Stop() {
 	}
 	for _, id := range ids {
 		m.stopInstance(id, false)
-	}
-}
-
-func (r *Registry) StartPlugins(ctx context.Context) {
-	if r.plugins != nil {
-		r.plugins.Start(ctx)
 	}
 }
 

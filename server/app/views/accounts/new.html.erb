@@ -1,0 +1,23 @@
+<h1>New account</h1>
+
+<%= form_with model: @account do |form| %>
+  <% if @account.errors.any? %>
+    <ul>
+      <% @account.errors.full_messages.each do |message| %>
+        <li><%= message %></li>
+      <% end %>
+    </ul>
+  <% end %>
+
+  <p>
+    <%= form.label :name %><br>
+    <%= form.text_field :name %>
+  </p>
+
+  <p>
+    <%= form.label :profile_image_url, "Profile image URL" %><br>
+    <%= form.url_field :profile_image_url %>
+  </p>
+
+  <p><%= form.submit "Create account" %></p>
+<% end %>
