@@ -157,7 +157,7 @@
     canGoBack: page !== "plugins",
     back: () => (page = "plugins"),
   });
-  $: syncDetailPolling(page === "plugin" ? selected?.id ?? "" : "");
+  $: syncDetailPolling(page === "plugin" ? (selected?.id ?? "") : "");
 
   async function loadAll() {
     loading = true;
@@ -231,7 +231,11 @@
 
   async function refreshAfterPluginChange(pluginId?: string) {
     await loadAll();
-    if (page === "plugin" && selected?.id && (!pluginId || pluginId === selected.id)) {
+    if (
+      page === "plugin" &&
+      selected?.id &&
+      (!pluginId || pluginId === selected.id)
+    ) {
       await loadPluginDetails(selected.id);
     }
   }
@@ -856,8 +860,6 @@
               describe={describePluginPermission}
               disabled={Boolean(busy)}
               onToggle={togglePermission}
-              onAllowAll={() => setAllSelectedPermissions(true)}
-              onDenyAll={() => setAllSelectedPermissions(false)}
             />
           </div>
         {/if}
@@ -1087,11 +1089,6 @@
         granted={pendingPluginPermissions}
         describe={describePluginPermission}
         onToggle={togglePendingPluginPermission}
-        onAllowAll={() =>
-          (pendingPluginPermissions = [
-            ...(pendingPluginInstall?.plugin.permissions ?? []),
-          ])}
-        onDenyAll={() => (pendingPluginPermissions = [])}
       />
       <div class="permission-actions">
         <button

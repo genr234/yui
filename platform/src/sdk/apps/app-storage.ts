@@ -1,4 +1,4 @@
-import type { StoreDocument } from "../store";
+import type { StoreDocument } from "../internal-store";
 import { storageCollections, storageSpace } from "../storage-spaces";
 
 const appStorage = storageSpace<unknown>(storageCollections.apps, { encodeKeys: true });

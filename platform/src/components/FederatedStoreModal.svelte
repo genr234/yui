@@ -445,11 +445,6 @@
           else next.delete(permission);
           pendingAppPermissions = [...next];
         }}
-        onAllowAll={() =>
-          (pendingAppPermissions = [
-            ...(pendingAppInstall?.app.permissions ?? []),
-          ])}
-        onDenyAll={() => (pendingAppPermissions = [])}
       />
       <div class="permission-actions">
         <button
@@ -485,11 +480,6 @@
         granted={pendingPluginPermissions}
         describe={describePluginPermission}
         onToggle={togglePendingPluginPermission}
-        onAllowAll={() =>
-          (pendingPluginPermissions = [
-            ...(pendingPluginInstall?.plugin.permissions ?? []),
-          ])}
-        onDenyAll={() => (pendingPluginPermissions = [])}
       />
       <div class="permission-actions">
         <button

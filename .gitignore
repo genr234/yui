@@ -11,6 +11,7 @@ installer/assets/controller.exe
 controller/chrome-profile
 controller/yui_controller
 controller/diagnostics.txt
+controller/controller.json
 controller/controller.log
 controller/status.json
 installer/installer

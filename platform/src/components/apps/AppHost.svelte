@@ -31,11 +31,17 @@
       };
 
   let iframe: HTMLIFrameElement | undefined;
+  let sandboxElement: HTMLDivElement | undefined;
   let node: YuiChildren;
   let error = "";
   let loading = true;
   let mountedId = "";
   let ctx: ReturnType<typeof createYuiContext> | undefined;
+  let sandboxReady = false;
+  let mountSent = false;
+  let readyTimer: number | undefined;
+  let mountTimer: number | undefined;
+  let loadAttempt = 0;
 
   const sandboxHtml = `<!doctype html>
 <html>
@@ -280,7 +286,8 @@ async function mount(source) {
     const mounted = await app.mount(contextFor(app));
     render = typeof mounted === "function" ? mounted : undefined;
     await app.activate?.(contextFor(app));
-    scheduleRender();
+    if (render) scheduleRender();
+    else post({ type: "render", node: undefined });
   } catch (error) {
     post({ type: "error", error: String(error?.message || error) });
   }
@@ -312,35 +319,89 @@ post({ type: "ready" });
 </body>
 </html>`;
 
+  function clearLoadTimers() {
+    window.clearTimeout(readyTimer);
+    window.clearTimeout(mountTimer);
+    readyTimer = undefined;
+    mountTimer = undefined;
+  }
+
+  function armLoadTimers() {
+    clearLoadTimers();
+    readyTimer = window.setTimeout(() => {
+      if (!loading || sandboxReady) return;
+      retryMount();
+    }, 350);
+    mountTimer = window.setTimeout(() => {
+      if (!loading) return;
+      retryMount();
+    }, 2000);
+  }
+
+  function retryMount() {
+    if (!loading) return;
+    loadAttempt += 1;
+    if (loadAttempt > 8) {
+      error = sandboxReady
+        ? "app did not finish mounting"
+        : "app sandbox did not start";
+      loading = false;
+      clearLoadTimers();
+      return;
+    }
+    sandboxReady = false;
+    mountSent = false;
+    recreateSandbox();
+    armLoadTimers();
+  }
+
   async function mountApp() {
     loading = true;
     error = "";
     node = undefined;
+    sandboxReady = false;
+    mountSent = false;
+    loadAttempt = 0;
     ctx?.dispose();
     ctx = createYuiContext(devApp.app, () => {});
     iframe?.contentWindow?.postMessage(
       { yuiAppHost: true, type: "dispose" },
       "*",
     );
-    if (iframe) {
-      iframe.srcdoc = sandboxHtml;
-    }
+    recreateSandbox();
+    armLoadTimers();
   }
 
   function sendToSandbox(message: Record<string, unknown>) {
     iframe?.contentWindow?.postMessage({ yuiAppHost: true, ...message }, "*");
   }
 
-  function createSandbox(element: HTMLDivElement) {
+  function sendMountToSandbox() {
+    if (!loading || !sandboxReady || mountSent) return;
+    mountSent = true;
+    sendToSandbox({ type: "mount", source: devApp.source });
+  }
+
+  function recreateSandbox() {
+    if (!sandboxElement) return;
+    iframe?.remove();
     const frame = document.createElement("iframe");
     frame.className = "simple-app-sandbox";
     frame.setAttribute("sandbox", "allow-scripts");
     frame.srcdoc = sandboxHtml;
     iframe = frame;
-    element.append(frame);
+    sandboxElement.append(frame);
+  }
+
+  function createSandbox(element: HTMLDivElement) {
+    sandboxElement = element;
+    if (loading && !iframe) {
+      recreateSandbox();
+    }
     return {
       destroy() {
-        frame.remove();
+        iframe?.remove();
+        if (sandboxElement === element) sandboxElement = undefined;
       },
     };
   }
@@ -429,17 +490,20 @@ post({ type: "ready" });
       return;
     const message = event.data;
     if (message.type === "ready") {
-      sendToSandbox({ type: "mount", source: devApp.source });
+      sandboxReady = true;
+      sendMountToSandbox();
       return;
     }
     if (message.type === "render") {
       node = message.node;
       loading = false;
+      clearLoadTimers();
       return;
     }
     if (message.type === "error") {
       error = message.error;
       loading = false;
+      clearLoadTimers();
       return;
     }
     if (message.type === "call") {
@@ -470,6 +534,7 @@ post({ type: "ready" });
   }
 
   onDestroy(() => {
+    clearLoadTimers();
     sendToSandbox({ type: "dispose" });
     ctx?.dispose();
     window.removeEventListener(
