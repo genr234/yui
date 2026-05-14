@@ -5,6 +5,7 @@
   import DownloadIcon from "lucide-svelte/icons/download";
   import RefreshCwIcon from "lucide-svelte/icons/refresh-cw";
   import TrashIcon from "lucide-svelte/icons/trash-2";
+  import UserCircleIcon from "lucide-svelte/icons/user-circle";
   import PermissionCards from "../components/PermissionCards.svelte";
   import Plugins from "./Plugins.svelte";
   import {
@@ -22,6 +23,7 @@
     describePermission,
     getAppPermissionState,
     setAppPermission,
+    setPermissionAccountScope,
   } from "../sdk/apps/permissions";
   import {
     clearEmbedStorage,
@@ -35,10 +37,12 @@
   export let config: any = null;
   export let pluginSettingsRequest: { pluginId: string; nonce: number } | null =
     null;
+  export let accountOpenRequest: { nonce: number } | null = null;
 
   const dispatch = createEventDispatcher<{
     pluginSettingsBack: void;
     store: { kind: "plugins" };
+    accountChanged: void;
   }>();
 
   type UpdateStatus = {
@@ -55,7 +59,8 @@
 
   let apps: YuiDevApp[] = [];
   let selectedId = "";
-  let page: "root" | "apps" | "app" | "plugins" | "update" = "root";
+  let page: "root" | "apps" | "app" | "plugins" | "update" | "account" =
+    "root";
   let pageDirection: "forward" | "back" = "forward";
   let hasNavigated = false;
   let dragging = false;
@@ -80,7 +85,35 @@
   let pluginPageBack: (() => void) | null = null;
   let forwardedPluginRequest: { pluginId: string; nonce: number } | null = null;
   let consumedPluginRequestNonce = 0;
+  let consumedAccountRequestNonce = 0;
   let returnToPluginsTab = false;
+  let accountStatus: AccountStatus | null = null;
+  let accountBusy = "";
+  let accountMessage = "";
+  let accountError = "";
+  let serverUrl = "http://127.0.0.1:3000";
+  let pairingCode = "";
+  let kioskName = "Yui kiosk";
+
+  type AccountInfo = {
+    id: string;
+    name: string;
+    profile_image_url?: string;
+    kiosk_id: string;
+    sync_cursor: number;
+  };
+
+  type AccountStatus = {
+    server_url?: string;
+    connected: boolean;
+    needs_pairing: boolean;
+    anonymous: boolean;
+    syncing: boolean;
+    last_sync_at?: string;
+    last_sync_error?: string;
+    active_account?: AccountInfo;
+    accounts: AccountInfo[];
+  };
 
   onMount(() => {
     const refresh = () => {
@@ -104,6 +137,7 @@
       await loadAppsArea();
     })();
     void loadUpdateStatus(false);
+    void loadAccountStatus();
 
     return () => {
       window.removeEventListener("yui:permissions-changed", refresh);
@@ -125,6 +159,13 @@
     forwardedPluginRequest = pluginSettingsRequest;
     returnToPluginsTab = true;
     goTo("plugins", "forward");
+  }
+  $: if (
+    accountOpenRequest &&
+    accountOpenRequest.nonce !== consumedAccountRequestNonce
+  ) {
+    consumedAccountRequestNonce = accountOpenRequest.nonce;
+    goTo("account", "forward");
   }
   $: selectedPermissions = selected ? declaredPermissions(selected.app) : [];
   $: selectedPermissionState = selected
@@ -223,7 +264,7 @@
   }
 
   function goTo(
-    nextPage: "root" | "apps" | "app" | "plugins" | "update",
+    nextPage: "root" | "apps" | "app" | "plugins" | "update" | "account",
     direction: "forward" | "back",
   ) {
     pageDirection = direction;
@@ -235,6 +276,7 @@
   function previousPage() {
     if (page === "app") return "apps";
     if (page === "plugins") return pluginPageCanGoBack ? "plugins" : "root";
+    if (page === "account") return "root";
     if (page === "update") return "root";
     if (page === "apps") return "root";
     return "root";
@@ -360,6 +402,136 @@
     if (updateStatus?.latest_commit) return "Latest build installed";
     return "On";
   }
+
+  async function loadAccountStatus() {
+    const result = await bridge
+      .send<AccountStatus>("accounts.status")
+      .catch((error) => {
+        accountError = error instanceof Error ? error.message : String(error);
+        return null;
+      });
+    if (!result) return;
+    accountStatus = result;
+    setPermissionAccountScope(result.active_account?.id ?? null);
+    serverUrl = result.server_url || serverUrl;
+    accountError = result.last_sync_error ?? "";
+  }
+
+  function accountSummary() {
+    if (accountStatus?.syncing) return "Syncing";
+    if (accountStatus?.last_sync_error) return "Sync error";
+    if (accountStatus?.needs_pairing) return "Reconnect";
+    if (accountStatus?.active_account) return accountStatus.active_account.name;
+    return "Anonymous";
+  }
+
+  function accountConnectionDetail() {
+    if (accountStatus?.needs_pairing) return "Pair this kiosk again";
+    if (accountStatus?.server_url) return accountStatus.server_url;
+    return "Local data only";
+  }
+
+  function accountLastSync() {
+    if (!accountStatus?.last_sync_at) return "Not synced yet";
+    return new Date(accountStatus.last_sync_at).toLocaleString();
+  }
+
+  async function runAccountAction(
+    busy: string,
+    action: () => Promise<void>,
+    message: string,
+  ) {
+    accountBusy = busy;
+    accountError = "";
+    accountMessage = "";
+    try {
+      await action();
+      accountMessage = message;
+      await loadAccountStatus();
+      resetAccountScopedSelections();
+      await loadAppsArea();
+      notifyAccountDataChanged();
+      dispatch("accountChanged");
+    } catch (error) {
+      accountError = error instanceof Error ? error.message : String(error);
+    } finally {
+      accountBusy = "";
+    }
+  }
+
+  function resetAccountScopedSelections() {
+    selectedId = "";
+    loadedStorageKey = "";
+    selectedEmbedStorage = [];
+    selectedStorageKeys = [];
+    permissionVersion += 1;
+    embedStorageVersion += 1;
+    appStorageVersion += 1;
+  }
+
+  function notifyAccountDataChanged() {
+    window.dispatchEvent(new CustomEvent("yui:account-changed"));
+    window.dispatchEvent(new CustomEvent("yui:apps-changed"));
+    window.dispatchEvent(new CustomEvent("yui:plugins-changed"));
+    window.dispatchEvent(new CustomEvent("yui:permissions-changed"));
+    window.dispatchEvent(new CustomEvent("yui:app-storage-changed"));
+    window.dispatchEvent(new CustomEvent("yui:embed-storage-changed"));
+  }
+
+  async function connectAccount() {
+    await runAccountAction(
+      "connect",
+      async () => {
+        await bridge.send("accounts.connect", {
+          server_url: serverUrl,
+          code: pairingCode,
+          name: kioskName,
+        });
+        pairingCode = "";
+      },
+      "Account connected.",
+    );
+  }
+
+  async function switchAccount(accountId: string) {
+    await runAccountAction(
+      `switch:${accountId || "anonymous"}`,
+      async () => {
+        await bridge.send("accounts.switch", { account_id: accountId });
+      },
+      accountId ? "Account switched." : "Using anonymous data.",
+    );
+  }
+
+  async function syncAccount() {
+    await runAccountAction(
+      "sync",
+      async () => {
+        await bridge.send("accounts.syncNow");
+      },
+      "Sync finished.",
+    );
+  }
+
+  async function importAnonymous() {
+    await runAccountAction(
+      "import",
+      async () => {
+        await bridge.send("accounts.importAnonymous");
+      },
+      "Anonymous data imported.",
+    );
+  }
+
+  async function disconnectAccount() {
+    await runAccountAction(
+      "disconnect",
+      async () => {
+        await bridge.send("accounts.disconnect");
+      },
+      "Server disconnected.",
+    );
+  }
 </script>
 
 <section
@@ -396,6 +568,16 @@
           </button>
           <button
             class="settings-row"
+            on:click={() => goTo("account", "forward")}
+          >
+            <span>
+              <span>Account</span>
+              <small>{accountSummary()}</small>
+            </span>
+            <ChevronRightIcon size={18} strokeWidth={2.4} />
+          </button>
+          <button
+            class="settings-row"
             on:click={() => goTo("plugins", "forward")}
           >
             <span>
@@ -416,6 +598,184 @@
             </div>
           {/each}
         </section>
+      </div>
+    {:else if page === "account"}
+      <div class:settings-page-motion={hasNavigated} class="settings-page {pageDirection}">
+        <nav class="settings-nav" aria-label="Settings navigation">
+          <button
+            class="icon-button"
+            aria-label="Back to settings"
+            title="Back to settings"
+            on:click={() => goTo("root", "back")}
+          >
+            <ArrowLeftIcon size={18} strokeWidth={2.4} />
+          </button>
+          <span>Account</span>
+        </nav>
+
+        <section class="settings-app-hero">
+          <span class="app-icon">
+            {#if accountStatus?.active_account?.profile_image_url}
+              <img src={accountStatus.active_account.profile_image_url} alt="" />
+            {:else}
+              <UserCircleIcon size={30} strokeWidth={1.9} />
+            {/if}
+          </span>
+          <div>
+            <h2>{accountStatus?.active_account?.name ?? "Anonymous"}</h2>
+            <p>{accountConnectionDetail()}</p>
+            <small>
+              {accountStatus?.needs_pairing
+                ? "Device token missing"
+                : accountStatus?.syncing
+                  ? "Syncing"
+                  : `Last sync: ${accountLastSync()}`}
+            </small>
+          </div>
+        </section>
+
+        <section class="settings-group">
+          <div class="settings-row static">
+            <span>
+              <span>Server</span>
+              <small>{accountStatus?.server_url || "Not connected"}</small>
+            </span>
+          </div>
+          <div class="settings-row static">
+            <span>
+              <span>Active data</span>
+              <small>{accountStatus?.active_account?.id ?? "Anonymous local store"}</small>
+            </span>
+          </div>
+          <div class="settings-row static settings-actions-row">
+            <span>
+              <span>Sync</span>
+              <small>
+                {accountStatus?.needs_pairing
+                  ? "Create a new pairing code in Rails and connect again."
+                  : accountStatus?.last_sync_error || accountMessage || "Push and pull account changes."}
+              </small>
+            </span>
+            <button
+              class="settings-inline-button"
+              disabled={!accountStatus?.connected || accountStatus?.needs_pairing || Boolean(accountBusy)}
+              type="button"
+              on:click={syncAccount}
+            >
+              <RefreshCwIcon size={14} strokeWidth={2.4} />
+              Sync
+            </button>
+          </div>
+        </section>
+
+        <section class="settings-group">
+          <form class="account-form" on:submit|preventDefault={connectAccount}>
+            <label>
+              <span>Rails server</span>
+              <input
+                class="settings-text-input"
+                bind:value={serverUrl}
+                disabled={Boolean(accountBusy)}
+                placeholder="http://127.0.0.1:3000"
+              />
+            </label>
+            <label>
+              <span>Pairing code</span>
+              <input
+                class="settings-text-input"
+                bind:value={pairingCode}
+                disabled={Boolean(accountBusy)}
+                inputmode="numeric"
+                placeholder="123456"
+              />
+            </label>
+            <label>
+              <span>Kiosk name</span>
+              <input
+                class="settings-text-input"
+                bind:value={kioskName}
+                disabled={Boolean(accountBusy)}
+              />
+            </label>
+            <div class="account-form-actions">
+              <button
+                class="settings-inline-button"
+                disabled={Boolean(accountBusy) || !serverUrl || !pairingCode}
+                type="submit"
+              >
+                Connect
+              </button>
+            </div>
+          </form>
+        </section>
+
+        {#if (accountStatus?.accounts ?? []).length > 0}
+          <section class="settings-group">
+            <button
+              class="settings-row"
+              class:active-account={accountStatus?.anonymous}
+              disabled={Boolean(accountBusy)}
+              on:click={() => switchAccount("")}
+            >
+              <span>
+                <span>Anonymous</span>
+                <small>Local data only</small>
+              </span>
+              <small>{accountStatus?.anonymous ? "Active" : "Switch"}</small>
+            </button>
+            {#each accountStatus?.accounts ?? [] as account}
+              <button
+                class="settings-row"
+                class:active-account={accountStatus?.active_account?.id === account.id}
+                disabled={Boolean(accountBusy)}
+                on:click={() => switchAccount(account.id)}
+              >
+                <span>
+                  <span>{account.name}</span>
+                  <small>Kiosk {account.kiosk_id}</small>
+                </span>
+                <small>{accountStatus?.active_account?.id === account.id ? "Active" : "Switch"}</small>
+              </button>
+            {/each}
+          </section>
+        {/if}
+
+        <section class="settings-group">
+          <div class="settings-row static settings-actions-row">
+            <span>
+              <span>Anonymous data</span>
+              <small>Copy local apps, plugins, and storage into this account.</small>
+            </span>
+            <button
+              class="settings-inline-button"
+              disabled={!accountStatus?.connected || accountStatus?.needs_pairing || Boolean(accountBusy)}
+              type="button"
+              on:click={importAnonymous}
+            >
+              Import
+            </button>
+          </div>
+          <div class="settings-row static settings-actions-row">
+            <span>
+              <span>Server connection</span>
+              <small>Disconnect this kiosk from Rails.</small>
+            </span>
+            <button
+              class="settings-inline-button danger"
+              disabled={!accountStatus?.connected || accountStatus?.needs_pairing || Boolean(accountBusy)}
+              type="button"
+              on:click={disconnectAccount}
+            >
+              Disconnect
+            </button>
+          </div>
+        </section>
+
+        {#if accountError}
+          <p class="settings-message error">{accountError}</p>
+        {:else if accountMessage}
+          <p class="settings-message">{accountMessage}</p>
+        {/if}
       </div>
     {:else if page === "update"}
       <div class:settings-page-motion={hasNavigated} class="settings-page {pageDirection}">

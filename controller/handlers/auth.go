@@ -192,7 +192,7 @@ func (r *Registry) Authorize(method string, params json.RawMessage) error {
 
 func publicAuthMethod(method string) bool {
 	switch method {
-	case "auth.status", "auth.setPin", "auth.verifyPin", "status.get", "diagnostics.get", "config.get":
+	case "auth.status", "auth.setPin", "auth.verifyPin", "status.get", "diagnostics.get", "config.get", "accounts.status":
 		return true
 	default:
 		return false

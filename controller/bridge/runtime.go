@@ -38,6 +38,7 @@ func Start(ctx context.Context, cfg config.Config) {
 
 	r := New(cfg)
 	r.commands.StartPlugins(ctx)
+	r.commands.StartAccountSync(ctx)
 	go r.serve(ctx)
 }
 

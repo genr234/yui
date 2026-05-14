@@ -1,6 +1,8 @@
 import type { YuiPermission, YuiSimpleApp } from "./types";
 
 const storageKey = "yui.simple-app.permissions.v0";
+const scopedStorageKeyPrefix = "yui.simple-app.permissions.v1";
+let accountScope = "anonymous";
 
 export type PermissionState = Record<string, Record<string, boolean>>;
 
@@ -48,15 +50,35 @@ const permissionCopy: Record<string, { label: string; description: string }> = {
 
 function readState(): PermissionState {
 	try {
-		return JSON.parse(localStorage.getItem(storageKey) ?? "{}") as PermissionState;
+		migrateAnonymousPermissions();
+		return JSON.parse(localStorage.getItem(scopedStorageKey()) ?? "{}") as PermissionState;
 	} catch {
 		return {};
 	}
 }
 
 function writeState(state: PermissionState) {
-	localStorage.setItem(storageKey, JSON.stringify(state));
+	localStorage.setItem(scopedStorageKey(), JSON.stringify(state));
 	window.dispatchEvent(new CustomEvent("yui:permissions-changed"));
+}
+
+function scopedStorageKey() {
+	return `${scopedStorageKeyPrefix}.${accountScope}`;
+}
+
+export function setPermissionAccountScope(accountId?: string | null) {
+	const next = accountId ? `account.${accountId}` : "anonymous";
+	if (next === accountScope) return;
+	accountScope = next;
+	migrateAnonymousPermissions();
+	window.dispatchEvent(new CustomEvent("yui:permissions-changed"));
+}
+
+function migrateAnonymousPermissions() {
+	if (accountScope !== "anonymous") return;
+	if (localStorage.getItem(scopedStorageKey()) !== null) return;
+	const previous = localStorage.getItem(storageKey);
+	if (previous !== null) localStorage.setItem(scopedStorageKey(), previous);
 }
 
 export function describePermission(permission: YuiPermission) {
