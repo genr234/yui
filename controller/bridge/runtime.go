@@ -99,5 +99,5 @@ func (r *Runtime) handle(conn *websocket.Conn) {
 }
 
 func (r *Runtime) dispatch(method string, params json.RawMessage) (any, error) {
-	return r.commands.Dispatch(method, params)
+	return r.commands.DispatchAuthenticated(method, params)
 }

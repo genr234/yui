@@ -27,6 +27,9 @@ type Registry struct {
 	store     *store.DB
 	migrated  bool
 	plugins   *PluginManager
+	authMu    sync.Mutex
+	authState AuthState
+	authToken string
 }
 
 func NewRegistry(cfg config.Config) *Registry {
@@ -37,6 +40,7 @@ func NewRegistry(cfg config.Config) *Registry {
 	}
 	r.Register(StatusCommands()...)
 	r.Register(ConfigCommands()...)
+	r.Register(AuthCommands()...)
 	r.Register(StorageCommands()...)
 	r.Register(FSCommands()...)
 	r.Register(ProcessCommands()...)
@@ -61,6 +65,13 @@ func (r *Registry) Dispatch(method string, params json.RawMessage) (any, error) 
 		return nil, fmt.Errorf("unknown method: %s", method)
 	}
 	return cmd.Handle(r, params)
+}
+
+func (r *Registry) DispatchAuthenticated(method string, params json.RawMessage) (any, error) {
+	if err := r.Authorize(method, params); err != nil {
+		return nil, err
+	}
+	return r.Dispatch(method, params)
 }
 
 func (r *Registry) Store() (*store.DB, error) {

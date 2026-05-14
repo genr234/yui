@@ -21,7 +21,7 @@ type ConfigGetCommand struct{}
 func (ConfigGetCommand) Name() string { return "config.get" }
 
 func (ConfigGetCommand) Handle(r *Registry, _ json.RawMessage) (any, error) {
-	return r.cfg, nil
+	return publicConfig(r.cfg), nil
 }
 
 type ConfigUpdateCommand struct{}
@@ -64,10 +64,17 @@ func (ConfigUpdateCommand) Handle(r *Registry, params json.RawMessage) (any, err
 	}
 
 	if err := config.Save(cfg); err != nil {
-		return r.cfg, err
+		return publicConfig(r.cfg), err
 	}
 	r.cfg = cfg
-	return cfg, nil
+	return publicConfig(cfg), nil
+}
+
+func publicConfig(cfg config.Config) any {
+	type public config.Config
+	out := public(cfg)
+	out.AdminPIN = config.PINHash{}
+	return out
 }
 
 type PlatformReimportCommand struct{}
@@ -79,7 +86,7 @@ func (PlatformReimportCommand) Handle(r *Registry, _ json.RawMessage) (any, erro
 	if err == nil {
 		r.cfg = cfg
 	}
-	return cfg, err
+	return publicConfig(cfg), err
 }
 
 type PlatformSelectChromeCommand struct{}
@@ -96,5 +103,5 @@ func (PlatformSelectChromeCommand) Handle(r *Registry, _ json.RawMessage) (any, 
 		return r.cfg, err
 	}
 	r.cfg.ChromePath = path
-	return r.cfg, config.Save(r.cfg)
+	return publicConfig(r.cfg), config.Save(r.cfg)
 }

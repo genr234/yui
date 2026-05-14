@@ -59,6 +59,136 @@
 	background: #ffffff;
 }
 
+.auth-panel {
+	position: fixed;
+	inset: 12px;
+	z-index: 2147483647;
+	width: min(420px, calc(100vw - 32px));
+	height: fit-content;
+	max-height: calc(100vh - 32px);
+	margin: auto;
+	padding: 22px;
+	display: grid;
+	gap: 18px;
+	overflow: auto;
+	color: #111925;
+	background: #f7fafc;
+	border: 1px solid rgba(255, 255, 255, 0.72);
+	border-radius: 22px;
+	box-shadow:
+		0 32px 96px rgba(0, 0, 0, 0.42),
+		0 0 0 1px rgba(25, 40, 58, 0.06) inset;
+	font:
+		16px / 1.35 "YuiAvenirNext",
+		"Avenir Next",
+		"Segoe UI",
+		Helvetica,
+		Arial,
+		sans-serif;
+	pointer-events: auto;
+	animation: shell-in 320ms cubic-bezier(0.2, 0.9, 0.18, 1) both;
+}
+
+.auth-header {
+	display: grid;
+	grid-template-columns: 42px minmax(0, 1fr);
+	gap: 12px;
+	align-items: center;
+}
+
+.auth-icon {
+	width: 42px;
+	height: 42px;
+	display: grid;
+	place-items: center;
+	color: #0f766e;
+	background: #dff7f1;
+	border-radius: 12px;
+}
+
+.auth-header h2 {
+	margin: 0;
+	color: #111925;
+	font-size: 22px;
+	font-weight: 650;
+	line-height: 1.1;
+}
+
+.auth-header p,
+.auth-message {
+	margin: 4px 0 0;
+	color: #647487;
+	font-size: 13px;
+	font-weight: 550;
+}
+
+.auth-message {
+	margin: -4px 0 0;
+	color: #b42318;
+}
+
+.auth-dots {
+	display: grid;
+	grid-template-columns: repeat(6, 14px);
+	gap: 10px;
+	justify-content: center;
+	padding: 4px 0;
+}
+
+.auth-dots span {
+	display: block;
+	width: 14px;
+	height: 14px;
+	border: 2px solid #b9c6d3;
+	border-radius: 50%;
+	background: transparent;
+}
+
+.auth-dots span.filled {
+	border-color: #0f766e;
+	background: #0f766e;
+}
+
+.auth-pad {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 10px;
+}
+
+.auth-key,
+.auth-submit {
+	min-height: 54px;
+	border: 1px solid #d7e0ea;
+	border-radius: 12px;
+	color: #132238;
+	background: #ffffff;
+	font-weight: 450;
+	cursor: pointer;
+}
+
+.auth-key {
+	font-size: 22px;
+}
+
+.auth-key.utility {
+	display: grid;
+	place-items: center;
+	font-size: 14px;
+	color: #526477;
+}
+
+.auth-submit {
+	color: #ffffff;
+	background: #0f766e;
+	border-color: #0f766e;
+}
+
+.auth-key:disabled,
+.auth-submit:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
 @keyframes veil-in {
 	from {
 		opacity: 0;
@@ -102,4 +232,3 @@
 		transform: translateY(42px) scale(0.97);
 	}
 }
-
