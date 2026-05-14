@@ -35,25 +35,20 @@ cd controller && go run . --version
 cd controller && go run . --check
 ```
 
-## Platform Store
+## Platform Storage
 
-The controller exposes a Bolt-backed document store at `store_path` in `controller.json`.
-Svelte can use it through the SDK:
+The controller keeps durable local state in a Bolt-backed store at `store_path` in `controller.json`.
+That store is an implementation detail for platform records such as app catalogs, plugin catalogs, installed items, settings, and audit data.
+
+Apps and plugins get scoped storage instead of direct access to arbitrary collections:
 
 ```ts
-import { store } from "./sdk/store";
-
-type AppModule = {
-	name: string;
-	enabled: boolean;
-};
-
-const apps = store.collection<AppModule>("apps");
-await apps.put("terminal", { name: "Terminal", enabled: true });
-const terminal = await apps.get("terminal");
-await apps.update("terminal", { enabled: false });
-const allApps = await apps.list();
+const previous = await ctx.storage.get("score");
+await ctx.storage.set("score", Number(previous ?? 0) + 1);
+const keys = await ctx.storage.keys();
 ```
+
+Core platform data should be accessed through typed commands such as `apps.*` and `plugins.*`, not through a generic document-store API.
 
 ## Kiosk Install Shape
 

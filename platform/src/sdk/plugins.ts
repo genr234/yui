@@ -1,5 +1,5 @@
 import { bridge } from "./bridge";
-import { store } from "./store";
+import { storageCollections, storageSpace } from "./storage-spaces";
 
 export type YuiPluginSettingSchema = {
 	type: "string" | "number" | "bool" | "select" | "path" | "textarea" | "secret" | string;
@@ -212,26 +212,13 @@ export function isAdministratorPermission(permission: string) {
 	].includes(permission);
 }
 
-const pluginStorage = store.collection<unknown>("plugin-storage");
-
-function pluginStoragePrefix(pluginId: string) {
-	return `${pluginId}:`;
-}
-
-function pluginStorageKeyFromId(pluginId: string, id: string) {
-	const prefix = pluginStoragePrefix(pluginId);
-	return id.startsWith(prefix) ? id.slice(prefix.length) : null;
-}
+const pluginStorage = storageSpace<unknown>(storageCollections.plugins);
 
 export async function listPluginStorageKeys(pluginId: string) {
-	const docs = await pluginStorage.list({ prefix: pluginStoragePrefix(pluginId) });
-	return docs
-		.map((doc) => pluginStorageKeyFromId(pluginId, doc.id))
-		.filter((key): key is string => key !== null);
+	return pluginStorage.scope(pluginId).keys();
 }
 
 export async function clearPluginStorage(pluginId: string) {
-	const docs = await pluginStorage.list({ prefix: pluginStoragePrefix(pluginId) });
-	await Promise.all(docs.map((doc) => pluginStorage.delete(doc.id)));
+	await pluginStorage.scope(pluginId).clear();
 	window.dispatchEvent(new CustomEvent("yui:plugin-storage-changed", { detail: { pluginId } }));
 }

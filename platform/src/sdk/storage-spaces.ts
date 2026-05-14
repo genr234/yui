@@ -1,4 +1,4 @@
-import { store, type StoreDocument } from "./store";
+import { internalStore, type StoreDocument } from "./internal-store";
 
 export const storageCollections = {
 	keyValue: "storage",
@@ -13,7 +13,7 @@ type StorageSpaceOptions = {
 };
 
 export class ScopedStorageSpace<T = unknown> {
-	private readonly collection = store.collection<T>(this.collectionName);
+	private readonly collection = internalStore.collection<T>(this.collectionName);
 	private readonly encodeKeys: boolean;
 
 	constructor(

@@ -9,6 +9,11 @@ import (
 
 const defaultStorageCollection = "storage"
 
+var scopedStoreCollections = map[string]struct{}{
+	"app-storage":    {},
+	"plugin-storage": {},
+}
+
 func StorageCommands() []Command {
 	return []Command{
 		StorageGetCommand{},
@@ -16,13 +21,8 @@ func StorageCommands() []Command {
 		StorageDeleteCommand{},
 		StoreGetCommand{},
 		StorePutCommand{},
-		StoreCreateCommand{},
-		StoreUpdateCommand{},
 		StoreDeleteCommand{},
 		StoreListCommand{},
-		StoreCountCommand{},
-		StoreClearCommand{},
-		StoreCollectionsCommand{},
 	}
 }
 
@@ -132,53 +132,6 @@ func (StorePutCommand) Handle(r *Registry, params json.RawMessage) (any, error) 
 	return decodeDocument(doc)
 }
 
-type StoreCreateCommand struct{}
-
-func (StoreCreateCommand) Name() string { return "store.create" }
-
-func (StoreCreateCommand) Handle(r *Registry, params json.RawMessage) (any, error) {
-	var p struct {
-		Collection string          `json:"collection"`
-		Value      json.RawMessage `json:"value"`
-	}
-	if err := json.Unmarshal(params, &p); err != nil {
-		return nil, err
-	}
-	collection, err := collection(r, p.Collection)
-	if err != nil {
-		return nil, err
-	}
-	doc, err := collection.Create(p.Value)
-	if err != nil {
-		return nil, err
-	}
-	return decodeDocument(doc)
-}
-
-type StoreUpdateCommand struct{}
-
-func (StoreUpdateCommand) Name() string { return "store.update" }
-
-func (StoreUpdateCommand) Handle(r *Registry, params json.RawMessage) (any, error) {
-	var p struct {
-		Collection string         `json:"collection"`
-		ID         string         `json:"id"`
-		Patch      map[string]any `json:"patch"`
-	}
-	if err := json.Unmarshal(params, &p); err != nil {
-		return nil, err
-	}
-	collection, err := collection(r, p.Collection)
-	if err != nil {
-		return nil, err
-	}
-	doc, err := collection.Merge(p.ID, p.Patch)
-	if err != nil {
-		return nil, err
-	}
-	return decodeDocument(doc)
-}
-
 type StoreDeleteCommand struct{}
 
 func (StoreDeleteCommand) Name() string { return "store.delete" }
@@ -219,59 +172,6 @@ func (StoreListCommand) Handle(r *Registry, params json.RawMessage) (any, error)
 	return decodeDocuments(docs)
 }
 
-type StoreCountCommand struct{}
-
-func (StoreCountCommand) Name() string { return "store.count" }
-
-func (StoreCountCommand) Handle(r *Registry, params json.RawMessage) (any, error) {
-	var p struct {
-		Collection string `json:"collection"`
-		Prefix     string `json:"prefix"`
-	}
-	if err := json.Unmarshal(params, &p); err != nil {
-		return nil, err
-	}
-	collection, err := collection(r, p.Collection)
-	if err != nil {
-		return nil, err
-	}
-	count, err := collection.Count(p.Prefix)
-	if err != nil {
-		return nil, err
-	}
-	return map[string]int{"count": count}, nil
-}
-
-type StoreClearCommand struct{}
-
-func (StoreClearCommand) Name() string { return "store.clear" }
-
-func (StoreClearCommand) Handle(r *Registry, params json.RawMessage) (any, error) {
-	var p struct {
-		Collection string `json:"collection"`
-	}
-	if err := json.Unmarshal(params, &p); err != nil {
-		return nil, err
-	}
-	collection, err := collection(r, p.Collection)
-	if err != nil {
-		return nil, err
-	}
-	return nil, collection.Clear()
-}
-
-type StoreCollectionsCommand struct{}
-
-func (StoreCollectionsCommand) Name() string { return "store.collections" }
-
-func (StoreCollectionsCommand) Handle(r *Registry, _ json.RawMessage) (any, error) {
-	db, err := r.Store()
-	if err != nil {
-		return nil, err
-	}
-	return db.BucketNames()
-}
-
 type documentParams struct {
 	Collection string `json:"collection"`
 	ID         string `json:"id"`
@@ -286,6 +186,9 @@ type valueParams struct {
 func collection(r *Registry, name string) (store.Collection, error) {
 	if name == "" {
 		return store.Collection{}, fmt.Errorf("collection is required")
+	}
+	if _, ok := scopedStoreCollections[name]; !ok {
+		return store.Collection{}, fmt.Errorf("collection %q is not available through store commands", name)
 	}
 	db, err := r.Store()
 	if err != nil {
