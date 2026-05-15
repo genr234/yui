@@ -274,7 +274,7 @@ func (c Collection) Keys(opts ListOptions) ([]string, error) {
 }
 
 func (b *BoltBackend) Keys(collection string, opts ListOptions) ([]string, error) {
-	var keys []string
+	keys := []string{}
 	err := b.db.View(func(tx *bbolt.Tx) error {
 		bucket := tx.Bucket([]byte(collection))
 		if bucket == nil {
