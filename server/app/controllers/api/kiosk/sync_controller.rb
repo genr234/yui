@@ -1,35 +1,54 @@
 module Api
   module Kiosk
     class SyncController < BaseController
+      MAX_OPERATIONS = 250
+
       def push
         touch_current_kiosk!
-        accepted = Array(params[:operations]).map do |operation|
-          KioskOperation.accept!(
-            account: current_account,
-            kiosk: current_kiosk,
-            attributes: operation_attributes(operation)
-          )
+        operations = Array(params[:operations])
+        if operations.size > MAX_OPERATIONS
+          return render json: { error: "too many operations", limit: MAX_OPERATIONS }, status: :payload_too_large
+        end
+
+        accepted = KioskOperation.transaction do
+          operations.map do |operation|
+            KioskOperation.accept!(
+              account: current_account,
+              kiosk: current_kiosk,
+              attributes: operation_attributes(operation)
+            )
+          end
         end
 
         render json: {
           accepted: accepted.map { |operation| operation_payload(operation) },
-          sync_cursor: current_account.kiosk_operations.maximum(:server_seq).to_i
+          sync_cursor: latest_server_seq
         }
       end
 
       def pull
         touch_current_kiosk!
         cursor = params[:cursor].to_i
-        operations = current_account.kiosk_operations.where("server_seq > ?", cursor).order(:server_seq)
+        page = current_account.kiosk_operations.where("server_seq > ?", cursor).order(:server_seq).limit(MAX_OPERATIONS + 1)
+        operations = page.first(MAX_OPERATIONS)
 
         render json: {
           account: account_payload(current_account),
           operations: operations.map { |operation| operation_payload(operation) },
-          sync_cursor: current_account.kiosk_operations.maximum(:server_seq).to_i
+          sync_cursor: sync_cursor_for(operations, cursor),
+          has_more: page.size > MAX_OPERATIONS
         }
       end
 
       private
+
+      def latest_server_seq
+        current_account.kiosk_operations.maximum(:server_seq).to_i
+      end
+
+      def sync_cursor_for(operations, requested_cursor)
+        operations.last&.server_seq || [ requested_cursor, latest_server_seq ].min
+      end
 
       def operation_attributes(operation)
         if operation.respond_to?(:to_unsafe_h)

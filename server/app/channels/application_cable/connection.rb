@@ -9,7 +9,7 @@ module ApplicationCable
     private
 
     def find_verified_kiosk
-      token = request.authorization.to_s.delete_prefix("Bearer ").presence || request.params[:token].presence
+      token = request.authorization.to_s.delete_prefix("Bearer ").presence
       kiosk = Kiosk.authenticate(token) if token
       return kiosk if kiosk
 

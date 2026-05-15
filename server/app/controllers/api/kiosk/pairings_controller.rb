@@ -1,6 +1,8 @@
 module Api
   module Kiosk
     class PairingsController < ActionController::API
+      INITIAL_OPERATIONS_LIMIT = 250
+
       def create
         account = PairingCode.claim!(params.require(:code))
         token = ::Kiosk.issue_token
@@ -10,13 +12,16 @@ module Api
         kiosk.connected_at ||= Time.current
         kiosk.last_seen_at = Time.current
         kiosk.save!
+        page = account.kiosk_operations.order(:server_seq).limit(INITIAL_OPERATIONS_LIMIT + 1)
+        operations = page.first(INITIAL_OPERATIONS_LIMIT)
 
         render json: {
           account: account_payload(account),
           kiosk: kiosk_payload(kiosk),
           device_token: token,
-          sync_cursor: account.kiosk_operations.maximum(:server_seq).to_i,
-          operations: operations_payload(account.kiosk_operations.order(:server_seq))
+          sync_cursor: operations.last&.server_seq.to_i,
+          has_more: page.size > INITIAL_OPERATIONS_LIMIT,
+          operations: operations_payload(operations)
         }
       rescue ActiveRecord::RecordNotFound
         render json: { error: "invalid or expired pairing code" }, status: :not_found
