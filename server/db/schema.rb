@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_14_000800) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_15_072715) do
   create_table "account_state_records", force: :cascade do |t|
     t.integer "account_id", null: false
     t.string "collection", null: false
@@ -91,10 +91,32 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_14_000800) do
     t.index ["code_digest"], name: "index_pairing_codes_on_code_digest", unique: true
   end
 
+  create_table "passkey_credentials", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.datetime "last_used_at"
+    t.string "nickname"
+    t.text "public_key", null: false
+    t.integer "sign_count", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.string "webauthn_id", null: false
+    t.index ["user_id"], name: "index_passkey_credentials_on_user_id"
+    t.index ["webauthn_id"], name: "index_passkey_credentials_on_webauthn_id", unique: true
+  end
+
+  create_table "users", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "name", null: false
+    t.datetime "updated_at", null: false
+    t.string "webauthn_id", null: false
+    t.index ["webauthn_id"], name: "index_users_on_webauthn_id", unique: true
+  end
+
   add_foreign_key "account_state_records", "accounts"
   add_foreign_key "kiosk_commands", "kiosks"
   add_foreign_key "kiosk_operations", "accounts"
   add_foreign_key "kiosk_operations", "kiosks"
   add_foreign_key "kiosks", "accounts"
   add_foreign_key "pairing_codes", "accounts"
+  add_foreign_key "passkey_credentials", "users"
 end

@@ -1,6 +1,15 @@
 Rails.application.routes.draw do
   root "accounts#index"
 
+  get "setup", to: "passkeys#new"
+  post "passkeys/options", to: "passkeys#options", as: :passkey_options
+  post "passkeys", to: "passkeys#create"
+
+  get "login", to: "sessions#new"
+  post "login/options", to: "sessions#options", as: :login_options
+  post "login", to: "sessions#create"
+  delete "logout", to: "sessions#destroy"
+
   resources :accounts, only: [ :index, :show, :new, :create, :edit, :update ] do
     resources :pairing_codes, only: [ :create ]
     resources :kiosk_commands, only: [ :create ]

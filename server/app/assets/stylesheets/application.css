@@ -87,6 +87,39 @@ input[type="submit"].button--dark {
   font-weight: 450;
 }
 
+.flash-stack {
+  position: fixed;
+  top: 1rem;
+  left: 50%;
+  z-index: 10;
+  display: grid;
+  gap: 0.5rem;
+  width: min(520px, calc(100% - 2rem));
+  transform: translateX(-50%);
+}
+
+.flash {
+  margin: 0;
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--base);
+  box-shadow: 0 10px 30px rgb(76 79 105 / 9%);
+  color: var(--ink);
+}
+
+.flash--alert {
+  border-color: #e78284;
+  background: #fff0f2;
+  color: var(--red);
+}
+
+.flash--notice {
+  border-color: #a6d189;
+  background: #edf7e8;
+  color: var(--green);
+}
+
 .account-picker {
   display: grid;
   min-height: 100vh;
@@ -107,6 +140,15 @@ input[type="submit"].button--dark {
   margin: 0 0 2.5rem;
   font-size: clamp(2.4rem, 6vw, 5rem);
   font-weight: 500;
+}
+
+.account-picker__session {
+  display: inline-flex;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.75rem;
+  color: var(--muted);
 }
 
 .profile-grid {
@@ -438,7 +480,7 @@ textarea {
 
 .form-card h1 {
   margin: 1rem 0 1.25rem;
-  font-size: clamp(2rem, 6vw, 3.4rem);
+  font-size: 34px;
 }
 
 .back-link {
@@ -468,6 +510,71 @@ textarea {
 .form-actions {
   display: flex;
   justify-content: flex-end;
+}
+
+.form-actions--center {
+  justify-content: center;
+}
+
+.auth-page {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 3rem 1.5rem;
+}
+
+.auth-panel {
+  display: grid;
+  gap: 1.25rem;
+  width: min(560px, 100%);
+  text-align: center;
+}
+
+.auth-panel h1 {
+  margin: 0;
+  font-size: clamp(2.7rem, 7vw, 5.2rem);
+  font-weight: 500;
+  line-height: 1;
+}
+
+.auth-panel .account-form {
+  justify-items: center;
+}
+
+.auth-panel--form {
+  width: min(620px, 100%);
+}
+
+.auth-panel--form .account-form {
+  width: min(460px, 100%);
+  justify-self: center;
+  justify-items: stretch;
+  text-align: left;
+}
+
+.auth-kicker {
+  margin: 0;
+  color: var(--mauve);
+  font-size: 0.78rem;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.auth-copy,
+.auth-message {
+  color: var(--muted);
+}
+
+.auth-copy {
+  max-width: 46rem;
+  margin: 0 auto;
+  font-size: 1.05rem;
+}
+
+.auth-message {
+  min-height: 1.4rem;
+  margin: 0;
+  text-align: center;
 }
 
 @media (max-width: 900px) {
