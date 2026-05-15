@@ -1,25 +1,35 @@
-<p><%= link_to "Account", account_path(@account) %></p>
+<% content_for :title, "Edit #{@account.name} - Yui" %>
 
-<h1>Edit account</h1>
+<main class="form-page">
+  <section class="form-card">
+    <%= link_to "< Account", account_path(@account), class: "back-link" %>
+    <h1>Edit account</h1>
 
-<%= form_with model: @account do |form| %>
-  <% if @account.errors.any? %>
-    <ul>
-      <% @account.errors.full_messages.each do |message| %>
-        <li><%= message %></li>
+    <%= form_with model: @account, class: "account-form" do |form| %>
+      <% if @account.errors.any? %>
+        <div class="form-errors">
+          <strong>Check these details</strong>
+          <ul>
+            <% @account.errors.full_messages.each do |message| %>
+              <li><%= message %></li>
+            <% end %>
+          </ul>
+        </div>
       <% end %>
-    </ul>
-  <% end %>
 
-  <p>
-    <%= form.label :name %><br>
-    <%= form.text_field :name %>
-  </p>
+      <label class="field">
+        <span>Name</span>
+        <%= form.text_field :name, autofocus: true %>
+      </label>
 
-  <p>
-    <%= form.label :profile_image_url, "Profile image URL" %><br>
-    <%= form.url_field :profile_image_url %>
-  </p>
+      <label class="field">
+        <span>Profile image URL</span>
+        <%= form.url_field :profile_image_url, placeholder: "https://example.com/avatar.jpg" %>
+      </label>
 
-  <p><%= form.submit "Save account" %></p>
-<% end %>
+      <div class="form-actions">
+        <%= form.submit "Save account", class: "button button--primary" %>
+      </div>
+    <% end %>
+  </section>
+</main>

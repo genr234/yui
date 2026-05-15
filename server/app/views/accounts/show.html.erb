@@ -1,95 +1,137 @@
-<p><%= link_to "Accounts", accounts_path %></p>
+<% content_for :title, "#{@account.name} - Yui" %>
 
-<h1><%= @account.name %></h1>
-<p><%= link_to "Edit account", edit_account_path(@account) %></p>
+<% online_kiosks = @kiosks.count { |kiosk| kiosk.last_seen_at.present? && kiosk.last_seen_at > 10.minutes.ago } %>
+<% pending_commands = @commands.count { |command| command.status == "pending" } %>
+<% collections = @state_records.group_by(&:collection) %>
 
-<% if @account.profile_image_url.present? %>
-  <p><img src="<%= @account.profile_image_url %>" alt="" width="72" height="72"></p>
-<% end %>
+<main class="workspace">
+  <% if notice.present? %>
+    <p class="notice"><%= notice %></p>
+  <% end %>
 
-<% if notice.present? %>
-  <p><strong><%= notice %></strong></p>
-<% end %>
+  <section class="project-card">
+    <header class="project-card__header">
+      <span class="mini-avatar">
+        <% if @account.profile_image_url.present? %>
+          <img src="<%= @account.profile_image_url %>" alt="">
+        <% else %>
+          <span><%= @account.name.to_s.first&.upcase || "Y" %></span>
+        <% end %>
+      </span>
+      <h1><%= @account.name %></h1>
 
-<h2>Pairing</h2>
-<%= button_to "Create pairing code", account_pairing_codes_path(@account), method: :post %>
+      <%= link_to "Edit", edit_account_path(@account), class: "button button--ghost" %>
+    </header>
 
-<h2>Kiosks</h2>
-<% if @kiosks.any? %>
-  <table>
-    <thead>
-      <tr>
-        <th>Name</th>
-        <th>Device</th>
-        <th>Last seen</th>
-        <th>Command</th>
-      </tr>
-    </thead>
-    <tbody>
-      <% @kiosks.each do |kiosk| %>
-        <tr>
-          <td><%= kiosk.name %></td>
-          <td><code><%= kiosk.device_uid %></code></td>
-          <td><%= kiosk.last_seen_at || "Never" %></td>
-          <td>
-            <%= form_with url: account_kiosk_commands_path(@account), method: :post do |form| %>
-              <%= hidden_field_tag :kiosk_id, kiosk.id %>
-              <%= select_tag :command_type, options_for_select(KioskCommand::ALLOWED_TYPES) %><br>
-              <%= text_area_tag :payload, "{}", rows: 4, cols: 48 %><br>
-              <%= submit_tag "Queue command" %>
+    <section class="project-section project-section--pairing">
+      <div>
+        <h2>Pairing</h2>
+      </div>
+      <%= button_to "Create pairing code", account_pairing_codes_path(@account), method: :post, class: "button button--primary" %>
+    </section>
+
+    <section class="project-grid" aria-label="Account workspace">
+      <article class="project-cell">
+        <h2>Kiosks</h2>
+        <% if @kiosks.any? %>
+          <ul class="plain-list">
+            <% @kiosks.each do |kiosk| %>
+              <li>
+                <span>
+                  <strong><%= kiosk.name %></strong>
+                  <small><%= kiosk.last_seen_at.present? ? "Last seen #{time_ago_in_words(kiosk.last_seen_at)} ago" : "Never seen" %></small>
+                </span>
+                <span class="quiet-status <%= "quiet-status--on" if kiosk.last_seen_at.present? && kiosk.last_seen_at > 10.minutes.ago %>">
+                  <%= kiosk.last_seen_at.present? && kiosk.last_seen_at > 10.minutes.ago ? "Online" : "Idle" %>
+                </span>
+              </li>
             <% end %>
-          </td>
-        </tr>
+          </ul>
+        <% else %>
+          <p class="empty-copy">No kiosks are paired yet.</p>
+        <% end %>
+      </article>
+
+      <article class="project-cell">
+        <h2>Collections</h2>
+        <% if collections.any? %>
+          <ul class="plain-list">
+            <% collections.first(8).each do |collection, records| %>
+              <li>
+                <span><strong><%= collection %></strong></span>
+                <span class="quiet-status"><%= pluralize(records.size, "record") %></span>
+              </li>
+            <% end %>
+          </ul>
+        <% else %>
+          <p class="empty-copy">State records will appear after a kiosk syncs.</p>
+        <% end %>
+      </article>
+
+      <article class="project-cell">
+        <h2>Recent Commands</h2>
+        <% if @commands.any? %>
+          <ol class="plain-list plain-list--ordered">
+            <% @commands.first(8).each do |command| %>
+              <li>
+                <span>
+                  <strong><%= command.command_type %></strong>
+                  <small><%= command.kiosk.name %> - <%= time_ago_in_words(command.created_at) %> ago</small>
+                </span>
+                <span class="quiet-status quiet-status--<%= command.status %>"><%= command.status %></span>
+              </li>
+            <% end %>
+          </ol>
+        <% else %>
+          <p class="empty-copy">No commands have been queued yet.</p>
+        <% end %>
+      </article>
+
+      <article class="project-cell">
+        <h2>Recent Operations</h2>
+        <% if @operations.any? %>
+          <ol class="plain-list plain-list--ordered">
+            <% @operations.first(8).each do |operation| %>
+              <li>
+                <span>
+                  <strong><%= operation.action %></strong>
+                  <small><%= operation.collection %>/<%= operation.record_id %></small>
+                </span>
+                <span class="quiet-status">#<%= operation.server_seq %></span>
+              </li>
+            <% end %>
+          </ol>
+        <% else %>
+          <p class="empty-copy">Device operations will appear here as they sync.</p>
+        <% end %>
+      </article>
+    </section>
+
+    <section class="project-section project-section--commands">m
+      <% if @kiosks.any? %>
+        <div class="command-stack">
+          <% @kiosks.each do |kiosk| %>
+            <%= form_with url: account_kiosk_commands_path(@account), method: :post, class: "command-form" do |form| %>
+              <%= hidden_field_tag :kiosk_id, kiosk.id %>
+              <div class="command-form__device">
+                <strong><%= kiosk.name %></strong>
+                <small><code><%= kiosk.device_uid %></code></small>
+              </div>
+              <label>
+                <span>Command</span>
+                <%= select_tag :command_type, options_for_select(KioskCommand::ALLOWED_TYPES) %>
+              </label>
+              <label>
+                <span>Payload</span>
+                <%= text_area_tag :payload, "{}", rows: 2 %>
+              </label>
+              <%= submit_tag "Queue", class: "button button--dark" %>
+            <% end %>
+          <% end %>
+        </div>
+      <% else %>
+        <p class="empty-copy">Pair a kiosk before sending commands.</p>
       <% end %>
-    </tbody>
-  </table>
-<% else %>
-  <p>No kiosks paired yet.</p>
-<% end %>
-
-<h2>State</h2>
-<table>
-  <thead>
-    <tr>
-      <th>Collection</th>
-      <th>Record</th>
-      <th>Deleted</th>
-      <th>Value</th>
-    </tr>
-  </thead>
-  <tbody>
-    <% @state_records.each do |record| %>
-      <tr>
-        <td><%= record.collection %></td>
-        <td><code><%= record.record_id %></code></td>
-        <td><%= record.deleted %></td>
-        <td><pre><%= JSON.pretty_generate(record.value) if record.value.present? %></pre></td>
-      </tr>
-    <% end %>
-  </tbody>
-</table>
-
-<h2>Recent commands</h2>
-<ul>
-  <% @commands.each do |command| %>
-    <li>
-      <code><%= command.command_type %></code>
-      for <%= command.kiosk.name %>:
-      <%= command.status %>
-      <% if command.error.present? %>
-        - <%= command.error %>
-      <% end %>
-    </li>
-  <% end %>
-</ul>
-
-<h2>Recent operations</h2>
-<ol>
-  <% @operations.each do |operation| %>
-    <li>
-      #<%= operation.server_seq %>
-      <code><%= operation.action %></code>
-      <%= operation.collection %>/<%= operation.record_id %>
-    </li>
-  <% end %>
-</ol>
+    </section>
+  </section>
+</main>

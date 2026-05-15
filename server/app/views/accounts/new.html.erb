@@ -1,23 +1,35 @@
-<h1>New account</h1>
+<% content_for :title, "New account - Yui" %>
 
-<%= form_with model: @account do |form| %>
-  <% if @account.errors.any? %>
-    <ul>
-      <% @account.errors.full_messages.each do |message| %>
-        <li><%= message %></li>
+<main class="form-page">
+  <section class="form-card">
+    <%= link_to "< Accounts", accounts_path, class: "back-link" %>
+    <h1>New account</h1>
+
+    <%= form_with model: @account, class: "account-form" do |form| %>
+      <% if @account.errors.any? %>
+        <div class="form-errors">
+          <strong>Check these details</strong>
+          <ul>
+            <% @account.errors.full_messages.each do |message| %>
+              <li><%= message %></li>
+            <% end %>
+          </ul>
+        </div>
       <% end %>
-    </ul>
-  <% end %>
 
-  <p>
-    <%= form.label :name %><br>
-    <%= form.text_field :name %>
-  </p>
+      <label class="field">
+        <span>Name</span>
+        <%= form.text_field :name, autofocus: true, placeholder: "Studio, shop, or person" %>
+      </label>
 
-  <p>
-    <%= form.label :profile_image_url, "Profile image URL" %><br>
-    <%= form.url_field :profile_image_url %>
-  </p>
+      <label class="field">
+        <span>Profile image URL</span>
+        <%= form.url_field :profile_image_url, placeholder: "https://example.com/avatar.jpg" %>
+      </label>
 
-  <p><%= form.submit "Create account" %></p>
-<% end %>
+      <div class="form-actions">
+        <%= form.submit "Create account", class: "button button--primary" %>
+      </div>
+    <% end %>
+  </section>
+</main>
