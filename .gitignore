@@ -29,3 +29,4 @@ installer/installer
 !/server/storage/
 !/server/storage/.keep
 /server/storage/*.sqlite3*
+/server/config/master.key
