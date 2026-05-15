@@ -59,8 +59,7 @@
 
   let apps: YuiDevApp[] = [];
   let selectedId = "";
-  let page: "root" | "apps" | "app" | "plugins" | "update" | "account" =
-    "root";
+  let page: "root" | "apps" | "app" | "plugins" | "update" | "account" = "root";
   let pageDirection: "forward" | "back" = "forward";
   let hasNavigated = false;
   let dragging = false;
@@ -545,7 +544,10 @@
 >
   {#key page}
     {#if page === "root"}
-      <div class:settings-page-motion={hasNavigated} class="settings-page {pageDirection}">
+      <div
+        class:settings-page-motion={hasNavigated}
+        class="settings-page {pageDirection}"
+      >
         <section class="settings-group">
           <button class="settings-row" on:click={() => goTo("apps", "forward")}>
             <span>
@@ -600,7 +602,10 @@
         </section>
       </div>
     {:else if page === "account"}
-      <div class:settings-page-motion={hasNavigated} class="settings-page {pageDirection}">
+      <div
+        class:settings-page-motion={hasNavigated}
+        class="settings-page {pageDirection}"
+      >
         <nav class="settings-nav" aria-label="Settings navigation">
           <button
             class="icon-button"
@@ -616,7 +621,10 @@
         <section class="settings-app-hero">
           <span class="app-icon">
             {#if accountStatus?.active_account?.profile_image_url}
-              <img src={accountStatus.active_account.profile_image_url} alt="" />
+              <img
+                src={accountStatus.active_account.profile_image_url}
+                alt=""
+              />
             {:else}
               <UserCircleIcon size={30} strokeWidth={1.9} />
             {/if}
@@ -644,7 +652,10 @@
           <div class="settings-row static">
             <span>
               <span>Active data</span>
-              <small>{accountStatus?.active_account?.id ?? "Anonymous local store"}</small>
+              <small
+                >{accountStatus?.active_account?.id ??
+                  "Anonymous local store"}</small
+              >
             </span>
           </div>
           <div class="settings-row static settings-actions-row">
@@ -652,13 +663,17 @@
               <span>Sync</span>
               <small>
                 {accountStatus?.needs_pairing
-                  ? "Create a new pairing code in Rails and connect again."
-                  : accountStatus?.last_sync_error || accountMessage || "Push and pull account changes."}
+                  ? "Create a new pairing code in the backend and connect again."
+                  : accountStatus?.last_sync_error ||
+                    accountMessage ||
+                    "Push and pull account changes."}
               </small>
             </span>
             <button
               class="settings-inline-button"
-              disabled={!accountStatus?.connected || accountStatus?.needs_pairing || Boolean(accountBusy)}
+              disabled={!accountStatus?.connected ||
+                accountStatus?.needs_pairing ||
+                Boolean(accountBusy)}
               type="button"
               on:click={syncAccount}
             >
@@ -671,7 +686,7 @@
         <section class="settings-group">
           <form class="account-form" on:submit|preventDefault={connectAccount}>
             <label>
-              <span>Rails server</span>
+              <span>Backend URL</span>
               <input
                 class="settings-text-input"
                 bind:value={serverUrl}
@@ -726,7 +741,8 @@
             {#each accountStatus?.accounts ?? [] as account}
               <button
                 class="settings-row"
-                class:active-account={accountStatus?.active_account?.id === account.id}
+                class:active-account={accountStatus?.active_account?.id ===
+                  account.id}
                 disabled={Boolean(accountBusy)}
                 on:click={() => switchAccount(account.id)}
               >
@@ -734,7 +750,11 @@
                   <span>{account.name}</span>
                   <small>Kiosk {account.kiosk_id}</small>
                 </span>
-                <small>{accountStatus?.active_account?.id === account.id ? "Active" : "Switch"}</small>
+                <small
+                  >{accountStatus?.active_account?.id === account.id
+                    ? "Active"
+                    : "Switch"}</small
+                >
               </button>
             {/each}
           </section>
@@ -744,11 +764,15 @@
           <div class="settings-row static settings-actions-row">
             <span>
               <span>Anonymous data</span>
-              <small>Copy local apps, plugins, and storage into this account.</small>
+              <small
+                >Copy local apps, plugins, and storage into this account.</small
+              >
             </span>
             <button
               class="settings-inline-button"
-              disabled={!accountStatus?.connected || accountStatus?.needs_pairing || Boolean(accountBusy)}
+              disabled={!accountStatus?.connected ||
+                accountStatus?.needs_pairing ||
+                Boolean(accountBusy)}
               type="button"
               on:click={importAnonymous}
             >
@@ -758,11 +782,13 @@
           <div class="settings-row static settings-actions-row">
             <span>
               <span>Server connection</span>
-              <small>Disconnect this kiosk from Rails.</small>
+              <small>Disconnect this kiosk from the backend.</small>
             </span>
             <button
               class="settings-inline-button danger"
-              disabled={!accountStatus?.connected || accountStatus?.needs_pairing || Boolean(accountBusy)}
+              disabled={!accountStatus?.connected ||
+                accountStatus?.needs_pairing ||
+                Boolean(accountBusy)}
               type="button"
               on:click={disconnectAccount}
             >
@@ -778,7 +804,10 @@
         {/if}
       </div>
     {:else if page === "update"}
-      <div class:settings-page-motion={hasNavigated} class="settings-page {pageDirection}">
+      <div
+        class:settings-page-motion={hasNavigated}
+        class="settings-page {pageDirection}"
+      >
         <nav class="settings-nav" aria-label="Settings navigation">
           <button
             class="icon-button"
@@ -860,7 +889,10 @@
         </section>
       </div>
     {:else if page === "apps"}
-      <div class:settings-page-motion={hasNavigated} class="settings-page {pageDirection}">
+      <div
+        class:settings-page-motion={hasNavigated}
+        class="settings-page {pageDirection}"
+      >
         <nav class="settings-nav" aria-label="Settings navigation">
           <button
             class="icon-button"
@@ -914,7 +946,10 @@
         {/if}
       </div>
     {:else if page === "plugins"}
-      <div class:settings-page-motion={hasNavigated} class="settings-page {pageDirection}">
+      <div
+        class:settings-page-motion={hasNavigated}
+        class="settings-page {pageDirection}"
+      >
         <nav class="settings-nav" aria-label="Settings navigation">
           <button
             class="icon-button"
@@ -939,7 +974,10 @@
         />
       </div>
     {:else}
-      <div class:settings-page-motion={hasNavigated} class="settings-page {pageDirection}">
+      <div
+        class:settings-page-motion={hasNavigated}
+        class="settings-page {pageDirection}"
+      >
         <nav class="settings-nav" aria-label="Settings navigation">
           <button
             class="icon-button"

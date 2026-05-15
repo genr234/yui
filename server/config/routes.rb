@@ -1,4 +1,6 @@
 Rails.application.routes.draw do
+  mount ActionCable.server => "/cable"
+
   root "accounts#index"
 
   get "setup", to: "passkeys#new"
@@ -10,7 +12,7 @@ Rails.application.routes.draw do
   post "login", to: "sessions#create"
   delete "logout", to: "sessions#destroy"
 
-  resources :accounts, only: [ :index, :show, :new, :create, :edit, :update ] do
+  resources :accounts, only: [ :index, :show, :new, :create, :edit, :update, :destroy ] do
     resources :pairing_codes, only: [ :create ]
     resources :kiosk_commands, only: [ :create ]
   end
@@ -20,7 +22,6 @@ Rails.application.routes.draw do
       post "pair", to: "pairings#create"
       post "sync/push", to: "sync#push"
       get "sync/pull", to: "sync#pull"
-      get "commands", to: "commands#index"
       patch "commands/:id", to: "commands#update"
     end
   end

@@ -12,8 +12,8 @@
   <section class="project-card">
     <header class="project-card__header">
       <span class="mini-avatar">
-        <% if @account.profile_image_url.present? %>
-          <img src="<%= @account.profile_image_url %>" alt="">
+        <% if (profile_image_url = account_profile_image_url(@account)).present? %>
+          <img src="<%= profile_image_url %>" alt="">
         <% else %>
           <span><%= @account.name.to_s.first&.upcase || "Y" %></span>
         <% end %>

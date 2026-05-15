@@ -23,7 +23,19 @@
       </label>
 
       <label class="field">
-        <span>Profile image URL</span>
+        <span>Profile picture</span>
+        <%= form.file_field :profile_image, accept: "image/png,image/jpeg,image/gif,image/webp" %>
+      </label>
+
+      <% if @account.profile_image.attached? %>
+        <label class="check-field">
+          <%= check_box_tag "account[remove_profile_image]", "1" %>
+          <span>Remove uploaded picture</span>
+        </label>
+      <% end %>
+
+      <label class="field">
+        <span>Profile image URL fallback</span>
         <%= form.url_field :profile_image_url, placeholder: "https://example.com/avatar.jpg" %>
       </label>
 
@@ -31,5 +43,11 @@
         <%= form.submit "Save account", class: "button button--primary" %>
       </div>
     <% end %>
+
+    <div class="danger-zone">
+      <h2>Delete account</h2>
+      <p>This removes the account and its kiosks, pairing codes, commands, operations, and synced state.</p>
+      <%= button_to "Delete account", account_path(@account), method: :delete, class: "button button--danger", form: { data: { turbo_confirm: "Delete #{@account.name}? This cannot be undone." } } %>
+    </div>
   </section>
 </main>

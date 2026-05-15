@@ -16,8 +16,8 @@
         <div class="profile-card">
           <%= link_to account_path(account), class: "profile-card__button", aria: { label: "Open #{account.name}" } do %>
             <span class="profile-card__avatar">
-              <% if account.profile_image_url.present? %>
-                <img src="<%= account.profile_image_url %>" alt="">
+              <% if (profile_image_url = account_profile_image_url(account)).present? %>
+                <img src="<%= profile_image_url %>" alt="">
               <% else %>
                 <span><%= account.name.to_s.first&.upcase || "Y" %></span>
               <% end %>

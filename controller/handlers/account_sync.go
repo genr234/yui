@@ -8,18 +8,22 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"kiosk/controller/internal/config"
 	"kiosk/controller/internal/store"
+
+	"github.com/gorilla/websocket"
 )
 
 const (
 	syncOperationsCollection = "sync-operations"
 	syncMetaCollection       = "sync-meta"
 	syncMetaStateID          = "state"
-	accountPollInterval      = 5 * time.Second
+	accountSyncInterval      = 5 * time.Second
+	accountReconnectDelay    = 5 * time.Second
 )
 
 var accountHTTPClient = &http.Client{Timeout: 20 * time.Second}
@@ -70,10 +74,11 @@ type syncMeta struct {
 
 func (r *Registry) StartAccountSync(ctx context.Context) {
 	go r.accountLoop(ctx)
+	go r.accountCommandLoop(ctx)
 }
 
 func (r *Registry) accountLoop(ctx context.Context) {
-	ticker := time.NewTicker(accountPollInterval)
+	ticker := time.NewTicker(accountSyncInterval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -83,9 +88,20 @@ func (r *Registry) accountLoop(ctx context.Context) {
 			if err := r.SyncNow(); err != nil {
 				log.Printf("account sync failed: %v", err)
 			}
-			if err := r.pollRemoteCommands(); err != nil {
-				log.Printf("account command polling failed: %v", err)
-			}
+		}
+	}
+}
+
+func (r *Registry) accountCommandLoop(ctx context.Context) {
+	for {
+		if err := r.streamRemoteCommands(ctx); err != nil && ctx.Err() == nil {
+			log.Printf("account command websocket failed: %v", err)
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(accountReconnectDelay):
 		}
 	}
 }
@@ -565,43 +581,117 @@ func remoteCommandAllowed(method string) bool {
 	}
 }
 
-func (r *Registry) pollRemoteCommands() error {
+func (r *Registry) streamRemoteCommands(ctx context.Context) error {
+	r.reloadAccountConfig()
+	account, ok := r.activeAccount()
+	if !ok || r.cfg.ServerURL == "" || account.DeviceToken == "" {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(accountReconnectDelay):
+			return nil
+		}
+	}
+
+	wsURL, err := accountCableURL(r.cfg.ServerURL)
+	if err != nil {
+		return err
+	}
+	header := http.Header{}
+	header.Set("Authorization", "Bearer "+account.DeviceToken)
+	conn, _, err := websocket.DefaultDialer.DialContext(ctx, wsURL, header)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	go func() {
+		<-ctx.Done()
+		_ = conn.Close()
+	}()
+
+	identifier, err := json.Marshal(map[string]string{"channel": "KioskCommandsChannel"})
+	if err != nil {
+		return err
+	}
+	subscribe, err := json.Marshal(map[string]string{
+		"command":    "subscribe",
+		"identifier": string(identifier),
+	})
+	if err != nil {
+		return err
+	}
+	if err := conn.WriteMessage(websocket.TextMessage, subscribe); err != nil {
+		return err
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			_ = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+			return nil
+		default:
+		}
+
+		_, data, err := conn.ReadMessage()
+		if err != nil {
+			return err
+		}
+		var message struct {
+			Type    string          `json:"type"`
+			Message json.RawMessage `json:"message"`
+		}
+		if err := json.Unmarshal(data, &message); err != nil {
+			continue
+		}
+		if len(message.Message) == 0 {
+			continue
+		}
+		if err := r.handleRemoteCommandMessage(message.Message); err != nil {
+			log.Printf("account command execution failed: %v", err)
+		}
+	}
+}
+
+func accountCableURL(serverURL string) (string, error) {
+	parsed, err := url.Parse(strings.TrimRight(serverURL, "/") + "/cable")
+	if err != nil {
+		return "", err
+	}
+	switch parsed.Scheme {
+	case "http":
+		parsed.Scheme = "ws"
+	case "https":
+		parsed.Scheme = "wss"
+	case "ws", "wss":
+	default:
+		return "", fmt.Errorf("unsupported server URL scheme %q", parsed.Scheme)
+	}
+	return parsed.String(), nil
+}
+
+func (r *Registry) handleRemoteCommandMessage(data json.RawMessage) error {
 	r.reloadAccountConfig()
 	account, ok := r.activeAccount()
 	if !ok || r.cfg.ServerURL == "" || account.DeviceToken == "" {
 		return nil
 	}
-	req, err := r.accountRequest(http.MethodGet, "/api/kiosk/commands", account, nil)
+	var command struct {
+		ID          string          `json:"id"`
+		CommandType string          `json:"command_type"`
+		Payload     json.RawMessage `json:"payload"`
+	}
+	if err := json.Unmarshal(data, &command); err != nil {
+		return err
+	}
+	if command.ID == "" || command.CommandType == "" {
+		return nil
+	}
+	out, err := r.DispatchRemote(command.CommandType, command.Payload)
 	if err != nil {
+		_ = r.completeRemoteCommand(account, command.ID, "failed", nil, err.Error())
 		return err
 	}
-	resp, err := accountHTTPClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if err := requireOK(resp); err != nil {
-		return err
-	}
-	var result struct {
-		Commands []struct {
-			ID          string          `json:"id"`
-			CommandType string          `json:"command_type"`
-			Payload     json.RawMessage `json:"payload"`
-		} `json:"commands"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return err
-	}
-	for _, command := range result.Commands {
-		out, err := r.DispatchRemote(command.CommandType, command.Payload)
-		if err != nil {
-			_ = r.completeRemoteCommand(account, command.ID, "failed", nil, err.Error())
-			continue
-		}
-		_ = r.completeRemoteCommand(account, command.ID, "succeeded", out, "")
-	}
-	return nil
+	return r.completeRemoteCommand(account, command.ID, "succeeded", out, "")
 }
 
 func (r *Registry) completeRemoteCommand(account config.AccountConfig, id, status string, result any, errText string) error {

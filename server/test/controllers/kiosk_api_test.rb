@@ -40,13 +40,9 @@ class KioskApiTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_equal "https://example.com/updated.png", JSON.parse(response.body).dig("account", "profile_image_url")
 
-    kiosk.kiosk_commands.create!(command_type: "apps.uninstall", payload: { id: "old.app" })
-    get "/api/kiosk/commands", headers: { "Authorization" => "Bearer #{token}" }
-    assert_response :success
-    command = JSON.parse(response.body).fetch("commands").first
-    assert_equal "apps.uninstall", command.fetch("command_type")
+    command = kiosk.kiosk_commands.create!(command_type: "apps.uninstall", payload: { id: "old.app" })
 
-    patch "/api/kiosk/commands/#{command.fetch("id")}",
+    patch "/api/kiosk/commands/#{command.id}",
       params: { status: "succeeded", result: { ok: true } },
       headers: { "Authorization" => "Bearer #{token}" },
       as: :json
