@@ -51,3 +51,22 @@ func TestStoreCommandsAllowScopedStorageCollections(t *testing.T) {
 		t.Fatalf("unexpected keys: %+v", keyList)
 	}
 }
+
+func TestStoreKeysReturnsEmptySliceForMissingCollection(t *testing.T) {
+	registry := testRegistry(t)
+
+	keys, err := StoreKeysCommand{}.Handle(registry, mustJSON(t, map[string]any{
+		"collection": "app-storage",
+		"prefix":     "missing:",
+	}))
+	if err != nil {
+		t.Fatalf("keys app storage: %v", err)
+	}
+	keyList, ok := keys.([]string)
+	if !ok {
+		t.Fatalf("expected []string, got %T", keys)
+	}
+	if len(keyList) != 0 {
+		t.Fatalf("expected no keys, got %+v", keyList)
+	}
+}

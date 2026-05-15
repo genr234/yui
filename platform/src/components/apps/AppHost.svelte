@@ -47,7 +47,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; form-action 'none'; connect-src 'none'; img-src 'none'; media-src 'none'; object-src 'none'; style-src 'none'; worker-src 'none'; child-src 'none'; frame-src 'none'; script-src 'unsafe-inline' blob:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; form-action 'none'; connect-src 'none'; img-src 'none'; media-src 'none'; object-src 'none'; style-src 'none'; worker-src 'none'; child-src 'none'; frame-src 'none'; script-src 'unsafe-inline' blob: data:;">
 </head>
 <body>
 <script type="module">
@@ -165,7 +165,7 @@ function createUiApi() {
 function scheduleRender() {
   if (scheduled || !render) return;
   scheduled = true;
-  requestAnimationFrame(() => {
+  queueMicrotask(() => {
     scheduled = false;
     try {
       handlers.clear();
@@ -211,6 +211,12 @@ function serialize(value, budget) {
 
 function responseFromValue(value) {
   return new Response(value?.body || "", { status: value?.status || 200, headers: value?.headers || {} });
+}
+
+function timeout(ms, message) {
+  return new Promise((_, reject) => {
+    setTimeout(() => reject(new Error(message)), ms);
+  });
 }
 
 function contextFor(app) {
@@ -283,11 +289,11 @@ function contextFor(app) {
 
 async function mount(source) {
   try {
-    const url = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
-    const mod = await import(url);
-    URL.revokeObjectURL(url);
-    app = mod.default;
-    const mounted = await app.mount(contextFor(app));
+    app = await loadSimpleApp(source);
+    const mounted = await Promise.race([
+      app.mount(contextFor(app)),
+      timeout(1500, "app mount timed out")
+    ]);
     render = typeof mounted === "function" ? mounted : undefined;
     await app.activate?.(contextFor(app));
     if (render) scheduleRender();
@@ -295,6 +301,46 @@ async function mount(source) {
   } catch (error) {
     post({ type: "error", error: String(error?.message || error) });
   }
+}
+
+function loadSimpleApp(source) {
+  return Promise.race([
+    new Promise((resolve, reject) => {
+      const transformed = source.replace(/export\\s+default\\s+/, "globalThis.__yuiSimpleAppDefault = ");
+      if (transformed === source) {
+        reject(new Error("YUI_INVALID_APP_SOURCE: expected export default"));
+        return;
+      }
+
+      const url = URL.createObjectURL(new Blob([transformed], { type: "text/javascript" }));
+      const script = document.createElement("script");
+      const cleanup = () => {
+        URL.revokeObjectURL(url);
+        script.remove();
+        globalThis.__yuiSimpleAppDefault = undefined;
+        window.removeEventListener("error", onError);
+      };
+      const onError = (event) => {
+        cleanup();
+        reject(new Error(String(event.error?.message || event.message || "app script failed to load")));
+      };
+
+      window.addEventListener("error", onError);
+      script.onload = () => {
+        const loaded = globalThis.__yuiSimpleAppDefault;
+        cleanup();
+        if (loaded) resolve(loaded);
+        else reject(new Error("YUI_INVALID_APP_SOURCE: app did not export a default value"));
+      };
+      script.onerror = () => {
+        cleanup();
+        reject(new Error("YUI_INVALID_APP_SOURCE: app script failed to load"));
+      };
+      script.src = url;
+      document.body.append(script);
+    }),
+    timeout(1500, "app script load timed out")
+  ]);
 }
 
 window.addEventListener("message", async (event) => {
@@ -338,6 +384,12 @@ post({ type: "ready" });
     }, 350);
     mountTimer = window.setTimeout(() => {
       if (!loading) return;
+      if (mountSent) {
+        error = "app sandbox did not respond after mount";
+        loading = false;
+        clearLoadTimers();
+        return;
+      }
       retryMount();
     }, 2000);
   }

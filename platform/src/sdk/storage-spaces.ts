@@ -37,14 +37,14 @@ export class ScopedStorageSpace<T = unknown> {
 	}
 
 	async keys(): Promise<string[]> {
-		const ids = await this.collection.keys({ prefix: this.prefix() });
+		const ids = (await this.collection.keys({ prefix: this.prefix() })) ?? [];
 		return ids
 			.map((id) => this.keyFromEntryId(id))
 			.filter((key): key is string => key !== null);
 	}
 
 	async clear(): Promise<void> {
-		const ids = await this.collection.keys({ prefix: this.prefix() });
+		const ids = (await this.collection.keys({ prefix: this.prefix() })) ?? [];
 		await Promise.all(ids.map((id) => this.collection.delete(id)));
 	}
 
