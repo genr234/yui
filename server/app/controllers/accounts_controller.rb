@@ -1,4 +1,6 @@
 class AccountsController < ApplicationController
+  before_action :require_recent_authentication, only: [ :create, :update ]
+
   def index
     @accounts = Account.order(:name)
   end

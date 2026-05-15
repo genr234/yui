@@ -2,6 +2,13 @@
 
 <main class="account-picker">
   <section class="account-picker__panel" aria-labelledby="account-picker-title">
+    <% if signed_in? %>
+      <div class="account-picker__session">
+        <span><%= current_user.name %></span>
+        <%= button_to "Sign out", logout_path, method: :delete, class: "button button--ghost" %>
+      </div>
+    <% end %>
+
     <h1 id="account-picker-title">Manage Accounts</h1>
 
     <div class="profile-grid">

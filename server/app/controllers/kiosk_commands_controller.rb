@@ -1,4 +1,6 @@
 class KioskCommandsController < ApplicationController
+  before_action :require_recent_authentication
+
   ID_PAYLOAD_COMMANDS = %w[
     apps.sources.remove
     apps.sources.refresh

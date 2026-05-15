@@ -1,4 +1,6 @@
 class PairingCodesController < ApplicationController
+  before_action :require_recent_authentication
+
   def create
     account = Account.find(params[:account_id])
     pairing_code, plain_code = PairingCode.create_for!(account)

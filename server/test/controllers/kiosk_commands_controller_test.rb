@@ -2,6 +2,8 @@ require "test_helper"
 
 class KioskCommandsControllerTest < ActionDispatch::IntegrationTest
   test "queues uninstall command from app id shorthand" do
+    sign_in_with_passkey
+
     account = Account.create!(name: "Lobby")
     kiosk = account.kiosks.create!(
       name: "Front kiosk",
