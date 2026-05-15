@@ -20,6 +20,8 @@ class KioskCommand < ApplicationRecord
 
   belongs_to :kiosk
 
+  after_create_commit :deliver_over_websocket!
+
   validates :command_type, inclusion: { in: ALLOWED_TYPES }
   validates :status, inclusion: { in: STATUSES }
 
@@ -31,5 +33,19 @@ class KioskCommand < ApplicationRecord
 
   def pending?
     status == "pending"
+  end
+
+  def deliver_over_websocket!
+    mark_sent!
+    KioskCommandsChannel.broadcast_to(kiosk, websocket_payload)
+  end
+
+  def websocket_payload
+    {
+      id: id.to_s,
+      command_type: command_type,
+      payload: payload,
+      status: status
+    }
   end
 end

@@ -25,7 +25,19 @@ module Api
       private
 
       def account_payload(account)
-        { id: account.id.to_s, name: account.name, profile_image_url: account.profile_image_url }
+        {
+          id: account.id.to_s,
+          name: account.name,
+          profile_image_url: account_profile_image_url(account)
+        }
+      end
+
+      def account_profile_image_url(account)
+        if account.profile_image.attached?
+          rails_blob_url(account.profile_image, host: request.base_url)
+        else
+          account.profile_image_url
+        end
       end
 
       def kiosk_payload(kiosk)

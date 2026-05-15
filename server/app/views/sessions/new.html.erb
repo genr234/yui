@@ -2,7 +2,7 @@
 
 <main class="auth-page">
   <section class="auth-panel">
-    <h1>Unlock with passkey</h1>
+    <h1>Unlock with your passkey</h1>
 
     <%= form_with url: login_path, method: :post, class: "account-form", data: { controller: "passkey", action: "submit->passkey#submit", passkey_mode_value: "login", passkey_options_url_value: login_options_path } do %>
       <%= hidden_field_tag :public_key_credential %>

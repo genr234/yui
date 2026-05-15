@@ -23,7 +23,12 @@
       </label>
 
       <label class="field">
-        <span>Profile image URL</span>
+        <span>Profile picture</span>
+        <%= form.file_field :profile_image, accept: "image/png,image/jpeg,image/gif,image/webp" %>
+      </label>
+
+      <label class="field">
+        <span>Profile image URL fallback</span>
         <%= form.url_field :profile_image_url, placeholder: "https://example.com/avatar.jpg" %>
       </label>
 

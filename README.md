@@ -66,7 +66,7 @@ That store is an implementation detail for platform records such as app catalogs
 
 Kiosks can run anonymously or pair with a Rails-managed account. Create the account and pairing code in Rails, then unlock the kiosk with the local admin PIN and use the account control at the bottom of the Yui sidebar to connect.
 
-When an account is active, the kiosk opens an account-specific Bolt DB under `accounts/<account id>/yui-store.db`, syncs app/plugin/storage changes to Rails, and polls Rails for allowed app/plugin management commands. The admin PIN stays local to the kiosk and is required before connecting, disconnecting, or changing accounts.
+When an account is active, the kiosk opens an account-specific Bolt DB under `accounts/<account id>/yui-store.db`, syncs app/plugin/storage changes to Rails, and listens over a Rails websocket for allowed app/plugin management commands. The admin PIN stays local to the kiosk and is required before connecting, disconnecting, or changing accounts.
 
 Apps and plugins get scoped storage instead of direct access to arbitrary collections:
 

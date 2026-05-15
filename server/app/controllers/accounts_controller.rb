@@ -1,5 +1,6 @@
 class AccountsController < ApplicationController
-  before_action :require_recent_authentication, only: [ :create, :update ]
+  before_action :require_recent_authentication, only: [ :create, :update, :destroy ]
+  before_action :set_account, only: [ :show, :edit, :update, :destroy ]
 
   def index
     @accounts = Account.order(:name)
@@ -19,11 +20,11 @@ class AccountsController < ApplicationController
   end
 
   def edit
-    @account = Account.find(params[:id])
   end
 
   def update
-    @account = Account.find(params[:id])
+    @account.profile_image.purge if remove_profile_image?
+
     if @account.update(account_params)
       redirect_to @account, notice: "Account updated."
     else
@@ -32,7 +33,6 @@ class AccountsController < ApplicationController
   end
 
   def show
-    @account = Account.find(params[:id])
     @pairing_codes = @account.pairing_codes.order(created_at: :desc).limit(10)
     @kiosks = @account.kiosks.order(:name)
     @state_records = @account.account_state_records.order(:collection, :record_id)
@@ -40,9 +40,22 @@ class AccountsController < ApplicationController
     @commands = KioskCommand.joins(:kiosk).where(kiosks: { account_id: @account.id }).order(created_at: :desc).limit(50)
   end
 
+  def destroy
+    @account.destroy
+    redirect_to accounts_path, notice: "Account deleted."
+  end
+
   private
 
+  def set_account
+    @account = Account.find(params[:id])
+  end
+
   def account_params
-    params.require(:account).permit(:name, :profile_image_url)
+    params.require(:account).permit(:name, :profile_image_url, :profile_image)
+  end
+
+  def remove_profile_image?
+    params.dig(:account, :remove_profile_image) == "1" && @account.profile_image.attached?
   end
 end
