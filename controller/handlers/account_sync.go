@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -24,9 +25,12 @@ const (
 	syncMetaStateID          = "state"
 	accountSyncInterval      = 5 * time.Second
 	accountReconnectDelay    = 5 * time.Second
+	accountSyncBatchSize     = 250
 )
 
 var accountHTTPClient = &http.Client{Timeout: 20 * time.Second}
+
+var errAccountUnauthorized = errors.New("account authorization expired; reconnect this account")
 
 var syncCollections = []string{
 	defaultStorageCollection,
@@ -122,11 +126,17 @@ func (r *Registry) SyncNow() error {
 	}
 	if len(pending) > 0 {
 		if err := r.pushOperations(account, pending); err != nil {
+			if errors.Is(err, errAccountUnauthorized) {
+				_ = r.markAccountNeedsPairing(account.ID, err.Error())
+			}
 			r.setSyncState(false, err.Error())
 			return err
 		}
 	}
 	if err := r.pullOperations(account); err != nil {
+		if errors.Is(err, errAccountUnauthorized) {
+			_ = r.markAccountNeedsPairing(account.ID, err.Error())
+		}
 		r.setSyncState(false, err.Error())
 		return err
 	}
@@ -140,7 +150,15 @@ func (r *Registry) refreshActiveAccount() error {
 	if !ok || r.cfg.ServerURL == "" || account.DeviceToken == "" {
 		return nil
 	}
-	return r.pullOperations(account)
+	if err := r.pullOperations(account); err != nil {
+		if errors.Is(err, errAccountUnauthorized) {
+			if markErr := r.markAccountNeedsPairing(account.ID, err.Error()); markErr != nil {
+				return markErr
+			}
+		}
+		return err
+	}
+	return nil
 }
 
 func (r *Registry) activeAccount() (config.AccountConfig, bool) {
@@ -163,6 +181,34 @@ func (r *Registry) setSyncing(syncing bool) {
 	r.syncMu.Lock()
 	defer r.syncMu.Unlock()
 	r.syncState.Syncing = syncing
+}
+
+func (r *Registry) markAccountNeedsPairing(accountID, reason string) error {
+	if accountID == "" {
+		return nil
+	}
+	cfg := r.cfg
+	changed := false
+	for i := range cfg.Accounts {
+		if cfg.Accounts[i].ID != accountID {
+			continue
+		}
+		if cfg.Accounts[i].DeviceToken != "" || cfg.Accounts[i].KioskID != "" {
+			cfg.Accounts[i].DeviceToken = ""
+			cfg.Accounts[i].KioskID = ""
+			changed = true
+		}
+		break
+	}
+	if !changed {
+		return nil
+	}
+	if err := config.Save(cfg); err != nil {
+		return err
+	}
+	r.cfg = cfg
+	r.setSyncState(false, reason)
+	return nil
 }
 
 func (r *Registry) recordMutation(method string, params json.RawMessage, result any) {
@@ -409,6 +455,20 @@ func (r *Registry) pendingOperations() ([]syncOperation, error) {
 }
 
 func (r *Registry) pushOperations(account config.AccountConfig, ops []syncOperation) error {
+	for start := 0; start < len(ops); start += accountSyncBatchSize {
+		end := start + accountSyncBatchSize
+		if end > len(ops) {
+			end = len(ops)
+		}
+		batch := ops[start:end]
+		if err := r.pushOperationBatch(account, batch); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *Registry) pushOperationBatch(account config.AccountConfig, ops []syncOperation) error {
 	body, err := json.Marshal(map[string]any{"operations": ops})
 	if err != nil {
 		return err
@@ -439,22 +499,36 @@ func (r *Registry) pushOperations(account config.AccountConfig, ops []syncOperat
 }
 
 func (r *Registry) pullOperations(account config.AccountConfig) error {
+	for {
+		next, hasMore, err := r.pullOperationPage(account)
+		if err != nil {
+			return err
+		}
+		account = next
+		if !hasMore {
+			return nil
+		}
+	}
+}
+
+func (r *Registry) pullOperationPage(account config.AccountConfig) (config.AccountConfig, bool, error) {
 	path := fmt.Sprintf("/api/kiosk/sync/pull?cursor=%d", account.SyncCursor)
 	req, err := r.accountRequest(http.MethodGet, path, account, nil)
 	if err != nil {
-		return err
+		return account, false, err
 	}
 	resp, err := accountHTTPClient.Do(req)
 	if err != nil {
-		return err
+		return account, false, err
 	}
 	defer resp.Body.Close()
 	if err := requireOK(resp); err != nil {
-		return err
+		return account, false, err
 	}
 	var result struct {
 		Operations []remoteOperation `json:"operations"`
 		SyncCursor int64             `json:"sync_cursor"`
+		HasMore    bool              `json:"has_more"`
 		Account    struct {
 			ID              string `json:"id"`
 			Name            string `json:"name"`
@@ -462,10 +536,10 @@ func (r *Registry) pullOperations(account config.AccountConfig) error {
 		} `json:"account"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return err
+		return account, false, err
 	}
 	if err := r.applyRemoteOperations(result.Operations); err != nil {
-		return err
+		return account, false, err
 	}
 	if result.Account.ID != "" {
 		account.ID = result.Account.ID
@@ -475,7 +549,7 @@ func (r *Registry) pullOperations(account config.AccountConfig) error {
 	}
 	account.ProfileImageURL = result.Account.ProfileImageURL
 	account.SyncCursor = result.SyncCursor
-	return r.saveAccount(account)
+	return account, result.HasMore, r.saveAccount(account)
 }
 
 func (r *Registry) applyRemoteOperations(ops []remoteOperation) error {
@@ -565,6 +639,9 @@ func requireOK(resp *http.Response) error {
 		return nil
 	}
 	text, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if resp.StatusCode == http.StatusUnauthorized {
+		return fmt.Errorf("%w: %s", errAccountUnauthorized, strings.TrimSpace(string(text)))
+	}
 	return fmt.Errorf("server returned %s: %s", resp.Status, strings.TrimSpace(string(text)))
 }
 

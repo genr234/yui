@@ -359,6 +359,7 @@ type pairingResponse struct {
 	} `json:"kiosk"`
 	DeviceToken string            `json:"device_token"`
 	SyncCursor  int64             `json:"sync_cursor"`
+	HasMore     bool              `json:"has_more"`
 	Operations  []remoteOperation `json:"operations"`
 }
 

@@ -6,36 +6,32 @@ class KioskOperation < ApplicationRecord
 
   validates :client_id, :client_seq, :server_seq, :collection, :action, presence: true
   validates :action, inclusion: { in: ACTIONS }
-  validates :client_seq, uniqueness: { scope: :client_id }
+  validates :client_seq, uniqueness: { scope: [ :account_id, :client_id ] }
   validates :server_seq, uniqueness: { scope: :account_id }
 
-  before_validation :assign_server_seq, on: :create
   after_commit :apply_to_state, on: :create
 
   def self.accept!(account:, kiosk:, attributes:)
-    create!(
-      account: account,
-      kiosk: kiosk,
-      client_id: attributes.fetch(:client_id),
-      client_seq: attributes.fetch(:client_seq),
-      collection: attributes.fetch(:collection),
-      record_id: attributes[:record_id],
-      action: attributes.fetch(:action),
-      payload: attributes[:payload],
-      occurred_at: attributes[:occurred_at]
-    )
-  rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid
-    existing = find_by!(client_id: attributes.fetch(:client_id), client_seq: attributes.fetch(:client_seq))
-    existing
+    account.with_lock do
+      existing = account.kiosk_operations.find_by(
+        client_id: attributes.fetch(:client_id),
+        client_seq: attributes.fetch(:client_seq)
+      )
+      existing || account.kiosk_operations.create!(
+        kiosk: kiosk,
+        client_id: attributes.fetch(:client_id),
+        client_seq: attributes.fetch(:client_seq),
+        collection: attributes.fetch(:collection),
+        record_id: attributes[:record_id],
+        action: attributes.fetch(:action),
+        payload: attributes[:payload],
+        occurred_at: attributes[:occurred_at],
+        server_seq: account.kiosk_operations.maximum(:server_seq).to_i + 1
+      )
+    end
   end
 
   private
-
-  def assign_server_seq
-    return if server_seq.present?
-
-    self.server_seq = (account.kiosk_operations.maximum(:server_seq) || 0) + 1
-  end
 
   def apply_to_state
     if action == "replace_collection"

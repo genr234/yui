@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_15_102000) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_15_103000) do
   create_table "account_state_records", force: :cascade do |t|
     t.integer "account_id", null: false
     t.string "collection", null: false
@@ -88,10 +88,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_15_102000) do
     t.string "record_id"
     t.integer "server_seq", null: false
     t.datetime "updated_at", null: false
+    t.index ["account_id", "client_id", "client_seq"], name: "idx_kiosk_operations_account_client_seq", unique: true
     t.index ["account_id", "collection"], name: "index_kiosk_operations_on_account_id_and_collection"
     t.index ["account_id", "server_seq"], name: "index_kiosk_operations_on_account_id_and_server_seq", unique: true
     t.index ["account_id"], name: "index_kiosk_operations_on_account_id"
-    t.index ["client_id", "client_seq"], name: "index_kiosk_operations_on_client_id_and_client_seq", unique: true
     t.index ["kiosk_id"], name: "index_kiosk_operations_on_kiosk_id"
   end
 

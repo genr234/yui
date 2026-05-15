@@ -49,4 +49,70 @@ class KioskApiTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_equal "succeeded", kiosk.kiosk_commands.first.reload.status
   end
+
+  test "sync pull is limited and reports latest cursor" do
+    account = Account.create!(name: "Lobby")
+    kiosk = account.kiosks.create!(
+      name: "Front kiosk",
+      device_uid: "device-1",
+      device_token_digest: Kiosk.digest_token("token")
+    )
+    251.times do |index|
+      KioskOperation.accept!(
+        account: account,
+        kiosk: kiosk,
+        attributes: {
+          client_id: "seed",
+          client_seq: index + 1,
+          collection: "storage",
+          record_id: "key-#{index}",
+          action: "put",
+          payload: index
+        }
+      )
+    end
+
+    get "/api/kiosk/sync/pull?cursor=0", headers: { "Authorization" => "Bearer token" }
+    assert_response :success
+
+    body = JSON.parse(response.body)
+    assert_equal 250, body.fetch("operations").size
+    assert_equal 250, body.fetch("sync_cursor")
+    assert_equal true, body.fetch("has_more")
+
+    get "/api/kiosk/sync/pull?cursor=250", headers: { "Authorization" => "Bearer token" }
+    assert_response :success
+
+    body = JSON.parse(response.body)
+    assert_equal 1, body.fetch("operations").size
+    assert_equal 251, body.fetch("sync_cursor")
+    assert_equal false, body.fetch("has_more")
+  end
+
+  test "sync push rejects oversized batches" do
+    account = Account.create!(name: "Lobby")
+    account.kiosks.create!(
+      name: "Front kiosk",
+      device_uid: "device-1",
+      device_token_digest: Kiosk.digest_token("token")
+    )
+    operations = 251.times.map do |index|
+      {
+        client_id: "device-1",
+        client_seq: index + 1,
+        collection: "storage",
+        record_id: "key-#{index}",
+        action: "put",
+        payload: index
+      }
+    end
+
+    post "/api/kiosk/sync/push",
+      params: { operations: operations },
+      headers: { "Authorization" => "Bearer token" },
+      as: :json
+
+    assert_response :payload_too_large
+    assert_equal 0, account.kiosk_operations.count
+  end
 end

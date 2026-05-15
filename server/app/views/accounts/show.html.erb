@@ -11,6 +11,9 @@
 
   <section class="project-card">
     <header class="project-card__header">
+      <div class="project-card__header-actions">
+        <%= link_to "← Manage Accounts", accounts_path, class: "back-link" %>
+      </div>
       <span class="mini-avatar">
         <% if (profile_image_url = account_profile_image_url(@account)).present? %>
           <img src="<%= profile_image_url %>" alt="">
@@ -55,11 +58,43 @@
       <article class="project-cell">
         <h2>Collections</h2>
         <% if collections.any? %>
-          <ul class="plain-list">
+          <ul class="plain-list collection-tree">
             <% collections.first(8).each do |collection, records| %>
               <li>
-                <span><strong><%= collection %></strong></span>
-                <span class="quiet-status"><%= pluralize(records.size, "record") %></span>
+                <details>
+                  <summary>
+                    <span>
+                      <strong><%= collection %></strong>
+                      <small><%= pluralize(records.size, "record") %></small>
+                    </span>
+                    <span class="quiet-status">Folder</span>
+                  </summary>
+                  <ul class="collection-tree__records">
+                    <% records.first(10).each do |record| %>
+                      <li>
+                        <details>
+                          <summary>
+                            <span>
+                              <strong><%= record.record_id %></strong>
+                              <small><%= record.deleted? ? "Deleted" : "Server seq ##{record.server_seq}" %></small>
+                            </span>
+                            <span class="quiet-status <%= "quiet-status--failed" if record.deleted? %>">
+                              <%= record.deleted? ? "Deleted" : "Record" %>
+                            </span>
+                          </summary>
+                          <% pretty_value = JSON.pretty_generate(record.value || {}) %>
+                          <% truncated_value = pretty_value.length > 4_000 ? "#{pretty_value.first(4_000)}\n..." : pretty_value %>
+                          <pre class="collection-tree__value"><%= truncated_value %></pre>
+                        </details>
+                      </li>
+                    <% end %>
+                    <% if records.size > 10 %>
+                      <li class="collection-tree__more">
+                        <span><%= pluralize(records.size - 10, "more record") %></span>
+                      </li>
+                    <% end %>
+                  </ul>
+                </details>
               </li>
             <% end %>
           </ul>
