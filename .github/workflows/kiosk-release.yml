@@ -3,7 +3,7 @@ name: Kiosk release
 on:
   push:
     branches:
-      - "**"
+      - main
   workflow_dispatch:
 
 permissions:
@@ -36,6 +36,12 @@ jobs:
 
       - name: Install dependencies
         run: just deps
+
+      - name: Run kiosk checks
+        run: |
+          cd controller && go test ./...
+          cd ../installer && go test ./...
+          cd ../platform && bun run build
 
       - name: Package kiosk installer
         run: just package

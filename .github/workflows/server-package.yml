@@ -3,7 +3,7 @@ name: Server package
 on:
   push:
     branches:
-      - "**"
+      - main
   workflow_dispatch:
 
 permissions:
@@ -21,6 +21,16 @@ jobs:
 
       - name: Set server image name
         run: echo "SERVER_IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}-server" >> "$GITHUB_ENV"
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          working-directory: server
+          bundler-cache: true
+
+      - name: Run Rails CI
+        working-directory: server
+        run: bin/ci
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
