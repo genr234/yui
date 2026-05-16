@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"embed"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log"
@@ -62,6 +64,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	token, err := newBridgeToken()
+	if err != nil {
+		return err
+	}
+	cfg.PlatformBridgeToken = token
 
 	logFile, err := controllerlog.Setup(cfg.LogPath)
 	if err != nil {
@@ -107,6 +114,14 @@ func run() error {
 	})
 
 	return nil
+}
+
+func newBridgeToken() (string, error) {
+	var data [32]byte
+	if _, err := rand.Read(data[:]); err != nil {
+		return "", fmt.Errorf("generate bridge token: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(data[:]), nil
 }
 
 func runCheck() (string, error) {

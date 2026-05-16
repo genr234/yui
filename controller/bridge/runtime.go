@@ -2,6 +2,7 @@ package bridge
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -55,6 +56,10 @@ func (r *Runtime) serve(ctx context.Context) {
 	upgrader := websocket.Upgrader{CheckOrigin: func(req *http.Request) bool { return true }}
 
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, req *http.Request) {
+		if !r.authorizeUpgrade(req) {
+			http.Error(w, "bridge token required", http.StatusUnauthorized)
+			return
+		}
 		conn, err := upgrader.Upgrade(w, req, nil)
 		if err != nil {
 			log.Printf("bridge upgrade failed: %v", err)
@@ -79,6 +84,14 @@ func (r *Runtime) serve(ctx context.Context) {
 	if err := r.commands.Close(); err != nil {
 		log.Printf("platform bridge store close failed: %v", err)
 	}
+}
+
+func (r *Runtime) authorizeUpgrade(req *http.Request) bool {
+	if r.cfg.PlatformBridgeToken == "" {
+		return true
+	}
+	token := req.URL.Query().Get("token")
+	return subtle.ConstantTimeCompare([]byte(token), []byte(r.cfg.PlatformBridgeToken)) == 1
 }
 
 func (r *Runtime) handle(conn *websocket.Conn) {
