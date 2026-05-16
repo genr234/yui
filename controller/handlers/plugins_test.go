@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -419,7 +420,7 @@ def ping(ctx):
 
 	restarted := NewRegistry(cfg)
 	defer restarted.Close()
-	restarted.StartPlugins(t.Context())
+	restarted.StartPlugins(context.Background())
 	if _, err := restarted.Dispatch("plugins.run", mustJSON(t, map[string]any{"id": "test.autostart", "command": "ping"})); err != nil {
 		t.Fatalf("enabled plugin did not autostart after restart: %v", err)
 	}
