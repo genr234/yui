@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -91,7 +92,29 @@ func (r *Runtime) authorizeUpgrade(req *http.Request) bool {
 		return true
 	}
 	token := req.URL.Query().Get("token")
-	return subtle.ConstantTimeCompare([]byte(token), []byte(r.cfg.PlatformBridgeToken)) == 1
+	if subtle.ConstantTimeCompare([]byte(token), []byte(r.cfg.PlatformBridgeToken)) == 1 {
+		return true
+	}
+	return r.authorizeDevServerOrigin(req)
+}
+
+func (r *Runtime) authorizeDevServerOrigin(req *http.Request) bool {
+	if r.cfg.PlatformDevServer == "" {
+		return false
+	}
+	origin := req.Header.Get("Origin")
+	if origin == "" {
+		return false
+	}
+	devURL, err := url.Parse(r.cfg.PlatformDevServer)
+	if err != nil || devURL.Scheme == "" || devURL.Host == "" {
+		return false
+	}
+	originURL, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	return originURL.Scheme == devURL.Scheme && originURL.Host == devURL.Host
 }
 
 func (r *Runtime) handle(conn *websocket.Conn) {
