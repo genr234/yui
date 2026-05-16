@@ -36,11 +36,12 @@ type Config struct {
 	ActiveAccountID     string          `json:"active_account_id,omitempty"`
 	Accounts            []AccountConfig `json:"accounts,omitempty"`
 
-	ConfigPath    string `json:"-"`
-	ConfigDir     string `json:"-"`
-	ImportedFrom  string `json:"-"`
-	ImportWarning string `json:"-"`
-	UsingDefaults bool   `json:"-"`
+	ConfigPath          string `json:"-"`
+	ConfigDir           string `json:"-"`
+	ImportedFrom        string `json:"-"`
+	ImportWarning       string `json:"-"`
+	UsingDefaults       bool   `json:"-"`
+	PlatformBridgeToken string `json:"-"`
 }
 
 type AccountConfig struct {
@@ -170,7 +171,7 @@ func Save(cfg Config) error {
 		return fmt.Errorf("config path is empty")
 	}
 
-	if err := os.MkdirAll(filepath.Dir(cfg.ConfigPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(cfg.ConfigPath), 0700); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
 	}
 
@@ -180,7 +181,7 @@ func Save(cfg Config) error {
 	}
 	data = append(data, '\n')
 
-	if err := os.WriteFile(cfg.ConfigPath, data, 0644); err != nil {
+	if err := os.WriteFile(cfg.ConfigPath, data, 0600); err != nil {
 		return fmt.Errorf("write config %s: %w", cfg.ConfigPath, err)
 	}
 

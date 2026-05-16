@@ -280,11 +280,11 @@ func writeImportedConfig(cfg Config, candidates []string) (string, error) {
 
 	var lastErr error
 	for _, path := range candidates {
-		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 			lastErr = err
 			continue
 		}
-		if err := os.WriteFile(path, data, 0644); err != nil {
+		if err := os.WriteFile(path, data, 0600); err != nil {
 			lastErr = err
 			continue
 		}
