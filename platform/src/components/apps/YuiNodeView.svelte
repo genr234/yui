@@ -265,7 +265,9 @@
       .replace(/\//g, "_")
       .replace(/=+$/g, "");
     const base = (window.__YUI_PLATFORM_HTTP || "http://127.0.0.1:7072").replace(/\/+$/g, "");
-    return `${base}/embed-proxy/${encoded}/`;
+    const token = window.__YUI_PLATFORM_HTTP_TOKEN;
+    const auth = token ? `?token=${encodeURIComponent(token)}` : "";
+    return `${base}/embed-proxy/${encoded}/${auth}`;
   }
 
   async function setEmbedBlocker(origin: string, enabled: boolean) {

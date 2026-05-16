@@ -85,15 +85,20 @@ func (r *Runtime) injectOnce(ctx context.Context) error {
 func (r *Runtime) injectionSource() (string, error) {
 	// YUI_BRIDGE_URL = websocket URL for the bridge
 	bridgeURL := "ws://" + localhost(r.cfg.PlatformBridgeAddr) + "/ws"
+	if r.cfg.PlatformBridgeToken != "" {
+		bridgeURL += "?token=" + r.cfg.PlatformBridgeToken
+	}
 	// YUI_PLATFORM_HTTP = HTTP URL for the server
 	httpURL := "http://" + localhost(r.cfg.PlatformHTTPAddr)
+	httpToken := r.cfg.PlatformBridgeToken
 
 	if r.cfg.PlatformDevServer != "" {
 		devServer := strings.TrimRight(r.cfg.PlatformDevServer, "/")
 		return fmt.Sprintf(
-			"window.__YUI_BRIDGE_URL=%q;window.__YUI_PLATFORM_HTTP=%q;import(%q);",
+			"window.__YUI_BRIDGE_URL=%q;window.__YUI_PLATFORM_HTTP=%q;window.__YUI_PLATFORM_HTTP_TOKEN=%q;import(%q);",
 			bridgeURL,
 			httpURL,
+			httpToken,
 			devServer+"/src/main.ts",
 		), nil
 	}
@@ -104,9 +109,10 @@ func (r *Runtime) injectionSource() (string, error) {
 	}
 
 	return fmt.Sprintf(
-		"window.__YUI_BRIDGE_URL=%q;window.__YUI_PLATFORM_HTTP=%q;\n%s",
+		"window.__YUI_BRIDGE_URL=%q;window.__YUI_PLATFORM_HTTP=%q;window.__YUI_PLATFORM_HTTP_TOKEN=%q;\n%s",
 		bridgeURL,
 		httpURL,
+		httpToken,
 		string(bundle),
 	), nil
 }
