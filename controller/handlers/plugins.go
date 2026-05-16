@@ -1021,6 +1021,10 @@ func (m *PluginManager) fsModule(inst *pluginInstance) starlark.Value {
 			if err := starlark.UnpackPositionalArgs("fs.read", args, nil, 1, &path); err != nil {
 				return nil, err
 			}
+			if err := m.requirePluginFSPath(inst, path); err != nil {
+				m.audit(inst.record.ID, "fs.read", "fs.read", false, err.Error(), path)
+				return nil, err
+			}
 			data, err := os.ReadFile(path)
 			if err != nil {
 				m.audit(inst.record.ID, "fs.read", "fs.read", false, err.Error(), path)
@@ -1037,6 +1041,10 @@ func (m *PluginManager) fsModule(inst *pluginInstance) starlark.Value {
 			if err := starlark.UnpackPositionalArgs("fs.write", args, nil, 2, &path, &data); err != nil {
 				return nil, err
 			}
+			if err := m.requirePluginFSPath(inst, path); err != nil {
+				m.audit(inst.record.ID, "fs.write", "fs.write", false, err.Error(), path)
+				return starlark.None, err
+			}
 			err := os.WriteFile(path, []byte(data), 0644)
 			m.audit(inst.record.ID, "fs.write", "fs.write", err == nil, errorString(err), path)
 			return starlark.None, err
@@ -1047,6 +1055,10 @@ func (m *PluginManager) fsModule(inst *pluginInstance) starlark.Value {
 			}
 			var path string
 			if err := starlark.UnpackPositionalArgs("fs.list", args, nil, 1, &path); err != nil {
+				return nil, err
+			}
+			if err := m.requirePluginFSPath(inst, path); err != nil {
+				m.audit(inst.record.ID, "fs.list", "fs.list", false, err.Error(), path)
 				return nil, err
 			}
 			entries, err := os.ReadDir(path)
@@ -1281,9 +1293,40 @@ func (m *PluginManager) require(inst *pluginInstance, permission string) error {
 	return err
 }
 
+func (m *PluginManager) requirePluginFSPath(inst *pluginInstance, path string) error {
+	for _, granted := range inst.record.GrantedPermissions {
+		if granted == "fs.full_disk" {
+			if !inst.record.AdministratorTrusted {
+				err := fmt.Errorf("plugin %s requires administrator access: fs.full_disk", inst.record.ID)
+				m.audit(inst.record.ID, "administrator.denied", "fs.full_disk", false, err.Error(), path)
+				return err
+			}
+			return nil
+		}
+	}
+
+	root := m.r.cfg.ConfigDir
+	if root == "" {
+		return fmt.Errorf("plugin %s filesystem access is not configured", inst.record.ID)
+	}
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return fmt.Errorf("resolve plugin filesystem root: %w", err)
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("resolve plugin filesystem path: %w", err)
+	}
+	rel, err := filepath.Rel(absRoot, absPath)
+	if err != nil || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || rel == ".." || filepath.IsAbs(rel) {
+		return fmt.Errorf("plugin %s filesystem path outside configured directory: %s", inst.record.ID, path)
+	}
+	return nil
+}
+
 func isAdminGatedPermission(permission string) bool {
 	switch permission {
-	case "process.run", "shell.run", "fs.write", "shell.pages", "shell.css", "shell.actions":
+	case "process.run", "shell.run", "fs.write", "fs.full_disk", "shell.pages", "shell.css", "shell.actions":
 		return true
 	default:
 		return false

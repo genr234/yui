@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -118,6 +119,94 @@ def run(ctx):
 	}
 	if _, err := r.Dispatch("plugins.run", mustJSON(t, map[string]any{"id": "test.admin", "command": "run"})); err == nil {
 		t.Fatalf("expected administrator denial after revoke")
+	}
+}
+
+func TestStarlarkPluginFilesystemScopedByDefault(t *testing.T) {
+	dir := t.TempDir()
+	inside := filepath.Join(dir, "inside.txt")
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	files := map[string]string{
+		"yui.plugin.json": `{"schema":"yui.local-plugin.v0","type":"starlark","entry":"./plugin.star","dev":true}`,
+		"plugin.star": `
+plugin = {
+    "schema": "yui.starlark-plugin.v0",
+    "id": "test.fs-scoped",
+    "name": "FS Scoped Plugin",
+    "version": "0.1.0",
+    "permissions": ["commands.register", "fs.read"],
+}
+
+def activate(ctx):
+    ctx.commands.register({"id": "read_inside", "title": "Read Inside", "run": read_inside})
+    ctx.commands.register({"id": "read_outside", "title": "Read Outside", "run": read_outside})
+
+def read_inside(ctx):
+    return ctx.fs.read(` + strconv.Quote(inside) + `)
+
+def read_outside(ctx):
+    return ctx.fs.read(` + strconv.Quote(outside) + `)
+`,
+	}
+	writeTestPluginFiles(t, dir, files)
+	r := NewRegistry(config.Config{ConfigDir: dir, StorePath: filepath.Join(dir, "store.db")})
+	defer r.Close()
+
+	if err := os.WriteFile(inside, []byte("inside"), 0644); err != nil {
+		t.Fatalf("write inside file: %v", err)
+	}
+	if err := os.WriteFile(outside, []byte("outside"), 0644); err != nil {
+		t.Fatalf("write outside file: %v", err)
+	}
+
+	if _, err := r.Dispatch("plugins.enable", mustJSON(t, map[string]any{"id": "test.fs-scoped"})); err != nil {
+		t.Fatalf("enable plugin: %v", err)
+	}
+	if _, err := r.Dispatch("plugins.run", mustJSON(t, map[string]any{"id": "test.fs-scoped", "command": "read_inside"})); err != nil {
+		t.Fatalf("read inside configured directory: %v", err)
+	}
+	if _, err := r.Dispatch("plugins.run", mustJSON(t, map[string]any{"id": "test.fs-scoped", "command": "read_outside"})); err == nil {
+		t.Fatalf("expected outside path denial")
+	}
+}
+
+func TestStarlarkPluginFilesystemFullDiskRequiresAdministratorTrust(t *testing.T) {
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	r := newTestPluginRegistry(t, map[string]string{
+		"yui.plugin.json": `{"schema":"yui.local-plugin.v0","type":"starlark","entry":"./plugin.star","dev":true}`,
+		"plugin.star": `
+plugin = {
+    "schema": "yui.starlark-plugin.v0",
+    "id": "test.fs-full",
+    "name": "FS Full Plugin",
+    "version": "0.1.0",
+    "permissions": ["commands.register", "fs.read", "fs.full_disk"],
+}
+
+def activate(ctx):
+    ctx.commands.register({"id": "read", "title": "Read", "run": read})
+
+def read(ctx):
+    return ctx.fs.read(` + strconv.Quote(outside) + `)
+`,
+	})
+	defer r.Close()
+
+	if err := os.WriteFile(outside, []byte("outside"), 0644); err != nil {
+		t.Fatalf("write outside file: %v", err)
+	}
+
+	if _, err := r.Dispatch("plugins.enable", mustJSON(t, map[string]any{"id": "test.fs-full"})); err != nil {
+		t.Fatalf("enable plugin: %v", err)
+	}
+	if _, err := r.Dispatch("plugins.run", mustJSON(t, map[string]any{"id": "test.fs-full", "command": "read"})); err == nil {
+		t.Fatalf("expected full disk administrator denial")
+	}
+	if _, err := r.Dispatch("plugins.administrator.update", mustJSON(t, map[string]any{"id": "test.fs-full", "trusted": true})); err != nil {
+		t.Fatalf("grant administrator access: %v", err)
+	}
+	if _, err := r.Dispatch("plugins.run", mustJSON(t, map[string]any{"id": "test.fs-full", "command": "read"})); err != nil {
+		t.Fatalf("read outside path with full disk access: %v", err)
 	}
 }
 
