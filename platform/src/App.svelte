@@ -14,6 +14,7 @@
     DetailItem,
     Section,
     SectionItem,
+    SidebarThemeSettings,
   } from "./types";
   import ChromeIcon from "lucide-svelte/icons/chrome";
   import BlocksIcon from "lucide-svelte/icons/blocks";
@@ -36,6 +37,7 @@
     type YuiPluginExtensions,
     type YuiPluginShellAction,
   } from "@/sdk/plugins";
+  import { loadSidebarTheme } from "./sidebar-theme";
 
   let open = false;
   let section: Section = "home";
@@ -76,6 +78,7 @@
   let authDotIndexes = [0, 1, 2, 3, 4, 5];
   let authSubmitLabel = "Enter";
   let accountStatus: AccountStatus | null = null;
+  let sidebarTheme: SidebarThemeSettings = { enabled: true, images: [] };
 
   let extensions: YuiPluginExtensions = { pages: [], actions: [], css: [] };
 
@@ -114,6 +117,7 @@
   };
 
   onMount(() => {
+    sidebarTheme = loadSidebarTheme();
     void refresh();
     const offFullscreen = (event: Event) => {
       appFullscreen = Boolean(
@@ -123,14 +127,28 @@
     const offPermissionRequest = (event: Event) => {
       permissionPrompt = (event as CustomEvent<PermissionRequest>).detail;
     };
+    const offSidebarThemeChanged = (
+      event: Event | CustomEvent<SidebarThemeSettings>,
+    ) => {
+      sidebarTheme =
+        "detail" in event && event.detail ? event.detail : loadSidebarTheme();
+    };
     window.addEventListener("yui:shell-fullscreen", offFullscreen);
     window.addEventListener("yui:permission-request", offPermissionRequest);
+    window.addEventListener(
+      "yui:sidebar-theme-changed",
+      offSidebarThemeChanged,
+    );
     window.addEventListener("yui:apps-changed", refreshSubtitles);
     return () => {
       window.removeEventListener("yui:shell-fullscreen", offFullscreen);
       window.removeEventListener(
         "yui:permission-request",
         offPermissionRequest,
+      );
+      window.removeEventListener(
+        "yui:sidebar-theme-changed",
+        offSidebarThemeChanged,
       );
       window.removeEventListener("yui:apps-changed", refreshSubtitles);
     };
@@ -656,6 +674,7 @@
         accountImage={accountImage}
         {accountState}
         accountSyncing={Boolean(accountStatus?.syncing)}
+        theme={sidebarTheme}
         on:select={(event) => (section = event.detail)}
         on:account={openAccountSettings}
       />

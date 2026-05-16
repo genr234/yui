@@ -31,3 +31,14 @@ export type DetailItem = {
 	label: string;
 	value: string;
 };
+
+export type SidebarThemeImage = {
+	id: string;
+	name: string;
+	src: string;
+};
+
+export type SidebarThemeSettings = {
+	enabled: boolean;
+	images: SidebarThemeImage[];
+};

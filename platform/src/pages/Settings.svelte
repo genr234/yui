@@ -6,8 +6,11 @@
   import RefreshCwIcon from "lucide-svelte/icons/refresh-cw";
   import TrashIcon from "lucide-svelte/icons/trash-2";
   import UserCircleIcon from "lucide-svelte/icons/user-circle";
+  import ImageIcon from "lucide-svelte/icons/image";
+  import UploadIcon from "lucide-svelte/icons/upload";
   import PermissionCards from "../components/PermissionCards.svelte";
   import Plugins from "./Plugins.svelte";
+  import { loadSidebarTheme, saveSidebarTheme } from "../sidebar-theme";
   import {
     fallbackAppIcon,
     findApp,
@@ -31,7 +34,7 @@
     type EmbedStorageEntry,
   } from "../sdk/apps/embed-storage";
   import { clearAppStorage, listAppStorageKeys } from "../sdk/apps/app-storage";
-  import type { DetailItem } from "../types";
+  import type { DetailItem, SidebarThemeSettings } from "../types";
 
   export let details: DetailItem[] = [];
   export let config: any = null;
@@ -59,7 +62,16 @@
 
   let apps: YuiDevApp[] = [];
   let selectedId = "";
-  let page: "root" | "apps" | "app" | "plugins" | "update" | "account" = "root";
+  type SettingsPage =
+    | "root"
+    | "apps"
+    | "app"
+    | "plugins"
+    | "update"
+    | "account"
+    | "sidebar-theme";
+
+  let page: SettingsPage = "root";
   let pageDirection: "forward" | "back" = "forward";
   let hasNavigated = false;
   let dragging = false;
@@ -93,6 +105,14 @@
   let serverUrl = "http://127.0.0.1:3000";
   let pairingCode = "";
   let kioskName = "Yui kiosk";
+  let sidebarTheme: SidebarThemeSettings = { enabled: true, images: [] };
+  const sidebarThemeImageTypes = new Set([
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "image/gif",
+    "image/avif",
+  ]);
 
   type AccountInfo = {
     id: string;
@@ -115,6 +135,7 @@
   };
 
   onMount(() => {
+    sidebarTheme = loadSidebarTheme();
     const refresh = () => {
       permissionVersion += 1;
     };
@@ -127,10 +148,14 @@
     const refreshApps = () => {
       void loadAppsArea();
     };
+    const refreshSidebarTheme = () => {
+      sidebarTheme = loadSidebarTheme();
+    };
     window.addEventListener("yui:permissions-changed", refresh);
     window.addEventListener("yui:embed-storage-changed", refreshEmbedStorage);
     window.addEventListener("yui:app-storage-changed", refreshAppStorage);
     window.addEventListener("yui:apps-changed", refreshApps);
+    window.addEventListener("yui:sidebar-theme-changed", refreshSidebarTheme);
 
     void (async () => {
       await loadAppsArea();
@@ -146,6 +171,10 @@
       );
       window.removeEventListener("yui:app-storage-changed", refreshAppStorage);
       window.removeEventListener("yui:apps-changed", refreshApps);
+      window.removeEventListener(
+        "yui:sidebar-theme-changed",
+        refreshSidebarTheme,
+      );
     };
   });
 
@@ -262,10 +291,7 @@
     goTo("app", "forward");
   }
 
-  function goTo(
-    nextPage: "root" | "apps" | "app" | "plugins" | "update" | "account",
-    direction: "forward" | "back",
-  ) {
+  function goTo(nextPage: SettingsPage, direction: "forward" | "back") {
     pageDirection = direction;
     hasNavigated = true;
     page = nextPage;
@@ -276,6 +302,7 @@
     if (page === "app") return "apps";
     if (page === "plugins") return pluginPageCanGoBack ? "plugins" : "root";
     if (page === "account") return "root";
+    if (page === "sidebar-theme") return "root";
     if (page === "update") return "root";
     if (page === "apps") return "root";
     return "root";
@@ -400,6 +427,58 @@
     }
     if (updateStatus?.latest_commit) return "Latest build installed";
     return "On";
+  }
+
+  function sidebarThemeSummary() {
+    if (!sidebarTheme.enabled) return "Off";
+    if (sidebarTheme.images.length === 0) return "No images yet";
+    return sidebarTheme.images.length === 1
+      ? "1 image"
+      : `${sidebarTheme.images.length} images`;
+  }
+
+  function setSidebarThemeEnabled(enabled: boolean) {
+    sidebarTheme = { ...sidebarTheme, enabled };
+    saveSidebarTheme(sidebarTheme);
+  }
+
+  async function addSidebarThemeImages(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const files = Array.from(input.files ?? []).filter((file) =>
+      sidebarThemeImageTypes.has(file.type),
+    );
+    if (files.length === 0) return;
+
+    const images = await Promise.all(
+      files.map(async (file) => ({
+        id: `${Date.now()}-${crypto.randomUUID?.() ?? Math.random()}`,
+        name: file.name,
+        src: await readFileAsDataUrl(file),
+      })),
+    );
+    sidebarTheme = {
+      ...sidebarTheme,
+      images: [...sidebarTheme.images, ...images],
+    };
+    saveSidebarTheme(sidebarTheme);
+    input.value = "";
+  }
+
+  function removeSidebarThemeImage(id: string) {
+    sidebarTheme = {
+      ...sidebarTheme,
+      images: sidebarTheme.images.filter((image) => image.id !== id),
+    };
+    saveSidebarTheme(sidebarTheme);
+  }
+
+  function readFileAsDataUrl(file: File) {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.addEventListener("load", () => resolve(String(reader.result)));
+      reader.addEventListener("error", () => reject(reader.error));
+      reader.readAsDataURL(file);
+    });
   }
 
   async function loadAccountStatus() {
@@ -575,6 +654,16 @@
             <span>
               <span>Account</span>
               <small>{accountSummary()}</small>
+            </span>
+            <ChevronRightIcon size={18} strokeWidth={2.4} />
+          </button>
+          <button
+            class="settings-row"
+            on:click={() => goTo("sidebar-theme", "forward")}
+          >
+            <span>
+              <span>Sidebar theme</span>
+              <small>{sidebarThemeSummary()}</small>
             </span>
             <ChevronRightIcon size={18} strokeWidth={2.4} />
           </button>
@@ -801,6 +890,92 @@
           <p class="settings-message error">{accountError}</p>
         {:else if accountMessage}
           <p class="settings-message">{accountMessage}</p>
+        {/if}
+      </div>
+    {:else if page === "sidebar-theme"}
+      <div
+        class:settings-page-motion={hasNavigated}
+        class="settings-page {pageDirection}"
+      >
+        <nav class="settings-nav" aria-label="Settings navigation">
+          <button
+            class="icon-button"
+            aria-label="Back to settings"
+            title="Back to settings"
+            on:click={() => goTo("root", "back")}
+          >
+            <ArrowLeftIcon size={18} strokeWidth={2.4} />
+          </button>
+          <span>Sidebar theme</span>
+        </nav>
+
+        <section class="settings-group">
+          <label class="settings-row permission-row">
+            <span>
+              <span>Floating images</span>
+              <small
+                >Spawn from the bottom of the sidebar and fade upward.</small
+              >
+            </span>
+            <input
+              type="checkbox"
+              checked={sidebarTheme.enabled}
+              on:change={(event) =>
+                setSidebarThemeEnabled(event.currentTarget.checked)}
+            />
+          </label>
+          <label class="settings-row sidebar-theme-upload">
+            <span>
+              <span>Add images</span>
+              <small>Common raster image formats are supported.</small>
+            </span>
+            <span class="settings-inline-button">
+              <UploadIcon size={14} strokeWidth={2.4} />
+              Upload
+            </span>
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+              multiple
+              on:change={addSidebarThemeImages}
+            />
+          </label>
+        </section>
+
+        {#if sidebarTheme.images.length > 0}
+          <section class="settings-group">
+            {#each sidebarTheme.images as image}
+              <div class="settings-row static sidebar-theme-image-row">
+                <span class="sidebar-theme-thumb" aria-hidden="true">
+                  <img src={image.src} alt="" />
+                </span>
+                <span>
+                  <span>{image.name}</span>
+                  <small>Theme image</small>
+                </span>
+                <button
+                  class="settings-inline-button danger"
+                  type="button"
+                  on:click={() => removeSidebarThemeImage(image.id)}
+                >
+                  <TrashIcon size={14} strokeWidth={2.4} />
+                  Remove
+                </button>
+              </div>
+            {/each}
+          </section>
+        {:else}
+          <section class="settings-group">
+            <div class="settings-row static">
+              <span>
+                <span>No images added</span>
+                <small
+                  >Upload one or more image files to start the effect.</small
+                >
+              </span>
+              <ImageIcon size={18} strokeWidth={2.4} />
+            </div>
+          </section>
         {/if}
       </div>
     {:else if page === "update"}
