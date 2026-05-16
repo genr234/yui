@@ -112,7 +112,53 @@ class KioskApiTest < ActionDispatch::IntegrationTest
       headers: { "Authorization" => "Bearer token" },
       as: :json
 
-    assert_response :payload_too_large
+    assert_response :content_too_large
     assert_equal 0, account.kiosk_operations.count
+  end
+
+  test "sync push rejects unknown collections" do
+    account = Account.create!(name: "Lobby")
+    account.kiosks.create!(
+      name: "Front kiosk",
+      device_uid: "device-1",
+      device_token_digest: Kiosk.digest_token("token")
+    )
+
+    post "/api/kiosk/sync/push",
+      params: {
+        operations: [
+          {
+            client_id: "device-1",
+            client_seq: 1,
+            collection: "unexpected",
+            record_id: "key",
+            action: "put",
+            payload: "value"
+          }
+        ]
+      },
+      headers: { "Authorization" => "Bearer token" },
+      as: :json
+
+    assert_response :unprocessable_content
+    assert_equal 0, account.kiosk_operations.count
+  end
+
+  test "pairing throttles repeated invalid codes" do
+    previous_cache = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    account = Account.create!(name: "Lobby")
+    _pairing_code, code = PairingCode.create_for!(account)
+
+    Api::Kiosk::PairingsController::MAX_PAIRING_ATTEMPTS.times do
+      post "/api/kiosk/pair", params: { code: "000000", device_uid: "device-1" }, as: :json
+      assert_response :not_found
+    end
+
+    post "/api/kiosk/pair", params: { code: code, device_uid: "device-1" }, as: :json
+
+    assert_response :too_many_requests
+  ensure
+    Rails.cache = previous_cache if defined?(previous_cache)
   end
 end

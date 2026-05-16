@@ -108,4 +108,42 @@ class KioskOperationTest < ActiveSupport::TestCase
     assert_equal 1, first.server_seq
     assert_equal 1, second.server_seq
   end
+
+  test "requires known collections and record ids for mutations" do
+    account = Account.create!(name: "Lobby")
+    kiosk = account.kiosks.create!(
+      name: "Door",
+      device_uid: "door-1",
+      device_token_digest: Kiosk.digest_token("token")
+    )
+
+    assert_raises(ActiveRecord::RecordInvalid) do
+      KioskOperation.accept!(
+        account: account,
+        kiosk: kiosk,
+        attributes: {
+          client_id: "door-1",
+          client_seq: 1,
+          collection: "secrets",
+          record_id: "theme",
+          action: "put",
+          payload: "dark"
+        }
+      )
+    end
+
+    assert_raises(ActiveRecord::RecordInvalid) do
+      KioskOperation.accept!(
+        account: account,
+        kiosk: kiosk,
+        attributes: {
+          client_id: "door-1",
+          client_seq: 2,
+          collection: "storage",
+          action: "put",
+          payload: "dark"
+        }
+      )
+    end
+  end
 end
