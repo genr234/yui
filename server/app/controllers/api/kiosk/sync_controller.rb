@@ -7,7 +7,7 @@ module Api
         touch_current_kiosk!
         operations = Array(params[:operations])
         if operations.size > MAX_OPERATIONS
-          return render json: { error: "too many operations", limit: MAX_OPERATIONS }, status: :payload_too_large
+          return render json: { error: "too many operations", limit: MAX_OPERATIONS }, status: :content_too_large
         end
 
         accepted = KioskOperation.transaction do
@@ -24,6 +24,8 @@ module Api
           accepted: accepted.map { |operation| operation_payload(operation) },
           sync_cursor: latest_server_seq
         }
+      rescue ActionController::ParameterMissing, KeyError, ActiveRecord::RecordInvalid => error
+        render json: { error: error.message }, status: :unprocessable_content
       end
 
       def pull
@@ -51,11 +53,11 @@ module Api
       end
 
       def operation_attributes(operation)
-        if operation.respond_to?(:to_unsafe_h)
-          operation.to_unsafe_h.symbolize_keys
-        else
-          operation.to_h.symbolize_keys
-        end
+        raw = operation.respond_to?(:to_unsafe_h) ? operation.to_unsafe_h : operation.to_h
+        raw.slice(
+          "client_id", "client_seq", "collection", "record_id", "action", "payload", "occurred_at",
+          :client_id, :client_seq, :collection, :record_id, :action, :payload, :occurred_at
+        ).symbolize_keys
       end
 
       def operation_payload(operation)

@@ -2,9 +2,14 @@ module Api
   module Kiosk
     class PairingsController < ActionController::API
       INITIAL_OPERATIONS_LIMIT = 250
+      MAX_PAIRING_ATTEMPTS = 10
+      PAIRING_ATTEMPT_WINDOW = 5.minutes
 
       def create
+        return throttled_response if pairing_attempts_exceeded?
+
         account = PairingCode.claim!(params.require(:code))
+        reset_pairing_attempts
         token = ::Kiosk.issue_token
         kiosk = account.kiosks.find_or_initialize_by(device_uid: params.require(:device_uid))
         kiosk.name = params[:name].presence || "Kiosk #{kiosk.device_uid.first(8)}"
@@ -24,10 +29,33 @@ module Api
           operations: operations_payload(operations)
         }
       rescue ActiveRecord::RecordNotFound
+        record_failed_pairing_attempt
         render json: { error: "invalid or expired pairing code" }, status: :not_found
       end
 
       private
+
+      def pairing_attempts_exceeded?
+        Rails.cache.read(pairing_attempt_cache_key).to_i >= MAX_PAIRING_ATTEMPTS
+      end
+
+      def record_failed_pairing_attempt
+        attempts = Rails.cache.read(pairing_attempt_cache_key).to_i + 1
+        Rails.cache.write(pairing_attempt_cache_key, attempts, expires_in: PAIRING_ATTEMPT_WINDOW)
+      end
+
+      def reset_pairing_attempts
+        Rails.cache.delete(pairing_attempt_cache_key)
+      end
+
+      def throttled_response
+        render json: { error: "too many pairing attempts" }, status: :too_many_requests
+      end
+
+      def pairing_attempt_cache_key
+        ip = request.remote_ip.presence || "unknown"
+        "kiosk_pairing_attempts:#{ip}"
+      end
 
       def account_payload(account)
         {

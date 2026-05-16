@@ -17,7 +17,6 @@ module Api
         )
         render json: { command: command.websocket_payload }
       end
-
     end
   end
 end

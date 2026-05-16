@@ -65,7 +65,7 @@ class ApplicationController < ActionController::Base
   end
 
   def remember_return_to
-    session[:return_to] = request.fullpath if request.get?
+    session[:return_to] = request.fullpath if request.get? || request.head?
   end
 
   def after_authentication_path
