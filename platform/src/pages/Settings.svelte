@@ -197,7 +197,7 @@
   }
   $: selectedPermissions = selected ? declaredPermissions(selected.app) : [];
   $: selectedPermissionState = selected
-    ? getAppPermissionState(selected.id)
+    ? getSelectedPermissionState(selected.id, permissionVersion)
     : {};
   $: {
     const storageKey = selected
@@ -249,8 +249,11 @@
   }
 
   function permissionGranted(permission: string) {
-    permissionVersion;
     return selectedPermissionState[permission] === true;
+  }
+
+  function getSelectedPermissionState(appId: string, _version: number) {
+    return getAppPermissionState(appId);
   }
 
   function togglePermission(permission: string, checked: boolean) {

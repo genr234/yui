@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_15_103000) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_17_120000) do
   create_table "account_state_records", force: :cascade do |t|
     t.integer "account_id", null: false
     t.string "collection", null: false
@@ -25,8 +25,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_15_103000) do
   end
 
   create_table "accounts", force: :cascade do |t|
+    t.datetime "commands_cleared_at"
     t.datetime "created_at", null: false
     t.string "name", null: false
+    t.datetime "operations_cleared_at"
     t.string "profile_image_url"
     t.datetime "updated_at", null: false
   end

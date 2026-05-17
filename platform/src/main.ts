@@ -35,6 +35,7 @@ declare global {
 		__YUI_BRIDGE_URL?: string;
 		__YUI_PLATFORM_HTTP?: string;
 		__YUI_PLATFORM_HTTP_TOKEN?: string;
+		__YUI_PLATFORM_DEV_SERVER?: string;
 	}
 }
 

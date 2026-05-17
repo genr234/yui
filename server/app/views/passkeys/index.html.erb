@@ -1,0 +1,45 @@
+<% content_for :title, "Passkeys - Yui" %>
+
+<main class="workspace">
+  <section class="project-card passkey-manager" aria-labelledby="passkeys-title">
+    <header class="project-card__header">
+      <div class="project-card__header-actions">
+        <%= link_to "← Back", accounts_path, class: "back-link" %>
+      </div>
+      <h1 id="passkeys-title">Passkeys</h1>
+    </header>
+
+    <section class="project-section">
+      <div>
+        <h2>Registered passkeys</h2>
+        <p><%= pluralize(@passkey_credentials.size, "passkey") %> for <%= current_user.name %>.</p>
+      </div>
+      <%= link_to "Add passkey", setup_path, class: "button button--primary" %>
+    </section>
+
+    <section class="project-cell project-cell--full">
+      <ul class="plain-list passkey-list">
+        <% @passkey_credentials.each do |credential| %>
+          <li>
+            <span>
+              <strong><%= credential.nickname.presence || "Passkey" %></strong>
+              <small>
+                Added <%= time_tag credential.created_at, credential.created_at.to_fs(:long) %>
+                <% if credential.last_used_at.present? %>
+                  · Last used <%= time_tag credential.last_used_at, credential.last_used_at.to_fs(:long) %>
+                <% end %>
+              </small>
+            </span>
+
+            <%= button_to "Remove",
+              passkey_path(credential),
+              method: :delete,
+              class: "button button--danger",
+              form: { data: { turbo_confirm: "Remove this passkey?" } },
+              disabled: @passkey_credentials.size <= 1 %>
+          </li>
+        <% end %>
+      </ul>
+    </section>
+  </section>
+</main>

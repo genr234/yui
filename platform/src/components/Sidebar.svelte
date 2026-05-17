@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { createEventDispatcher, onDestroy } from "svelte";
 	import type { Section, SectionItem, SidebarThemeSettings } from "../types";
+	import { platformAssetUrl } from "../assets";
 	import logoUrl from "../assets/images/logo.png";
 	import UserCircleIcon from "lucide-svelte/icons/user-circle";
 
@@ -34,6 +35,7 @@
 	let nextParticleId = 1;
 
 	$: themeActive = theme.enabled && theme.images.length > 0 && !reduceMotion;
+	$: resolvedLogoUrl = platformAssetUrl(logoUrl);
 	$: syncParticles(themeActive, theme.images.map((image) => image.src));
 
 	onDestroy(() => {
@@ -103,7 +105,7 @@
 	<div class="sidebar-top">
 		<div class="brand">
 			<span class="brand-logo-frame">
-				<img class="brand-logo" src={logoUrl} alt="Yui" />
+				<img class="brand-logo" src={resolvedLogoUrl} alt="Yui" />
 			</span>
 			<div class="brand-version">v{version}</div>
 		</div>

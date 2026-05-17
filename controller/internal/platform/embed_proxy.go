@@ -21,7 +21,7 @@ func (r *Runtime) handleEmbedProxy(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	upstream, ok := embedProxyUpstream(req.URL.Path, req.URL.RawQuery)
+	upstream, ok := r.embedProxyUpstream(req.URL.Path, req.URL.RawQuery)
 	if !ok {
 		http.Error(w, "invalid embed proxy url", http.StatusBadRequest)
 		return
@@ -84,12 +84,27 @@ func (r *Runtime) handleEmbedProxy(w http.ResponseWriter, req *http.Request) {
 }
 
 func embedProxyUpstream(path string, rawQuery string) (string, bool) {
+	return embedProxyUpstreamWithToken(path, rawQuery, "")
+}
+
+func (r *Runtime) embedProxyUpstream(path string, rawQuery string) (string, bool) {
+	return embedProxyUpstreamWithToken(path, rawQuery, r.cfg.PlatformBridgeToken)
+}
+
+func embedProxyUpstreamWithToken(path string, rawQuery string, pathToken string) (string, bool) {
 	const prefix = "/embed-proxy/"
 	if !strings.HasPrefix(path, prefix) {
 		return "", false
 	}
 
 	rest := strings.TrimPrefix(path, prefix)
+	if pathToken != "" {
+		escapedToken := url.PathEscape(pathToken)
+		if rest == escapedToken || strings.HasPrefix(rest, escapedToken+"/") {
+			rest = strings.TrimPrefix(rest, escapedToken)
+			rest = strings.TrimPrefix(rest, "/")
+		}
+	}
 	token, suffix, _ := strings.Cut(rest, "/")
 	if token == "" {
 		return "", false
@@ -137,7 +152,48 @@ func (r *Runtime) validPlatformHTTPToken(req *http.Request) bool {
 	if actual == "" {
 		actual = req.Header.Get("X-Yui-Platform-Token")
 	}
-	return subtle.ConstantTimeCompare([]byte(actual), []byte(expected)) == 1
+	if actual == "" {
+		actual = embedProxyPathToken(req.URL.Path, expected)
+	}
+	if subtle.ConstantTimeCompare([]byte(actual), []byte(expected)) == 1 {
+		return true
+	}
+	return r.validPlatformDevServerRequest(req)
+}
+
+func embedProxyPathToken(path string, expected string) string {
+	const prefix = "/embed-proxy/"
+	if expected == "" || !strings.HasPrefix(path, prefix) {
+		return ""
+	}
+	rest := strings.TrimPrefix(path, prefix)
+	token, _, _ := strings.Cut(rest, "/")
+	if token == expected {
+		return token
+	}
+	return ""
+}
+
+func (r *Runtime) validPlatformDevServerRequest(req *http.Request) bool {
+	if r.cfg.PlatformDevServer == "" {
+		return false
+	}
+	return r.matchesPlatformDevServer(req.Header.Get("Origin")) || r.matchesPlatformDevServer(req.Header.Get("Referer"))
+}
+
+func (r *Runtime) matchesPlatformDevServer(value string) bool {
+	if value == "" {
+		return false
+	}
+	devURL, err := url.Parse(r.cfg.PlatformDevServer)
+	if err != nil || devURL.Scheme == "" || devURL.Host == "" {
+		return false
+	}
+	requestURL, err := url.Parse(value)
+	if err != nil {
+		return false
+	}
+	return requestURL.Scheme == devURL.Scheme && requestURL.Host == devURL.Host
 }
 
 func encodeEmbedProxyURL(value string) string {
@@ -221,10 +277,7 @@ func shouldRewriteEmbedProxyHTML(resp *http.Response) bool {
 }
 
 func rewriteEmbedProxyHTML(upstream string, data []byte, token string) []byte {
-	baseHref := fmt.Sprintf("/embed-proxy/%s/", encodeEmbedProxyURL(upstream))
-	if token != "" {
-		baseHref += "?token=" + url.QueryEscape(token)
-	}
+	baseHref := embedProxyURLFor(upstream, token) + "/"
 	base := []byte(`<base href="` + baseHref + `">`)
 	lower := bytes.ToLower(data)
 	if idx := bytes.Index(lower, []byte("<head>")); idx >= 0 {
@@ -243,9 +296,8 @@ func (r *Runtime) embedProxyURLFor(rawURL string) string {
 }
 
 func embedProxyURLFor(rawURL string, token string) string {
-	proxyURL := fmt.Sprintf("/embed-proxy/%s", encodeEmbedProxyURL(rawURL))
 	if token != "" {
-		proxyURL += "?token=" + url.QueryEscape(token)
+		return fmt.Sprintf("/embed-proxy/%s/%s", url.PathEscape(token), encodeEmbedProxyURL(rawURL))
 	}
-	return proxyURL
+	return fmt.Sprintf("/embed-proxy/%s", encodeEmbedProxyURL(rawURL))
 }

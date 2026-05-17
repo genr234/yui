@@ -95,10 +95,11 @@ func (r *Runtime) injectionSource() (string, error) {
 	if r.cfg.PlatformDevServer != "" {
 		devServer := strings.TrimRight(r.cfg.PlatformDevServer, "/")
 		return fmt.Sprintf(
-			"window.__YUI_BRIDGE_URL=%q;window.__YUI_PLATFORM_HTTP=%q;window.__YUI_PLATFORM_HTTP_TOKEN=%q;import(%q);",
+			"window.__YUI_BRIDGE_URL=%q;window.__YUI_PLATFORM_HTTP=%q;window.__YUI_PLATFORM_HTTP_TOKEN=%q;window.__YUI_PLATFORM_DEV_SERVER=%q;import(%q);",
 			bridgeURL,
 			httpURL,
 			httpToken,
+			devServer,
 			devServer+"/src/main.ts",
 		), nil
 	}
@@ -109,10 +110,11 @@ func (r *Runtime) injectionSource() (string, error) {
 	}
 
 	return fmt.Sprintf(
-		"window.__YUI_BRIDGE_URL=%q;window.__YUI_PLATFORM_HTTP=%q;window.__YUI_PLATFORM_HTTP_TOKEN=%q;\n%s",
+		"window.__YUI_BRIDGE_URL=%q;window.__YUI_PLATFORM_HTTP=%q;window.__YUI_PLATFORM_HTTP_TOKEN=%q;window.__YUI_PLATFORM_DEV_SERVER=%q;\n%s",
 		bridgeURL,
 		httpURL,
 		httpToken,
+		"",
 		string(bundle),
 	), nil
 }

@@ -1,9 +1,15 @@
 class PasskeysController < ApplicationController
   skip_before_action :require_control_room_access
+  before_action :require_authentication, only: [ :index, :destroy ]
+  before_action :require_recent_authentication, only: :destroy
   before_action :redirect_setup_when_configured, only: :new
 
+  def index
+    @passkey_credentials = current_user.passkey_credentials.order(created_at: :asc)
+  end
+
   def new
-    @user = User.new
+    @user = current_user || User.new
   end
 
   def options
@@ -40,6 +46,7 @@ class PasskeysController < ApplicationController
       user_verification: true
     )
 
+    adding_passkey = signed_in?
     user = nil
     User.transaction do
       user = current_user || User.create!(
@@ -60,10 +67,21 @@ class PasskeysController < ApplicationController
     session.delete(:passkey_rp_id)
     sign_in(user)
 
-    redirect_to accounts_path, notice: "Passkey ready."
+    redirect_to adding_passkey ? passkeys_path : accounts_path, notice: "Passkey ready."
   rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique, WebAuthn::Error, JSON::ParserError, KeyError => error
     Rails.logger.warn("Passkey setup failed: #{error.class}: #{error.message}")
     redirect_to setup_path, alert: "Passkey setup failed: #{error.message}"
+  end
+
+  def destroy
+    credential = current_user.passkey_credentials.find(params[:id])
+
+    if current_user.passkey_credentials.count <= 1
+      redirect_to passkeys_path, alert: "Add another passkey before removing this one."
+    else
+      credential.destroy!
+      redirect_to passkeys_path, notice: "Passkey removed."
+    end
   end
 
   private

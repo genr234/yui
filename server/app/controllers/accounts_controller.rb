@@ -1,6 +1,6 @@
 class AccountsController < ApplicationController
-  before_action :require_recent_authentication, only: [ :create, :update, :destroy ]
-  before_action :set_account, only: [ :show, :edit, :update, :destroy ]
+  before_action :require_recent_authentication, only: [ :create, :update, :destroy, :clear_recent_commands, :clear_recent_operations ]
+  before_action :set_account, only: [ :show, :edit, :update, :destroy, :clear_recent_commands, :clear_recent_operations ]
 
   def index
     @accounts = Account.order(:name)
@@ -36,13 +36,30 @@ class AccountsController < ApplicationController
     @pairing_codes = @account.pairing_codes.order(created_at: :desc).limit(10)
     @kiosks = @account.kiosks.order(:name)
     @state_records = @account.account_state_records.order(:collection, :record_id)
-    @operations = @account.kiosk_operations.order(server_seq: :desc).limit(50)
-    @commands = KioskCommand.joins(:kiosk).where(kiosks: { account_id: @account.id }).order(created_at: :desc).limit(50)
+    @operations = @account.kiosk_operations
+      .then { |scope| @account.operations_cleared_at.present? ? scope.where("kiosk_operations.created_at > ?", @account.operations_cleared_at) : scope }
+      .order(server_seq: :desc)
+      .limit(50)
+    @commands = KioskCommand.joins(:kiosk)
+      .where(kiosks: { account_id: @account.id })
+      .then { |scope| @account.commands_cleared_at.present? ? scope.where("kiosk_commands.created_at > ?", @account.commands_cleared_at) : scope }
+      .order(created_at: :desc)
+      .limit(50)
   end
 
   def destroy
     @account.destroy
     redirect_to accounts_path, notice: "Account deleted."
+  end
+
+  def clear_recent_commands
+    @account.update!(commands_cleared_at: Time.current)
+    redirect_to @account, notice: "Recent commands cleared."
+  end
+
+  def clear_recent_operations
+    @account.update!(operations_cleared_at: Time.current)
+    redirect_to @account, notice: "Recent logs cleared."
   end
 
   private
