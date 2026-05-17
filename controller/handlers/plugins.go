@@ -87,6 +87,7 @@ type pluginInstance struct {
 	events     map[string][]starlark.Callable
 	cancel     context.CancelFunc
 	timers     []context.CancelFunc
+	timersWG   sync.WaitGroup
 	lastError  string
 }
 
@@ -627,6 +628,7 @@ func (m *PluginManager) stopInstance(id string, persistAudit bool) *pluginInstan
 	if inst.cancel != nil {
 		inst.cancel()
 	}
+	inst.timersWG.Wait()
 	_ = m.callHook(context.Background(), inst, "deactivate")
 	if persistAudit {
 		m.audit(id, "deactivate", "", true, "", "")
@@ -661,7 +663,9 @@ func (m *PluginManager) startSchedules(ctx context.Context, inst *pluginInstance
 		}
 		timerCtx, cancel := context.WithCancel(ctx)
 		inst.timers = append(inst.timers, cancel)
+		inst.timersWG.Add(1)
 		go func(s pluginScheduleRecord, fn starlark.Callable) {
+			defer inst.timersWG.Done()
 			ticker := time.NewTicker(interval)
 			defer ticker.Stop()
 			for {
