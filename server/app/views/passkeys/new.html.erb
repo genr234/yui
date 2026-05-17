@@ -1,17 +1,26 @@
-<% content_for :title, "Set up passkey - Yui" %>
+<% adding_passkey = signed_in? %>
+<% content_for :title, "#{adding_passkey ? "Add" : "Set up"} passkey - Yui" %>
 
 <main class="auth-page">
   <section class="auth-panel auth-panel--form">
-    <h1>Set up your passkey</h1>
-    <p class="auth-copy">Create the first administrator passkey for this server. This device, security key, or password manager will unlock the Rails console UI.</p>
+    <h1><%= adding_passkey ? "Add a passkey" : "Set up your passkey" %></h1>
+    <p class="auth-copy">
+      <% if adding_passkey %>
+        Register another device, security key, or password manager for <%= current_user.name %>.
+      <% else %>
+        Create the first administrator passkey for this server. This device, security key, or password manager will unlock the Rails console UI.
+      <% end %>
+    </p>
 
     <%= form_with url: passkeys_path, method: :post, class: "account-form", data: { controller: "passkey", action: "submit->passkey#submit", passkey_mode_value: "register", passkey_options_url_value: passkey_options_path } do |form| %>
       <%= hidden_field_tag :public_key_credential %>
 
-      <label class="field">
-        <span>Your name</span>
-        <%= text_field_tag :name, nil, autofocus: true, autocomplete: "name", placeholder: "admin" %>
-      </label>
+      <% unless adding_passkey %>
+        <label class="field">
+          <span>Your name</span>
+          <%= text_field_tag :name, nil, autofocus: true, autocomplete: "name", placeholder: "admin" %>
+        </label>
+      <% end %>
 
       <label class="field">
         <span>Passkey label</span>
@@ -21,7 +30,7 @@
       <p class="auth-message" data-passkey-message></p>
 
       <div class="form-actions form-actions--center">
-        <%= submit_tag "Create passkey", class: "button button--primary" %>
+        <%= submit_tag adding_passkey ? "Add passkey" : "Create passkey", class: "button button--primary" %>
       </div>
     <% end %>
   </section>

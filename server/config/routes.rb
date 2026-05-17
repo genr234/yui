@@ -4,8 +4,10 @@ Rails.application.routes.draw do
   root "accounts#index"
 
   get "setup", to: "passkeys#new"
+  get "passkeys", to: "passkeys#index"
   post "passkeys/options", to: "passkeys#options", as: :passkey_options
   post "passkeys", to: "passkeys#create"
+  delete "passkeys/:id", to: "passkeys#destroy", as: :passkey
 
   get "login", to: "sessions#new"
   post "login/options", to: "sessions#options", as: :login_options
@@ -13,6 +15,10 @@ Rails.application.routes.draw do
   delete "logout", to: "sessions#destroy"
 
   resources :accounts, only: [ :index, :show, :new, :create, :edit, :update, :destroy ] do
+    member do
+      delete "recent_commands", to: "accounts#clear_recent_commands"
+      delete "recent_operations", to: "accounts#clear_recent_operations"
+    end
     resources :pairing_codes, only: [ :create ]
     resources :kiosk_commands, only: [ :create ]
   end

@@ -5,10 +5,6 @@
 <% collections = @state_records.group_by(&:collection) %>
 
 <main class="workspace">
-  <% if notice.present? %>
-    <p class="notice"><%= notice %></p>
-  <% end %>
-
   <section class="project-card">
     <header class="project-card__header">
       <div class="project-card__header-actions">
@@ -104,7 +100,12 @@
       </article>
 
       <article class="project-cell">
-        <h2>Recent Commands</h2>
+        <div class="project-cell__header">
+          <h2>Recent Commands</h2>
+          <% if @commands.any? %>
+            <%= button_to "Clear", recent_commands_account_path(@account), method: :delete, class: "button button--ghost button--small", form: { data: { turbo_confirm: "Clear recent commands from this view?" } } %>
+          <% end %>
+        </div>
         <% if @commands.any? %>
           <ol class="plain-list plain-list--ordered">
             <% @commands.first(8).each do |command| %>
@@ -123,7 +124,12 @@
       </article>
 
       <article class="project-cell">
-        <h2>Recent Operations</h2>
+        <div class="project-cell__header">
+          <h2>Recent Logs</h2>
+          <% if @operations.any? %>
+            <%= button_to "Clear", recent_operations_account_path(@account), method: :delete, class: "button button--ghost button--small", form: { data: { turbo_confirm: "Clear recent logs from this view?" } } %>
+          <% end %>
+        </div>
         <% if @operations.any? %>
           <ol class="plain-list plain-list--ordered">
             <% @operations.first(8).each do |operation| %>
@@ -137,7 +143,7 @@
             <% end %>
           </ol>
         <% else %>
-          <p class="empty-copy">Device operations will appear here as they sync.</p>
+          <p class="empty-copy">Device logs will appear here as they sync.</p>
         <% end %>
       </article>
     </section>

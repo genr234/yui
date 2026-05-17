@@ -5,6 +5,7 @@
     <% if signed_in? %>
       <div class="account-picker__session">
         <span><%= current_user.name %></span>
+        <%= link_to "Passkeys", passkeys_path, class: "button button--ghost" %>
         <%= button_to "Sign out", logout_path, method: :delete, class: "button button--ghost" %>
       </div>
     <% end %>

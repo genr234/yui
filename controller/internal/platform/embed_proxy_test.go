@@ -36,6 +36,11 @@ func TestEmbedProxyRequiresRuntimeToken(t *testing.T) {
 	if !r.validPlatformHTTPToken(req) {
 		t.Fatalf("request with token was rejected")
 	}
+
+	req = httptest.NewRequest("GET", "/embed-proxy/secret/"+encodeEmbedProxyURL("https://example.com/"), nil)
+	if !r.validPlatformHTTPToken(req) {
+		t.Fatalf("request with path token was rejected")
+	}
 }
 
 func TestEmbedProxyDoesNotForwardRuntimeToken(t *testing.T) {
@@ -48,5 +53,50 @@ func TestEmbedProxyDoesNotForwardRuntimeToken(t *testing.T) {
 	}
 	if !strings.Contains(upstream, "keep=1") {
 		t.Fatalf("upstream query was not preserved: %s", upstream)
+	}
+}
+
+func TestEmbedProxyPathTokenPreservesRelativeSubresources(t *testing.T) {
+	r := &Runtime{cfg: config.Config{PlatformBridgeToken: "secret"}}
+	path := r.embedProxyURLFor("https://example.com/path/index.html")
+	if !strings.HasPrefix(path, "/embed-proxy/secret/") {
+		t.Fatalf("expected token in proxy path, got %s", path)
+	}
+
+	upstream, ok := r.embedProxyUpstream(path+"/assets/app.css", "")
+	if !ok {
+		t.Fatalf("expected subresource upstream URL")
+	}
+	if upstream != "https://example.com/path/assets/app.css" {
+		t.Fatalf("unexpected subresource upstream: %s", upstream)
+	}
+
+	html := string(rewriteEmbedProxyHTML("https://example.com/path/index.html", []byte("<html><head></head></html>"), "secret"))
+	if !strings.Contains(html, `<base href="/embed-proxy/secret/`) {
+		t.Fatalf("expected path token in rewritten base: %s", html)
+	}
+}
+
+func TestEmbedProxyAllowsConfiguredDevServerOrigin(t *testing.T) {
+	r := &Runtime{cfg: config.Config{
+		PlatformBridgeToken: "secret",
+		PlatformDevServer:   "http://127.0.0.1:5173",
+	}}
+	req := httptest.NewRequest("GET", "/embed-proxy/"+encodeEmbedProxyURL("https://example.com/"), nil)
+	req.Header.Set("Origin", "http://127.0.0.1:5173")
+	if !r.validPlatformHTTPToken(req) {
+		t.Fatalf("configured dev server origin was rejected")
+	}
+}
+
+func TestEmbedProxyAllowsConfiguredDevServerReferer(t *testing.T) {
+	r := &Runtime{cfg: config.Config{
+		PlatformBridgeToken: "secret",
+		PlatformDevServer:   "http://127.0.0.1:5173",
+	}}
+	req := httptest.NewRequest("GET", "/embed-proxy/"+encodeEmbedProxyURL("https://example.com/"), nil)
+	req.Header.Set("Referer", "http://127.0.0.1:5173/src/main.ts")
+	if !r.validPlatformHTTPToken(req) {
+		t.Fatalf("configured dev server referer was rejected")
 	}
 }

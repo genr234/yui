@@ -5,10 +5,15 @@ controller/static/platform.js
 controller/static/assets/
 installer/assets/controller.exe
 *.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
 *.log
 *.bak
 *.tmp
-controller/chrome-profile
+controller/chrome-profile/
 controller/yui_controller
 controller/diagnostics.txt
 controller/controller.json
@@ -19,12 +24,17 @@ installer/installer
 
 # Rails
 /server/log/*
+!/server/log/
+!/server/log/.keep
 /server/tmp/*
 !/server/tmp/
 !/server/tmp/.keep
 /server/tmp/pids/*
 !/server/tmp/pids/
 !/server/tmp/pids/.keep
+/server/tmp/storage/*
+!/server/tmp/storage/
+!/server/tmp/storage/.keep
 /server/storage/*
 !/server/storage/
 !/server/storage/.keep

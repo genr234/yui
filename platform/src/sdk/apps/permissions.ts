@@ -2,6 +2,7 @@ import type { YuiPermission, YuiSimpleApp } from "./types";
 
 const storageKey = "yui.simple-app.permissions.v0";
 const scopedStorageKeyPrefix = "yui.simple-app.permissions.v1";
+const permissionsChangedEvent = "yui:permissions-changed";
 let accountScope = "anonymous";
 
 export type PermissionState = Record<string, Record<string, boolean>>;
@@ -59,7 +60,7 @@ function readState(): PermissionState {
 
 function writeState(state: PermissionState) {
 	localStorage.setItem(scopedStorageKey(), JSON.stringify(state));
-	window.dispatchEvent(new CustomEvent("yui:permissions-changed"));
+	notifyPermissionsChanged();
 }
 
 function scopedStorageKey() {
@@ -71,7 +72,22 @@ export function setPermissionAccountScope(accountId?: string | null) {
 	if (next === accountScope) return;
 	accountScope = next;
 	migrateAnonymousPermissions();
-	window.dispatchEvent(new CustomEvent("yui:permissions-changed"));
+	notifyPermissionsChanged();
+}
+
+function notifyPermissionsChanged() {
+	window.dispatchEvent(new CustomEvent(permissionsChangedEvent));
+}
+
+if (typeof window !== "undefined") {
+	window.addEventListener("storage", (event) => {
+		if (
+			event.key === storageKey ||
+			event.key?.startsWith(`${scopedStorageKeyPrefix}.`)
+		) {
+			notifyPermissionsChanged();
+		}
+	});
 }
 
 function migrateAnonymousPermissions() {

@@ -27,6 +27,7 @@
   let embedLoadedSource = "";
   let embedFrameKey = 0;
   let registeredBlockerOrigin = "";
+  let permissionVersion = 0;
 
   function children(value: YuiNode) {
     return normalize(value.children ?? []);
@@ -180,6 +181,7 @@
   }
 
   function hasGrantedAppPermission(permission: string) {
+    permissionVersion;
     return Boolean(
       app &&
         isPermissionDeclared(app, permission) &&
@@ -266,8 +268,8 @@
       .replace(/=+$/g, "");
     const base = (window.__YUI_PLATFORM_HTTP || "http://127.0.0.1:7072").replace(/\/+$/g, "");
     const token = window.__YUI_PLATFORM_HTTP_TOKEN;
-    const auth = token ? `?token=${encodeURIComponent(token)}` : "";
-    return `${base}/embed-proxy/${encoded}/${auth}`;
+    const auth = token ? `${encodeURIComponent(token)}/` : "";
+    return `${base}/embed-proxy/${auth}${encoded}/`;
   }
 
   async function setEmbedBlocker(origin: string, enabled: boolean) {
@@ -345,6 +347,18 @@
     resetEmbed();
   }
 
+  function handlePermissionsChanged() {
+    permissionVersion += 1;
+    if (
+      node &&
+      typeof node === "object" &&
+      !Array.isArray(node) &&
+      node.type === "embed"
+    ) {
+      void loadEmbed(stringProp("url") || stringProp("src"));
+    }
+  }
+
   const stringProp = (name: string, fallback = "") =>
     prop<string>(name, fallback) ?? fallback;
   const numberProp = (name: string, fallback = 0) =>
@@ -394,7 +408,10 @@
   });
 </script>
 
-<svelte:window on:yui:embed-storage-cleared={handleEmbedStorageCleared} />
+<svelte:window
+  on:yui:embed-storage-cleared={handleEmbedStorageCleared}
+  on:yui:permissions-changed={handlePermissionsChanged}
+/>
 
 {#if node === null || node === undefined || node === false}
   <span hidden></span>

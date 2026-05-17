@@ -128,7 +128,7 @@
 {:else if apps.length === 0}
   <section class="empty-with-action">
     <EmptyState
-      title="No simple apps found"
+      title="No apps found"
       body="Add apps from trusted catalogs or create local apps under /apps."
     />
   </section>
