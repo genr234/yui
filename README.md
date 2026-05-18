@@ -1,6 +1,7 @@
-# Yui Kiosk Platform
-
-Yui is a Go-based kiosk controller with a Svelte overlay injected into the live kiosk page. The watchdog still launches `chrome.bat`, but the controller owns Chrome, config, logs, status, recovery, and the platform bridge.
+<div align="center">
+  <img src="platform/src/assets/images/logo.png" width="256" height="256">
+  <p>A battery included Digikiosk jailbreak</h2>
+</div>
 
 ## Build
 
@@ -78,6 +79,6 @@ const keys = await ctx.storage.keys();
 
 Core platform data should be accessed through typed commands such as `apps.*` and `plugins.*`, not through a generic document-store API.
 
-## Kiosk Install Shape
+## How to install on a kiosk
 
 Run `dist/installer.exe` from Explorer on the kiosk, select the existing kiosk `chrome.bat`, and the installer preserves it as `chrome.original.bat`, writes the Yui bootstrap, writes `controller.exe`, and starts the controller.
