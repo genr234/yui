@@ -234,6 +234,9 @@ export async function discoverApps(): Promise<YuiDevApp[]> {
 		discoverLocalDevApps().catch(() => []),
 	]);
 	const localByID = new Map(localApps.map((app) => [app.id, app]));
+	if (import.meta.env.VITE_YUI_DEMO === "true" && installedApps.length === 0) {
+		return localApps.map((app) => ({ ...app, installed: true }));
+	}
 	for (const app of installedApps) {
 		if (app.sourceId !== DEV_APP_SOURCE_ID) continue;
 		const local = localByID.get(app.id);

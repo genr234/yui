@@ -22,6 +22,7 @@ help:
   @echo "  just build              Build platform + Rails server image + Windows controller + installer"
   @echo "  just build-kiosk        Build platform + Windows controller + installer"
   @echo "  just build-server       Build the Rails server container image"
+  @echo "  just build-demo         Build the static browser demo"
   @echo "  just package            Build a clean deploy zip with checksum"
   @echo "  just build-local        Build the platform + a local controller binary"
   @echo "  just fmt                Format Go sources"
@@ -71,6 +72,9 @@ build-local: build-platform build-controller-local
 
 build-platform:
   cd {{platform_dir}} && bun run build
+
+build-demo:
+  cd {{platform_dir}} && bun run build:demo
 
 build-server:
   docker build --pull -t {{server_image}} {{server_dir}}

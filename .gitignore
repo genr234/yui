@@ -1,6 +1,7 @@
 .DS_Store
 dist/
 node_modules/
+platform/demo-dist/
 controller/static/platform.js
 controller/static/assets/
 installer/assets/controller.exe
