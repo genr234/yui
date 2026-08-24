@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
+  base: mode === 'demo' ? './' : '/',
   plugins: [svelte({ preprocess: vitePreprocess() })],
   server: {
     cors: true,
@@ -20,16 +21,20 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: '../controller/static',
-    emptyOutDir: false,
-    rollupOptions: {
-      input: resolve(__dirname, 'src/main.ts'),
-      output: {
-        format: 'iife',
-        name: 'YuiPlatform',
-        entryFileNames: 'platform.js',
-        inlineDynamicImports: true,
-      },
-    },
+    outDir: mode === 'demo' ? 'demo-dist' : '../controller/static',
+    emptyOutDir: mode === 'demo',
+    ...(mode === 'demo'
+      ? {}
+      : {
+          rollupOptions: {
+            input: resolve(__dirname, 'src/main.ts'),
+            output: {
+              format: 'iife',
+              name: 'YuiPlatform',
+              entryFileNames: 'platform.js',
+              inlineDynamicImports: true,
+            },
+          },
+        }),
   },
-})
+}))

@@ -79,6 +79,7 @@
   let authSubmitLabel = "Enter";
   let accountStatus: AccountStatus | null = null;
   let sidebarTheme: SidebarThemeSettings = { enabled: true, images: [] };
+  const demoMode = import.meta.env.VITE_YUI_DEMO === "true";
 
   let extensions: YuiPluginExtensions = { pages: [], actions: [], css: [] };
 
@@ -119,6 +120,7 @@
   onMount(() => {
     sidebarTheme = loadSidebarTheme();
     void refresh();
+    if (demoMode) showShell();
     const offFullscreen = (event: Event) => {
       appFullscreen = Boolean(
         (event as CustomEvent<{ active: boolean }>).detail?.active,
@@ -221,7 +223,7 @@
   }
 
   function alwaysOpen() {
-    return localStorage.getItem("yui_always_open") === "true";
+    return demoMode || localStorage.getItem("yui_always_open") === "true";
   }
 
   function openMenu() {

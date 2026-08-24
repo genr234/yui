@@ -10,7 +10,8 @@
   "private": true,
   "scripts": {
     "dev": "vite",
-    "build": "vite build"
+    "build": "vite build",
+    "build:demo": "VITE_YUI_DEMO=true vite build --mode demo"
   },
   "type": "module",
   "dependencies": {
