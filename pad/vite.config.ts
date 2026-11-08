@@ -1,12 +1,14 @@
 import { defineConfig } from 'vite'
-import { svelte, vitePreprocess } from '@sveltejs/vite-plugin-svelte'
+import { svelte } from '@sveltejs/vite-plugin-svelte'
 
+// Preprocessing lives in svelte.config.js so svelte-check uses the same setup.
 export default defineConfig({
   base: '/pad/',
-  plugins: [svelte({ preprocess: vitePreprocess() })],
+  plugins: [svelte()],
   server: {
     proxy: {
       '/play': 'http://localhost:3000',
+      '/sim': 'http://localhost:3000',
       '/cable': { target: 'http://localhost:3000', ws: true },
     },
   },
