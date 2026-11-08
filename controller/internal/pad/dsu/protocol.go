@@ -149,10 +149,13 @@ func encodeControllerData(serverID uint32, slot int, packetNum uint32, s PadStat
 	set(&a, 0, s.Share)
 	l2 := s.L2 || s.LT > 0.5
 	r2 := s.R2 || s.RT > 0.5
-	set(&c, 7, s.Triangle) // Y
-	set(&c, 6, s.Circle)   // B
-	set(&c, 5, s.Cross)    // A
-	set(&c, 4, s.Square)   // X
+	// cemuhook names these Y/B/A/X by position (Nintendo layout):
+	// Y = left = Square, B = bottom = Cross, A = right = Circle,
+	// X = top = Triangle. Matches Dolphin's DualShockUDPProto.h.
+	set(&c, 7, s.Square)
+	set(&c, 6, s.Cross)
+	set(&c, 5, s.Circle)
+	set(&c, 4, s.Triangle)
 	set(&c, 3, s.R1)
 	set(&c, 2, s.L1)
 	set(&c, 1, r2)
@@ -168,10 +171,11 @@ func encodeControllerData(serverID uint32, slot int, packetNum uint32, s PadStat
 	p[25] = btn(s.Down)
 	p[26] = btn(s.Right)
 	p[27] = btn(s.Up)
-	p[28] = btn(s.Triangle) // analog Y
-	p[29] = btn(s.Circle)   // analog B
-	p[30] = btn(s.Cross)    // analog A
-	p[31] = btn(s.Square)   // analog X
+	// Dolphin reads face buttons only from these analog bytes.
+	p[28] = btn(s.Square)   // analog Y (left)
+	p[29] = btn(s.Cross)    // analog B (bottom)
+	p[30] = btn(s.Circle)   // analog A (right)
+	p[31] = btn(s.Triangle) // analog X (top)
 	p[32] = btn(s.R1)
 	p[33] = btn(s.L1)
 	p[34] = maxByte(analogByte(s.RT), btn(s.R2))

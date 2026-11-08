@@ -91,8 +91,8 @@ func TestEncodeControllerData(t *testing.T) {
 	if p[16] != 128|16|8|1 {
 		t.Fatalf("mask A %08b", p[16])
 	}
-	// B: Y(128)+A(32)+R1(0)+L1(4)+R2(2)
-	if p[17] != 128|32|4|2 {
+	// B: Cross(64)+Triangle(16)+L1(4)+R2(2)
+	if p[17] != 64|16|4|2 {
 		t.Fatalf("mask B %08b", p[17])
 	}
 	if p[18] != 255 || p[19] != 255 {
@@ -104,7 +104,7 @@ func TestEncodeControllerData(t *testing.T) {
 	if p[24] != 255 || p[25] != 0 || p[26] != 0 || p[27] != 255 {
 		t.Fatalf("analog dpad % x", p[24:28])
 	}
-	if p[28] != 255 || p[29] != 0 || p[30] != 255 || p[31] != 0 {
+	if p[28] != 0 || p[29] != 255 || p[30] != 0 || p[31] != 255 {
 		t.Fatalf("analog face % x", p[28:32])
 	}
 	// R1 0, L1 255, R2 255, L2 128 (0.5*255 rounded)
@@ -226,7 +226,7 @@ func TestEndToEnd(t *testing.T) {
 		t.Fatal("no data push")
 	}
 	checkHeader(t, b, s.serverID, 0x100002, 100)
-	if b[20] != 1 || b[20+17]&32 == 0 {
+	if b[20] != 1 || b[20+17]&64 == 0 { // Cross = bit 6
 		t.Fatalf("wrong data: slot %d maskB %08b", b[20], b[37])
 	}
 	c1 := binary.LittleEndian.Uint32(b[32:])

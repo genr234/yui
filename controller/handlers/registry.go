@@ -37,6 +37,8 @@ type Registry struct {
 	syncState accountSyncState
 	assetsMu  sync.Mutex
 	assetSync *assets.Syncer
+	emitMu    sync.RWMutex
+	emitter   Emitter
 }
 
 func NewRegistry(cfg config.Config) *Registry {

@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"net/http"
 	"path/filepath"
 	"sync"
@@ -12,7 +11,10 @@ import (
 	"kiosk/controller/internal/assets"
 )
 
-const assetEndpointTTL = 5 * time.Second
+const (
+	assetEndpointTTL    = 5 * time.Second
+	assetChangeDebounce = 500 * time.Millisecond
+)
 
 func AssetsCommands() []Command {
 	return []Command{
@@ -50,6 +52,10 @@ func (r *Registry) AssetSyncer() *assets.Syncer {
 		}
 		return epURL, epToken, epOK
 	}
+	var (
+		changeMu    sync.Mutex
+		changeTimer *time.Timer
+	)
 	remote := &assets.HTTPRemote{
 		Endpoint: endpoint,
 		Control:  accountHTTPClient,
@@ -59,9 +65,21 @@ func (r *Registry) AssetSyncer() *assets.Syncer {
 		DataDir: filepath.Join(r.cfg.ConfigDir, "assets"),
 		Remote:  remote,
 		Store:   r.Store,
+		// Progress can change many times a second; coalesce into at most one
+		// "assets.changed" per assetChangeDebounce, carrying the latest status.
+		// The emit runs on its own goroutine, so it never holds syncer locks.
 		OnChange: func() {
-			// TODO(merge): r.Emit("assets.changed", r.AssetSyncer().Status()) once Emit lands.
-			log.Printf("assets changed")
+			changeMu.Lock()
+			defer changeMu.Unlock()
+			if changeTimer != nil {
+				return
+			}
+			changeTimer = time.AfterFunc(assetChangeDebounce, func() {
+				changeMu.Lock()
+				changeTimer = nil
+				changeMu.Unlock()
+				r.Emit("assets.changed", r.AssetSyncer().Status())
+			})
 		},
 	})
 	return r.assetSync
