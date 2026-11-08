@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Yui Pad simulator</title>
+    <style nonce="<%= content_security_policy_nonce %>">
+      :root { color-scheme: dark; }
+      body { margin: 0; background: #0d1825; color: #f7fbff; font-family: "Avenir Next", "Segoe UI", Helvetica, Arial, sans-serif; }
+      header { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid rgba(255,255,255,.16); }
+      h1 { margin: 0; font-size: 1.2rem; }
+      form { display: flex; gap: 8px; align-items: center; }
+      input { width: 6em; padding: 8px 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.08); color: inherit; font: inherit; text-transform: uppercase; }
+      button { padding: 8px 14px; border: 0; border-radius: 10px; background: #2f76dc; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+      .muted { color: #9fb1c4; margin: 0; }
+      .pads { display: flex; flex-wrap: wrap; gap: 16px; padding: 16px 20px; }
+      .phone { display: flex; flex-direction: column; gap: 6px; }
+      .phone span { color: #9fb1c4; font-size: .85rem; }
+      iframe { width: 360px; height: 740px; border: 0; border-radius: 28px; box-shadow: 0 0 0 8px #1c2b3d, 0 20px 50px rgba(0,0,0,.45); background: #0d1825; }
+      ul { margin: 0; padding-left: 1.2em; }
+      a { color: #6fb0ff; }
+      main { padding: 20px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Yui Pad simulator</h1>
+      <form action="<%= pad_sim_path %>" method="get">
+        <label for="code">Code</label>
+        <input id="code" name="code" value="<%= @code %>" maxlength="4" autocomplete="off" required>
+        <label for="pads">Pads</label>
+        <input id="pads" name="pads" value="<%= @count %>" maxlength="1" inputmode="numeric">
+        <% if @qr_token %><input type="hidden" name="t" value="<%= @qr_token %>"><% end %>
+        <button type="submit">Open</button>
+      </form>
+      <p class="muted">Each pad is its own player. Drag the dashed box in a pad to move its fake gyro.</p>
+    </header>
+
+    <% if @play_session %>
+      <% unless @play_session.lobby_open || @qr_token %>
+        <main><p class="muted">Joining needs the lobby open (or a QR token as <code>&amp;t=</code>). Open the lobby on the kiosk, then reload.</p></main>
+      <% end %>
+      <div class="pads">
+        <% (1..@count).each do |n| %>
+          <div class="phone">
+            <span>Pad <%= n %></span>
+            <iframe title="Pad <%= n %>" src="<%= play_path(code: @play_session.code, sim: n, t: @qr_token) %>" allow="autoplay"></iframe>
+          </div>
+        <% end %>
+      </div>
+    <% else %>
+      <main>
+        <% if @code.present? %><p>No active session with code <strong><%= @code %></strong>.</p><% end %>
+        <% if @active_sessions.present? %>
+          <p class="muted">Active sessions:</p>
+          <ul>
+            <% @active_sessions.each do |s| %>
+              <li><%= link_to s.code, pad_sim_path(code: s.code) %> on <%= s.kiosk.name %></li>
+            <% end %>
+          </ul>
+        <% else %>
+          <p class="muted">No active play sessions. Start one from the kiosk (Play on your phones).</p>
+        <% end %>
+      </main>
+    <% end %>
+  </body>
+</html>

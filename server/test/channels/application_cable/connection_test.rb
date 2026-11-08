@@ -22,6 +22,17 @@ class ApplicationCable::ConnectionTest < ActionCable::Connection::TestCase
     assert_nil connection.current_kiosk
   end
 
+  test "a simulated pad (/cable?sim=N) uses its own player cookie" do
+    play_session = start_session
+    player, token = join_player(play_session)
+    other, other_token = join_player(play_session, name: "Bo", color: "red")
+    cookies.signed[:yui_player] = Player.cookie_value(player, token)
+    cookies.signed[:yui_player_sim3] = Player.cookie_value(other, other_token)
+
+    connect "/cable?sim=3"
+    assert_equal other, connection.current_player
+  end
+
   test "rejects missing or bad credentials" do
     assert_reject_connection { connect }
     assert_reject_connection { connect headers: { "Authorization" => "Bearer wrong" } }
