@@ -785,6 +785,7 @@ func (m *Manager) negotiate(p protocol.Player) {
 	}
 	m.negGen[p.ID]++
 	gen := m.negGen[p.ID]
+	m.forgetSeqLocked(p.ID)
 	old := m.peers[p.ID]
 	m.peers[p.ID] = nil
 	servers := iceServers(m.ice)
@@ -926,6 +927,16 @@ func (m *Manager) acceptICE(playerID string, raw json.RawMessage) {
 	}
 	if err := peer.addICE(raw); err != nil {
 		log.Printf("pad session: remote ice %s: %v", playerID, err)
+	}
+}
+
+// forgetSeqLocked makes the next frame from playerID count whatever its seq.
+// A new peer is often a reloaded or woken phone whose seq (anchored to its
+// clock) can be more than half the u16 range away from the last one seen, so
+// keeping the old seq would drop its input for minutes. m.mu held.
+func (m *Manager) forgetSeqLocked(playerID string) {
+	if st := m.players[playerID]; st != nil {
+		st.hasInput = false
 	}
 }
 

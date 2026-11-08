@@ -557,6 +557,20 @@ func TestStaleInputAndSnapshotJSON(t *testing.T) {
 		t.Fatalf("wrap %+v", got)
 	}
 
+	// A new peer accepts its first frame even when the seq looks older.
+	far := protocol.EncodeInput(protocol.InputState{Seq: 40000, Buttons: protocol.ButtonEast})
+	mgr.applyInput("p1", far)
+	if got, _ = mgr.LatestInput("p1"); got.Seq != 0 {
+		t.Fatalf("far seq accepted on the same peer: %+v", got)
+	}
+	mgr.mu.Lock()
+	mgr.forgetSeqLocked("p1")
+	mgr.mu.Unlock()
+	mgr.applyInput("p1", far)
+	if got, _ = mgr.LatestInput("p1"); got.Seq != 40000 || got.Buttons != protocol.ButtonEast {
+		t.Fatalf("after a new peer %+v", got)
+	}
+
 	raw, err := json.Marshal(mgr.Snapshot())
 	if err != nil {
 		t.Fatal(err)
