@@ -24,7 +24,9 @@ class Player < ApplicationRecord
   end
 
   # Joins a session: lowest free slot 1-4 among non-kicked players, otherwise a
-  # spectator (slot nil). The first player becomes host. Returns [player, raw token].
+  # spectator (slot nil). The first player becomes host, and the speaker (the
+  # phone that plays the kiosk's sound) whenever nobody holds that role.
+  # Returns [player, raw token].
   def self.join!(play_session, name:, color:)
     token = issue_token
     attempts = 0
@@ -36,6 +38,7 @@ class Player < ApplicationRecord
           color: play_session.free_color(color),
           slot: play_session.free_slot,
           host: !play_session.players.active.exists?(host: true),
+          speaker: !play_session.players.active.exists?(speaker: true),
           token_digest: digest_token(token)
         )
       end
@@ -97,6 +100,7 @@ class Player < ApplicationRecord
       name: name,
       color: color,
       host: host,
+      speaker: speaker,
       connected: connected
     }
   end

@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"path/filepath"
+	"time"
 
 	"kiosk/controller/internal/assets"
 	"kiosk/controller/internal/native"
@@ -36,7 +38,7 @@ func (r *Registry) Native() *native.Manager {
 		DataDir:     filepath.Join(root, "data"),
 		LogDir:      filepath.Join(root, "logs"),
 		Assets:      registryAssets{r: r},
-		Focus:       native.SystemFocus{FallbackPID: r.chromePID},
+		Focus:       native.SystemFocus{FallbackPID: r.focusFallbackPID},
 		OnStatus: func(st native.Status) {
 			r.Emit("native.status", st)
 		},
@@ -65,19 +67,16 @@ func (r *Registry) closeNative() {
 	}
 }
 
-// chromePID reads the supervised Chrome's pid from the status file, the
-// fallback focus target when the window captured at launch is gone.
-func (r *Registry) chromePID() int {
-	data, err := readJSONFile(r.snapshotConfig().StatusPath)
+// focusFallbackPID is the fallback focus target when the window captured
+// at launch is gone: the live Chrome browser process (chromePID in audio.go).
+func (r *Registry) focusFallbackPID() int {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	pid, err := r.chromePID(ctx)
 	if err != nil {
 		return 0
 	}
-	if m, ok := data.(map[string]any); ok {
-		if pid, ok := m["chrome_pid"].(float64); ok {
-			return int(pid)
-		}
-	}
-	return 0
+	return pid
 }
 
 // registryAssets adapts the asset syncer to native.AssetSource.

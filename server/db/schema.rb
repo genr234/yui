@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_08_100000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_08_200000) do
   create_table "account_state_records", force: :cascade do |t|
     t.integer "account_id", null: false
     t.string "collection", null: false
@@ -188,6 +188,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_100000) do
     t.string "name", null: false
     t.integer "play_session_id", null: false
     t.integer "slot"
+    t.boolean "speaker", default: false, null: false
     t.string "token_digest", null: false
     t.datetime "updated_at", null: false
     t.index ["play_session_id", "slot"], name: "index_players_on_session_active_slot", unique: true, where: "slot IS NOT NULL AND kicked_at IS NULL"

@@ -78,6 +78,23 @@ class KioskPlaySessionsApiTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "moves the speaker role" do
+    play_session = start_session(@kiosk)
+    host, = join_player(play_session, name: "Host")
+    other, = join_player(play_session, name: "Other")
+
+    get "/api/kiosk/play_sessions/#{play_session.id}", headers: @auth
+    assert_equal [ true, false ], response.parsed_body["players"].map { |player| player["speaker"] }
+
+    post "/api/kiosk/play_sessions/#{play_session.id}/players/#{other.id}/speaker", headers: @auth
+    assert_response :no_content
+    assert other.reload.speaker?
+    assert_not host.reload.speaker?
+
+    post "/api/kiosk/play_sessions/#{play_session.id}/players/0/speaker", headers: @auth
+    assert_response :not_found
+  end
+
   test "kicks players and transfers host" do
     play_session = start_session(@kiosk)
     host, = join_player(play_session, name: "Host")

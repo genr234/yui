@@ -12,8 +12,6 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-
-	"kiosk/controller/internal/pad/protocol"
 )
 
 const (
@@ -59,10 +57,10 @@ type cableEnvelope struct {
 
 // cableMessage is a PlaySessionChannel payload delivered to the kiosk.
 type cableMessage struct {
-	From   string           `json:"from"`
-	Type   string           `json:"type"`
-	Player *protocol.Player `json:"player"`
-	Data   json.RawMessage  `json:"data"`
+	From   string          `json:"from"`
+	Type   string          `json:"type"`
+	Player *Player         `json:"player"`
+	Data   json.RawMessage `json:"data"`
 }
 
 type cable struct {

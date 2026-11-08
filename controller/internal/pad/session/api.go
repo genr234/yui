@@ -11,8 +11,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-
-	"kiosk/controller/internal/pad/protocol"
 )
 
 // ErrUnauthorized means the device token was rejected.
@@ -20,12 +18,12 @@ var ErrUnauthorized = errors.New("pad session: unauthorized")
 
 // SessionRecord is the kiosk play-session JSON (as_kiosk_json).
 type SessionRecord struct {
-	ID          string            `json:"id"`
-	Code        string            `json:"code"`
-	QRKey       string            `json:"qr_key"`
-	JoinBaseURL string            `json:"join_base_url"`
-	LobbyOpen   bool              `json:"lobby_open"`
-	Players     []protocol.Player `json:"players"`
+	ID          string   `json:"id"`
+	Code        string   `json:"code"`
+	QRKey       string   `json:"qr_key"`
+	JoinBaseURL string   `json:"join_base_url"`
+	LobbyOpen   bool     `json:"lobby_open"`
+	Players     []Player `json:"players"`
 }
 
 // ICEConfig is GET /api/kiosk/play_sessions/:id/ice.
@@ -133,6 +131,12 @@ func (c *apiClient) Kick(ctx context.Context, sessionID, playerID string) error 
 
 func (c *apiClient) TransferHost(ctx context.Context, sessionID, playerID string) error {
 	return c.postEmpty(ctx, playerActionPath(sessionID, playerID, "host"))
+}
+
+// TransferSpeaker moves the speaker role (contracts §2). Rails sends
+// player_updated for the old and the new speaker.
+func (c *apiClient) TransferSpeaker(ctx context.Context, sessionID, playerID string) error {
+	return c.postEmpty(ctx, playerActionPath(sessionID, playerID, "speaker"))
 }
 
 func (c *apiClient) ICE(ctx context.Context, id string) (ICEConfig, error) {

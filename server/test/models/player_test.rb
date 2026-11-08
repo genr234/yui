@@ -98,6 +98,89 @@ class PlayerTest < ActiveSupport::TestCase
     assert_equal 1, play_session.players.where(host: true).count
   end
 
+  test "the first player is also the speaker, and the JSON carries the flag" do
+    play_session = start_session
+    host, = join_player(play_session, name: "Host")
+    other, = join_player(play_session, name: "Other")
+
+    assert host.speaker?
+    assert_not other.speaker?
+    assert_equal true, host.as_player_json[:speaker]
+    assert_equal false, other.as_player_json[:speaker]
+  end
+
+  test "speaker transfer moves the flag and notifies both players and the kiosk" do
+    play_session = start_session
+    host, = join_player(play_session, name: "Host")
+    other, = join_player(play_session, name: "Other")
+
+    assert_broadcasts(PlaySessionChannel.broadcasting_for(play_session), 2) do
+      assert_broadcasts(PlaySessionChannel.broadcasting_for(other), 1) do
+        play_session.transfer_speaker!(other)
+      end
+    end
+
+    assert other.reload.speaker?
+    assert_not host.reload.speaker?
+    assert host.host?, "host stays host"
+    assert_equal 1, play_session.players.where(speaker: true).count
+
+    assert_no_broadcasts(PlaySessionChannel.broadcasting_for(play_session)) do
+      play_session.transfer_speaker!(other)
+    end
+    assert_raises(ArgumentError) { start_session.transfer_speaker!(other) }
+  end
+
+  test "kicking the speaker hands the role to the host" do
+    play_session = start_session
+    host, = join_player(play_session, name: "Host")
+    other, = join_player(play_session, name: "Other")
+    play_session.transfer_speaker!(other)
+
+    play_session.kick!(other)
+
+    assert_not other.reload.speaker?
+    assert host.reload.speaker?
+    assert_raises(ArgumentError) { play_session.transfer_speaker!(other) }
+  end
+
+  test "kicking a host who is the speaker gives both roles to the new host" do
+    play_session = start_session
+    host, = join_player(play_session, name: "Host")
+    second, = join_player(play_session, name: "Two")
+    second.mark_connected!("abc")
+
+    play_session.kick!(host)
+
+    second.reload
+    assert second.host?
+    assert second.speaker?
+    assert_equal 1, play_session.players.active.where(speaker: true).count
+  end
+
+  test "a speaker that leaves hands the role to the host; a host speaker keeps it" do
+    play_session = start_session
+    host, = join_player(play_session, name: "Host")
+    other, = join_player(play_session, name: "Other")
+    play_session.transfer_speaker!(other)
+
+    play_session.speaker_left!(other.reload)
+    assert host.reload.speaker?
+    assert_not other.reload.speaker?
+
+    play_session.speaker_left!(host)
+    assert host.reload.speaker?
+  end
+
+  test "a newcomer becomes the speaker when nobody holds the role" do
+    play_session = start_session
+    host, = join_player(play_session, name: "Host")
+    host.update!(speaker: false)
+
+    newcomer, = join_player(play_session, name: "New")
+    assert newcomer.speaker?
+  end
+
   test "a stale subscription can't mark a reconnected player as disconnected" do
     player, = join_player(start_session)
     player.mark_connected!("old")

@@ -11,7 +11,6 @@ import (
 
 	"kiosk/controller/internal/pad/cdp"
 	"kiosk/controller/internal/pad/pads"
-	"kiosk/controller/internal/pad/protocol"
 	"kiosk/controller/internal/pad/router"
 	"kiosk/controller/internal/pad/session"
 )
@@ -27,7 +26,15 @@ func PadCommands() []Command {
 		padKickCommand{},
 		padHostCommand{},
 		padSensitiveCommand{},
+		padSpeakerCommand{},
+		padVolumeCommand{},
+		audioRouteCommand{},
+		audioStatusCommand{},
 	}
+}
+
+func emptyPadSnapshot() session.Snapshot {
+	return session.Snapshot{Players: []session.Player{}}
 }
 
 // BindPadLifecycle ties play sessions to the controller process. Cancelling
@@ -158,7 +165,7 @@ func (r *Registry) padSnapshot() session.Snapshot {
 	mgr := r.padMgr
 	r.padMu.Unlock()
 	if mgr == nil {
-		return session.Snapshot{Players: []protocol.Player{}}
+		return emptyPadSnapshot()
 	}
 	return mgr.Snapshot()
 }
@@ -214,22 +221,23 @@ func (r *Registry) startPadSession() (session.Snapshot, error) {
 			select {
 			case <-prevDone:
 			case <-time.After(8 * time.Second):
-				return session.Snapshot{Players: []protocol.Player{}}, errors.New("previous play session did not stop")
+				return emptyPadSnapshot(), errors.New("previous play session did not stop")
 			}
 		}
 	}
 
 	cfg, account, ok := r.refreshedAccount()
 	if !ok || cfg.ServerURL == "" || account.DeviceToken == "" {
-		return session.Snapshot{Players: []protocol.Player{}}, errors.New("connect this kiosk to an account before starting a play session")
+		return emptyPadSnapshot(), errors.New("connect this kiosk to an account before starting a play session")
 	}
 	mgr, err := session.Open(session.Config{
 		ServerURL:   cfg.ServerURL,
 		DeviceToken: account.DeviceToken,
 		KioskName:   account.Name,
+		Audio:       r.Audio(),
 	})
 	if err != nil {
-		return session.Snapshot{Players: []protocol.Player{}}, err
+		return emptyPadSnapshot(), err
 	}
 	mgr.SetSensitive(sensitive)
 	hub := r.padHub()
@@ -291,10 +299,10 @@ func (r *Registry) startPadSession() (session.Snapshot, error) {
 			if err == nil {
 				err = errors.New("play session stopped before it was ready")
 			}
-			return session.Snapshot{Players: []protocol.Player{}}, err
+			return emptyPadSnapshot(), err
 		case <-timer.C:
 			cancel()
-			return session.Snapshot{Players: []protocol.Player{}}, errors.New("play session did not become ready")
+			return emptyPadSnapshot(), errors.New("play session did not become ready")
 		case <-ticker.C:
 		}
 	}
@@ -306,14 +314,14 @@ func (r *Registry) endPadSession() (session.Snapshot, error) {
 	done := r.padDone
 	r.padMu.Unlock()
 	if cancel == nil {
-		return session.Snapshot{Players: []protocol.Player{}}, nil
+		return emptyPadSnapshot(), nil
 	}
 	cancel()
 	if done != nil {
 		select {
 		case <-done:
 		case <-time.After(8 * time.Second):
-			return session.Snapshot{Players: []protocol.Player{}}, errors.New("play session did not end")
+			return emptyPadSnapshot(), errors.New("play session did not end")
 		}
 	}
 	// The run goroutine has already unpaused the syncer. Doing it again here

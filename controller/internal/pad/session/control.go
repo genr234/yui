@@ -1,8 +1,10 @@
 package session
 
 import (
+	"context"
 	"log"
 	"strconv"
+	"time"
 
 	"kiosk/controller/internal/pad/protocol"
 )
@@ -37,14 +39,56 @@ func (m *Manager) handleControl(playerID string, raw []byte, gen int, fromCable 
 		if err := m.sendControl(playerID, protocol.Ping{T: "pong", ID: typed.ID, TS: typed.TS}); err != nil {
 			log.Printf("pad session: pong %s: %v", playerID, err)
 		}
-	default:
-		m.mu.Lock()
-		fn := m.onControl
-		m.mu.Unlock()
-		if fn != nil {
-			fn(playerID, msg)
+	case protocol.System:
+		// The speaker role belongs to the kiosk, not to the app on top of
+		// the focus stack, so these two never reach the control handler.
+		switch typed.Action {
+		case "be_speaker":
+			go m.beSpeaker(playerID)
+			return
+		case "volume":
+			m.phoneVolume(playerID, typed.Value)
+			return
 		}
+		m.forwardControl(playerID, msg)
+	default:
+		m.forwardControl(playerID, msg)
 	}
+}
+
+func (m *Manager) forwardControl(playerID string, msg any) {
+	m.mu.Lock()
+	fn := m.onControl
+	m.mu.Unlock()
+	if fn != nil {
+		fn(playerID, msg)
+	}
+}
+
+// beSpeaker runs off the data-channel goroutine: it waits for Rails.
+func (m *Manager) beSpeaker(playerID string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := m.SetSpeaker(ctx, playerID); err != nil {
+		log.Printf("pad session: be_speaker %s: %v", playerID, err)
+	}
+}
+
+// phoneVolume applies system volume (0–1) from the phone that is playing
+// the sound. Other phones' sliders do nothing.
+func (m *Manager) phoneVolume(playerID string, value any) {
+	v, ok := value.(float64)
+	if !ok || m.cfg.Audio == nil {
+		return
+	}
+	m.mu.Lock()
+	allowed := playerID == m.speakerID || playerID == m.audioTo
+	m.mu.Unlock()
+	if !allowed {
+		return
+	}
+	// No echo: the phone that moved the slider already shows the value.
+	m.cfg.Audio.SetVolume(v)
 }
 
 func (m *Manager) sendWelcome(playerID string) {
@@ -55,12 +99,16 @@ func (m *Manager) sendWelcome(playerID string) {
 		return
 	}
 	player := st.Player
+	rp := m.withSpeakerLocked(player)
 	name := m.cfg.KioskName
 	m.mu.Unlock()
-	welcome := protocol.Welcome{T: "welcome", V: 1, Player: player, KioskName: name}
+	welcome := welcomeMsg{T: "welcome", V: 1, Player: rp, KioskName: name}
 	if err := m.sendControl(playerID, welcome); err != nil {
 		log.Printf("pad session: welcome %s: %v", playerID, err)
 		return
+	}
+	if rp.Speaker {
+		m.sendVolume(playerID)
 	}
 	m.notifyPlayer(PlayerReady, player)
 }

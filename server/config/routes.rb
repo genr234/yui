@@ -40,6 +40,7 @@ Rails.application.routes.draw do
         scope module: :play_sessions do
           post "players/:player_id/kick", to: "players#kick", as: :kick_player
           post "players/:player_id/host", to: "players#host", as: :host_player
+          post "players/:player_id/speaker", to: "players#speaker", as: :speaker_player
         end
       end
     end

@@ -29,6 +29,7 @@ class PlaySessionChannel < ApplicationCable::Channel
     return unless left && !@player.kicked?
 
     PlaySessionChannel.broadcast_to(@player.play_session, { type: "player_left", player: @player.as_player_json })
+    @player.play_session.speaker_left!(@player) if @player.play_session.active?
   end
 
   def signal(payload)
