@@ -44,11 +44,13 @@ type fakeServer struct {
 	mu          sync.Mutex
 	assets      map[string]fakeAsset
 	manifestErr bool
-	cutAt       int64 // if >0, the next download body is cut after this many bytes
-	ranges      []string
-	downloads   int
-	reports     []reportRec
-	failReports bool
+	// manifestBody, when set, is served as the 200 manifest body as is.
+	manifestBody string
+	cutAt        int64 // if >0, the next download body is cut after this many bytes
+	ranges       []string
+	downloads    int
+	reports      []reportRec
+	failReports  bool
 }
 
 func newFakeServer(t *testing.T, assets ...fakeAsset) *fakeServer {
@@ -84,6 +86,11 @@ func (f *fakeServer) handle(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/api/kiosk/assets" && r.Method == "GET":
 		if f.manifestErr {
 			http.Error(w, "boom", 500)
+			return
+		}
+		if f.manifestBody != "" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(f.manifestBody))
 			return
 		}
 		out := []map[string]any{}
@@ -421,6 +428,52 @@ func TestManifestErrorDeletesNothing(t *testing.T) {
 	}
 	if st := h.s.Status(); st.State != "error" || st.Error == nil {
 		t.Fatalf("status %+v", st)
+	}
+}
+
+func TestManifestWithoutAssetsListDeletesNothing(t *testing.T) {
+	for _, body := range []string{`{}`, `{"assets":null}`, `{"error":"maintenance"}`} {
+		t.Run(body, func(t *testing.T) {
+			a := fakeAsset{ID: "1", Kind: "media", Title: "M", Filename: "m.bin", Data: data(3000, 1)}
+			srv := newFakeServer(t, a)
+			h := newHarness(t, srv)
+			if err := h.s.Reconcile(context.Background(), true); err != nil {
+				t.Fatal(err)
+			}
+			srv.mu.Lock()
+			srv.manifestBody = body
+			srv.mu.Unlock()
+			if err := h.s.Reconcile(context.Background(), true); err == nil {
+				t.Fatal("expected a manifest error")
+			}
+			if p, ok := h.s.LocalPath("1"); !ok {
+				t.Fatal("asset record must survive a manifest without an assets list")
+			} else if _, err := os.Stat(p); err != nil {
+				t.Fatalf("asset file must survive: %v", err)
+			}
+		})
+	}
+}
+
+func TestExplicitEmptyManifestRemovesEverything(t *testing.T) {
+	a := fakeAsset{ID: "1", Kind: "media", Title: "M", Filename: "m.bin", Data: data(3000, 1)}
+	srv := newFakeServer(t, a)
+	h := newHarness(t, srv)
+	if err := h.s.Reconcile(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	p, _ := h.s.LocalPath("1")
+	srv.mu.Lock()
+	srv.manifestBody = `{"assets":[]}`
+	srv.mu.Unlock()
+	if err := h.s.Reconcile(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(p); !os.IsNotExist(err) {
+		t.Fatal("an explicit empty manifest should remove the file")
+	}
+	if _, ok := h.s.LocalPath("1"); ok {
+		t.Fatal("an explicit empty manifest should drop the record")
 	}
 }
 
