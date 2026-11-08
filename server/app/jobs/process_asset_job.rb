@@ -1,5 +1,5 @@
-# Runs once an upload is complete: hashes the file, reads the disc header of games,
-# fetches the cover, marks the asset ready and tells every kiosk on the account to
+# Runs once an upload is complete: hashes the file, runs the asset analyzers on games
+# (see AssetAnalyzers), marks the asset ready and tells every kiosk on the account to
 # reconcile. `base_url` (e.g. "https://yui.example.com") makes cover_url absolute.
 class ProcessAssetJob < ApplicationJob
   queue_as :default
@@ -17,7 +17,7 @@ class ProcessAssetJob < ApplicationJob
     raise "File is #{size} bytes, expected #{asset.byte_size}" if size != asset.byte_size
 
     asset.sha256 = sha256_of(path)
-    describe_game(asset, path, base_url) if asset.game?
+    analyze_game(asset, path, base_url) if asset.game?
     asset.status = "ready"
     asset.error = nil
     asset.save!
@@ -40,36 +40,11 @@ class ProcessAssetJob < ApplicationJob
     digest.hexdigest
   end
 
-  def describe_game(asset, path, base_url)
-    disc = DiscImage.read(path)
-    metadata = asset.metadata.to_h.merge(
-      "game_id" => disc.game_id,
-      "platform" => disc.platform || (asset.kind == "wii-game" ? "wii" : "gamecube"),
-      "region" => disc.region,
-      "disc_title" => disc.disc_title,
-      "format" => disc.format,
-      "cover_url" => nil
-    )
-
-    if disc.detected?
-      # The disc knows better than the form which console it belongs to.
-      asset.kind = disc.platform == "wii" ? "wii-game" : "gamecube-game"
-      asset.title = disc.disc_title if disc.disc_title.present? && asset.title == default_title(asset)
-      metadata["cover_url"] = cover_url(disc, base_url)
-    end
-
-    asset.metadata = metadata
-  end
-
-  def cover_url(disc, base_url)
-    path = GameCover.fetch(disc.game_id, disc.platform)
-    return if path.nil? || base_url.blank?
-
-    GameCover.url_for(disc.game_id, base_url)
-  rescue StandardError => error
-    # A missing cover never fails the asset.
-    Rails.logger.warn("[ProcessAssetJob] cover for #{disc.game_id}: #{error.class}: #{error.message}")
-    nil
+  def analyze_game(asset, path, base_url)
+    result = AssetAnalyzers.analyze_game(path, base_url)
+    asset.metadata = asset.metadata.to_h.merge(AssetAnalyzers::GAME_DEFAULTS).merge(result&.metadata || {})
+    # The uploader's own title wins; otherwise use what the analyzer found.
+    asset.title = result.title if result&.title && asset.title == default_title(asset)
   end
 
   def default_title(asset)

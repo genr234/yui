@@ -10,7 +10,7 @@ class KioskAssetsApiTest < ActionDispatch::IntegrationTest
     @kiosk = @account.kiosks.create!(name: "Front", device_uid: "device-1", device_token_digest: Kiosk.digest_token("token"))
     @auth = { "Authorization" => "Bearer token" }
     @asset = @account.assets.create!(
-      kind: "wii-game", title: "Mario Kart Wii", filename: "mkw.rvz", byte_size: DATA.bytesize, status: "ready",
+      kind: "game", title: "Mario Kart Wii", filename: "mkw.rvz", byte_size: DATA.bytesize, status: "ready",
       sha256: Digest::SHA256.hexdigest(DATA),
       metadata: { "game_id" => "RMCE01", "platform" => "wii", "region" => "US", "disc_title" => "MARIO KART WII", "format" => "rvz", "cover_url" => nil }
     )
@@ -42,7 +42,7 @@ class KioskAssetsApiTest < ActionDispatch::IntegrationTest
     assets = JSON.parse(response.body).fetch("assets")
     assert_equal [ @asset.id.to_s ], assets.map { |asset| asset["id"] }
     asset = assets.first
-    assert_equal "wii-game", asset["kind"]
+    assert_equal "game", asset["kind"]
     assert_equal "mkw.rvz", asset["filename"]
     assert_equal DATA.bytesize, asset["byte_size"]
     assert_equal @asset.sha256, asset["sha256"]

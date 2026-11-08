@@ -13,7 +13,7 @@ class AssetsControllerTest < ActionDispatch::IntegrationTest
 
   test "account page shows the upload form and the asset library with per-kiosk sync" do
     game = @account.assets.create!(
-      kind: "wii-game", title: "Mario Kart Wii", filename: "mkw.rvz", byte_size: 3_650_722_201, status: "ready", sha256: "a" * 64,
+      kind: "game", title: "Mario Kart Wii", filename: "mkw.rvz", byte_size: 3_650_722_201, status: "ready", sha256: "a" * 64,
       metadata: { "game_id" => "RMCE01", "format" => "rvz" }
     )
     FileUtils.mkdir_p(AssetStorage.covers_dir)

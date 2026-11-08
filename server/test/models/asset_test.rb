@@ -78,7 +78,7 @@ class AssetTest < ActiveSupport::TestCase
 
   test "kiosk json matches the contract" do
     asset = @account.assets.create!(
-      kind: "wii-game", title: "Mario Kart Wii", filename: "mkw.rvz", status: "ready", byte_size: 42,
+      kind: "game", title: "Mario Kart Wii", filename: "mkw.rvz", status: "ready", byte_size: 42,
       sha256: "a" * 64,
       metadata: { "game_id" => "RMCE01", "platform" => "wii", "region" => "US", "disc_title" => "MARIO KART WII", "format" => "rvz", "cover_url" => nil }
     )

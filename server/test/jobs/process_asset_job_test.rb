@@ -13,7 +13,7 @@ class ProcessAssetJobTest < ActiveSupport::TestCase
 
   test "hashes, detects the game, caches the cover and asks every kiosk to reconcile" do
     bytes = wia_image(game_id: "RMCE01", title: "MARIO KART WII")
-    asset = processing_asset("wii-game", "Mario_Kart_Wii.rvz", bytes)
+    asset = processing_asset("game", "Mario_Kart_Wii.rvz", bytes)
     stub_gametdb("https://art.gametdb.com/wii/cover/US/RMCE01.png" => png_bytes)
 
     assert_difference -> { KioskCommand.where(command_type: "assets.reconcile").count }, 2 do
@@ -37,7 +37,7 @@ class ProcessAssetJobTest < ActiveSupport::TestCase
   end
 
   test "falls back through cover regions and keeps the uploader's title" do
-    asset = processing_asset("gamecube-game", "melee.iso", iso_image(game_id: "GALD01", title: "Melee", platform: :gamecube), title: "Melee (party night)")
+    asset = processing_asset("game", "melee.iso", iso_image(game_id: "GALD01", title: "Melee", platform: :gamecube), title: "Melee (party night)")
     stub_gametdb("https://art.gametdb.com/wii/cover/EN/GALD01.png" => png_bytes)
 
     ProcessAssetJob.perform_now(asset.id, "https://yui.example.com")
@@ -54,7 +54,7 @@ class ProcessAssetJobTest < ActiveSupport::TestCase
   end
 
   test "a missing cover or an unreachable GameTDB never fails the asset" do
-    asset = processing_asset("wii-game", "game.wbfs", wbfs_image(game_id: "RSPE01", title: "Wii Sports"))
+    asset = processing_asset("game", "game.wbfs", wbfs_image(game_id: "RSPE01", title: "Wii Sports"))
     GameCover.downloader = ->(_uri) { raise Net::OpenTimeout }
 
     ProcessAssetJob.perform_now(asset.id, "https://yui.example.com")
@@ -68,7 +68,7 @@ class ProcessAssetJobTest < ActiveSupport::TestCase
   test "uses the cached cover without downloading again" do
     FileUtils.mkdir_p(AssetStorage.covers_dir)
     File.binwrite(AssetStorage.covers_dir.join("RMCE01.png"), png_bytes)
-    asset = processing_asset("wii-game", "mkw.iso", iso_image(game_id: "RMCE01", title: "MKW"))
+    asset = processing_asset("game", "mkw.iso", iso_image(game_id: "RMCE01", title: "MKW"))
     stub_gametdb({})
 
     ProcessAssetJob.perform_now(asset.id, "https://yui.example.com")
@@ -77,24 +77,26 @@ class ProcessAssetJobTest < ActiveSupport::TestCase
     assert_equal "https://yui.example.com/covers/RMCE01.png", asset.reload.metadata["cover_url"]
   end
 
-  test "corrects the kind from the disc header" do
-    asset = processing_asset("wii-game", "ww.gcz", gcz_image(game_id: "GZLE01", title: "Wind Waker", platform: :gamecube))
+  test "the platform comes from the disc header" do
+    asset = processing_asset("game", "ww.gcz", gcz_image(game_id: "GZLE01", title: "Wind Waker", platform: :gamecube))
 
     ProcessAssetJob.perform_now(asset.id)
 
     asset.reload
-    assert_equal "gamecube-game", asset.kind
+    assert_equal "game", asset.kind
+    assert_equal "gamecube", asset.metadata["platform"]
     assert_equal "gcz", asset.metadata["format"]
   end
 
   test "unrecognized games are ready with an unknown format" do
-    asset = processing_asset("wii-game", "mystery.iso", "not a disc" * 100)
+    asset = processing_asset("game", "mystery.iso", "not a disc" * 100)
 
     ProcessAssetJob.perform_now(asset.id)
 
     asset.reload
     assert_equal "ready", asset.status
     assert_equal "unknown", asset.metadata["format"]
+    assert_nil asset.metadata["platform"]
     assert_nil asset.metadata["game_id"]
   end
 

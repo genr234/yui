@@ -17,7 +17,7 @@ class AssetUploadsTest < ActionDispatch::IntegrationTest
 
     post account_asset_uploads_path(@account), headers: TUS.merge(
       "Upload-Length" => data.bytesize.to_s,
-      "Upload-Metadata" => metadata(filename: "../Mario Kart Wii.iso", kind: "wii-game")
+      "Upload-Metadata" => metadata(filename: "../Mario Kart Wii.iso", kind: "game")
     )
     assert_response :created
     assert_equal "1.0.0", response.headers["Tus-Resumable"]

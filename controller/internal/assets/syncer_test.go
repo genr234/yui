@@ -225,7 +225,7 @@ func readFile(t *testing.T, path string) []byte {
 }
 
 func TestFreshDownloadAndVerify(t *testing.T) {
-	a := fakeAsset{ID: "1", Kind: "wii-game", Title: "Game", Filename: "game.rvz", Data: data(1<<20+123, 1)}
+	a := fakeAsset{ID: "1", Kind: "game", Title: "Game", Filename: "game.rvz", Data: data(1<<20+123, 1)}
 	srv := newFakeServer(t, a)
 	h := newHarness(t, srv)
 
@@ -236,7 +236,7 @@ func TestFreshDownloadAndVerify(t *testing.T) {
 	if !ok {
 		t.Fatal("expected local path")
 	}
-	want := filepath.Join(h.dir, "wii-game", "1", "game.rvz")
+	want := filepath.Join(h.dir, "game", "1", "game.rvz")
 	if path != want {
 		t.Fatalf("path %s want %s", path, want)
 	}
@@ -542,14 +542,14 @@ func TestInsufficientDisk(t *testing.T) {
 }
 
 func TestListNeverExposesPaths(t *testing.T) {
-	a := fakeAsset{ID: "1", Kind: "wii-game", Title: "G", Filename: "secret-name.rvz", Data: data(2000, 1)}
+	a := fakeAsset{ID: "1", Kind: "game", Title: "G", Filename: "secret-name.rvz", Data: data(2000, 1)}
 	b := fakeAsset{ID: "2", Kind: "media", Title: "M", Filename: "m.bin", Data: data(2000, 2)}
 	srv := newFakeServer(t, a, b)
 	h := newHarness(t, srv)
 	if err := h.s.Reconcile(context.Background(), true); err != nil {
 		t.Fatal(err)
 	}
-	items, err := h.s.List("wii-game")
+	items, err := h.s.List("game")
 	if err != nil || len(items) != 1 || items[0].ID != "1" {
 		t.Fatalf("items %+v err %v", items, err)
 	}

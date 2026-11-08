@@ -1,6 +1,7 @@
 class Asset < ApplicationRecord
-  KINDS = %w[wii-game gamecube-game runtime media other].freeze
-  GAME_KINDS = %w[wii-game gamecube-game].freeze
+  # Generic kinds only: console- or format-specific details live in `metadata`,
+  # filled by AssetAnalyzers (e.g. metadata.platform = "wii").
+  KINDS = %w[game runtime media other].freeze
   STATUSES = %w[uploading processing ready failed].freeze
   MAX_FILENAME_BYTES = 200
   # Uploads that stopped receiving data this long ago are deleted by CleanupStaleUploadsJob.
@@ -44,7 +45,7 @@ class Asset < ApplicationRecord
   end
 
   def game?
-    GAME_KINDS.include?(kind)
+    kind == "game"
   end
 
   def directory

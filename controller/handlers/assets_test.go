@@ -17,7 +17,7 @@ func TestAssetsCommands(t *testing.T) {
 	})
 	defer registry.Close()
 
-	result, err := registry.DispatchAuthenticated("assets.list", mustJSON(t, map[string]any{"kind": "wii-game"}))
+	result, err := registry.DispatchAuthenticated("assets.list", mustJSON(t, map[string]any{"kind": "game"}))
 	if err != nil {
 		t.Fatal(err)
 	}

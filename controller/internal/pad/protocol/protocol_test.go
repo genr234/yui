@@ -79,7 +79,7 @@ func TestSeqNewer(t *testing.T) {
 }
 
 func TestButtonBits(t *testing.T) {
-	if ButtonRecenter != 1<<14 || ButtonA != 1 {
+	if ButtonRecenter != 1<<17 || ButtonSouth != 1 || ButtonHome != 1<<10 {
 		t.Fatal("button constants")
 	}
 }

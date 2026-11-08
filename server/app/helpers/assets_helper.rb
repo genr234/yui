@@ -1,7 +1,6 @@
 module AssetsHelper
   KIND_LABELS = {
-    "wii-game" => "Wii game",
-    "gamecube-game" => "GameCube game",
+    "game" => "Game",
     "runtime" => "Runtime",
     "media" => "Media",
     "other" => "Other"

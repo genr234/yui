@@ -112,23 +112,32 @@ export const INPUT_SIZE = 48;
 export const INPUT_VERSION = 1;
 export const INPUT_TYPE_STATE = 1;
 
+// Generic gamepad buttons, named by position so any app or runtime can map
+// them (Xbox A = South, PlayStation Cross = South, Nintendo B = South).
+// Device-shaped layouts (e.g. a Wiimote preset) map their own labels onto
+// these bits; the platform never knows about a specific console.
 export const Buttons = {
-  A: 1 << 0,
-  B: 1 << 1,
-  One: 1 << 2,
-  Two: 1 << 3,
-  Minus: 1 << 4,
-  Plus: 1 << 5,
-  Home: 1 << 6,
-  Up: 1 << 7,
-  Down: 1 << 8,
-  Left: 1 << 9,
-  Right: 1 << 10,
-  Z: 1 << 11,
-  C: 1 << 12,
-  Trigger: 1 << 13,
-  Recenter: 1 << 14,
+  South: 1 << 0,
+  East: 1 << 1,
+  West: 1 << 2,
+  North: 1 << 3,
+  L1: 1 << 4,
+  R1: 1 << 5,
+  L2: 1 << 6,
+  R2: 1 << 7,
+  Select: 1 << 8,
+  Start: 1 << 9,
+  Home: 1 << 10, // reserved: always opens the phone's system sheet (D8)
+  L3: 1 << 11,
+  R3: 1 << 12,
+  Up: 1 << 13,
+  Down: 1 << 14,
+  Left: 1 << 15,
+  Right: 1 << 16,
+  Recenter: 1 << 17, // system: re-zero motion / pointer
 } as const;
+
+export const ALL_BUTTONS = 0x3ffff;
 
 export type Vec3 = [number, number, number];
 

@@ -14,23 +14,28 @@ const (
 	InputTypeState = 1
 )
 
-// Button bits.
+// Button bits: a generic gamepad named by position (see protocol/src/index.ts).
+// Device-shaped layouts map their own labels onto these; nothing here is
+// specific to one console.
 const (
-	ButtonA        uint32 = 1 << 0
-	ButtonB        uint32 = 1 << 1
-	ButtonOne      uint32 = 1 << 2
-	ButtonTwo      uint32 = 1 << 3
-	ButtonMinus    uint32 = 1 << 4
-	ButtonPlus     uint32 = 1 << 5
-	ButtonHome     uint32 = 1 << 6
-	ButtonUp       uint32 = 1 << 7
-	ButtonDown     uint32 = 1 << 8
-	ButtonLeft     uint32 = 1 << 9
-	ButtonRight    uint32 = 1 << 10
-	ButtonZ        uint32 = 1 << 11
-	ButtonC        uint32 = 1 << 12
-	ButtonTrigger  uint32 = 1 << 13
-	ButtonRecenter uint32 = 1 << 14
+	ButtonSouth    uint32 = 1 << 0
+	ButtonEast     uint32 = 1 << 1
+	ButtonWest     uint32 = 1 << 2
+	ButtonNorth    uint32 = 1 << 3
+	ButtonL1       uint32 = 1 << 4
+	ButtonR1       uint32 = 1 << 5
+	ButtonL2       uint32 = 1 << 6
+	ButtonR2       uint32 = 1 << 7
+	ButtonSelect   uint32 = 1 << 8
+	ButtonStart    uint32 = 1 << 9
+	ButtonHome     uint32 = 1 << 10 // reserved: opens the phone's system sheet
+	ButtonL3       uint32 = 1 << 11
+	ButtonR3       uint32 = 1 << 12
+	ButtonUp       uint32 = 1 << 13
+	ButtonDown     uint32 = 1 << 14
+	ButtonLeft     uint32 = 1 << 15
+	ButtonRight    uint32 = 1 << 16
+	ButtonRecenter uint32 = 1 << 17 // system: re-zero motion / pointer
 )
 
 // InputState is one decoded 48-byte input packet.
