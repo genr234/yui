@@ -66,8 +66,10 @@ func TestEncodeInfo(t *testing.T) {
 
 func f32(b []byte) float32 { return math.Float32frombits(binary.LittleEndian.Uint32(b)) }
 
-func TestEncodeControllerData(t *testing.T) {
-	s := PadState{
+// controllerDataVector is the reference pad state that the byte checks in
+// TestEncodeControllerData are written against.
+func controllerDataVector() PadState {
+	return PadState{
 		Up: true, Left: true, Cross: true, Triangle: true, L1: true, R2: true,
 		Options: true, Share: true, PS: true, Touch: true,
 		LX: 1, LY: 1, RX: -1, RY: 0,
@@ -75,6 +77,10 @@ func TestEncodeControllerData(t *testing.T) {
 		Accel: [3]float32{0.5, -1, 2}, Gyro: [3]float32{10, 20, 30},
 		MotionTimestamp: 0x0102030405060708,
 	}
+}
+
+func TestEncodeControllerData(t *testing.T) {
+	s := controllerDataVector()
 	b := encodeControllerData(9, 1, 0xA1B2C3D4, s)
 	checkHeader(t, b, 9, 0x100002, 100)
 	p := b[20:]

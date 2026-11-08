@@ -60,7 +60,29 @@ func (m *Manager) sendWelcome(playerID string) {
 	welcome := protocol.Welcome{T: "welcome", V: 1, Player: player, KioskName: name}
 	if err := m.sendControl(playerID, welcome); err != nil {
 		log.Printf("pad session: welcome %s: %v", playerID, err)
+		return
 	}
+	m.notifyPlayer(PlayerReady, player)
+}
+
+// PlayerEventKind says what happened to a player.
+type PlayerEventKind string
+
+const (
+	// PlayerReady: the player said hello and was sent welcome, so control
+	// messages (layout, haptic, system) reach it. Repeats on every hello.
+	PlayerReady PlayerEventKind = "ready"
+	// PlayerUpdated: roster fields changed (slot, host, name, colour).
+	PlayerUpdated PlayerEventKind = "updated"
+	// PlayerLeft: the player disconnected, was kicked or removed, or the
+	// session ended. Player may carry only the id.
+	PlayerLeft PlayerEventKind = "left"
+)
+
+// PlayerEvent is one player lifecycle change for SetPlayerHandler.
+type PlayerEvent struct {
+	Kind   PlayerEventKind
+	Player protocol.Player
 }
 
 func (m *Manager) notePong(playerID string, pong protocol.Ping) {

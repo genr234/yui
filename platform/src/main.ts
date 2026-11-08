@@ -5,6 +5,7 @@ import dashboardCss from "./styles/dashboard.css?inline";
 import interactionsCss from "./styles/interactions.css?inline";
 import keyboardCss from "./styles/keyboard.css?inline";
 import overlayPermissionsCss from "./styles/overlay-permissions.css?inline";
+import padCursorCss from "./styles/pad-cursor.css?inline";
 import pluginsCss from "./styles/plugins.css?inline";
 import settingsCss from "./styles/settings.css?inline";
 import shellCss from "./styles/shell.css?inline";
@@ -27,6 +28,7 @@ const css = [
 	pluginsCss,
 	yuiAppCss,
 	interactionsCss,
+	padCursorCss,
 ].join("\n");
 
 declare global {

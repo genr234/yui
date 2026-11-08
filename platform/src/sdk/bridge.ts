@@ -304,12 +304,47 @@ class DemoBridge {
 			this.listeners.set(event, set);
 		}
 		set.add(fn as BridgeEventListener<any>);
+		if (event === "pad.cursor") this.startFakeCursor();
 		return () => {
 			const current = this.listeners.get(event);
 			if (!current) return;
 			current.delete(fn as BridgeEventListener<any>);
 			if (current.size === 0) this.listeners.delete(event);
 		};
+	}
+
+	private cursorTimer?: number;
+
+	/**
+	 * Demo only: a phone cursor that glides around the page and taps every
+	 * few seconds, so the overlay's cursor can be eyeballed without a phone.
+	 */
+	private startFakeCursor() {
+		if (this.cursorTimer !== undefined) return;
+		const started = performance.now();
+		let lastClick = 0;
+		this.cursorTimer = window.setInterval(() => {
+			const set = this.listeners.get("pad.cursor");
+			if (!set) {
+				window.clearInterval(this.cursorTimer);
+				this.cursorTimer = undefined;
+				return;
+			}
+			const t = (performance.now() - started) / 1000;
+			const w = window.innerWidth;
+			const h = window.innerHeight;
+			const click = t - lastClick > 2.4;
+			if (click) lastClick = t;
+			const cursor = {
+				player_id: "p1",
+				x: w / 2 + Math.sin(t * 0.7) * w * 0.32,
+				y: h / 2 + Math.sin(t * 1.1) * h * 0.28,
+				visible: true,
+				color: "blue",
+				click,
+			};
+			for (const fn of [...set]) fn(cursor);
+		}, 50);
 	}
 
 	private emitPad() {

@@ -12,6 +12,22 @@ export type PadPlayer = {
 	connected: boolean;
 };
 
+/** `pad.cursor`: the phone trackpad's cursor, in CSS pixels of the page viewport. */
+export type PadCursor = {
+	player_id?: string;
+	x: number;
+	y: number;
+	visible: boolean;
+	color?: string;
+	click?: boolean;
+};
+
+/** `pad.remote`: a button on the host's phone remote. */
+export type PadRemoteAction = { player_id: string; action: "back" | "home" | "open_yui" };
+
+/** `pad.home`: a player pressed the Home button on their phone. */
+export type PadHome = { player_id: string; via: "button" | "system" };
+
 /** The kiosk's play session as the overlay sees it; `session` is null when none is open. */
 export type PadState = {
 	session: { code: string; join_url: string } | null;
@@ -40,10 +56,51 @@ export const pad = {
 	 * `padAction`. Never rejects.
 	 */
 	run: (kind: "start" | "end") => runPadAction(kind),
-	/** True while the PIN screen or Settings is open. The controller stores it and later drops pointer/text input. */
+	/** True while the PIN screen or Settings is open. The controller drops phone pointer and text input meanwhile (D9). */
 	setSensitive: (active: boolean) =>
 		bridge.send("pad.sensitive", { active }).then(() => undefined).catch(() => undefined),
+	/** A player pressed Home on their phone: bring Yui forward. */
+	onHome: (fn: (home: PadHome) => void) => bridge.on<PadHome>("pad.home", fn),
+	/** The host's remote: back, home (the controller also loads the start page), open Yui. */
+	onRemote: (fn: (action: PadRemoteAction) => void) => bridge.on<PadRemoteAction>("pad.remote", fn),
+	/** Cursor moves and clicks from a phone trackpad. */
+	onCursor: (fn: (cursor: PadCursor) => void) => bridge.on<PadCursor>("pad.cursor", fn),
+	/** Whether any phone shows a keyboard; the on-screen keyboard stays hidden while one does. */
+	onKeyboard: (fn: (active: boolean) => void) =>
+		bridge.on<{ active?: boolean }>("pad.keyboard", (data) => fn(Boolean(data?.active))),
 };
+
+/** True while a phone keyboard is active (`pad.keyboard`). */
+export const padKeyboard = writable(false);
+
+/** How long a still cursor stays on screen. */
+export const cursorIdleMs = 3000;
+
+/** Colour for a player's cursor: their swatch, or the Yui blue token. */
+export function cursorColor(color: string | undefined): string {
+	return (color && playerSwatch[color]) || "var(--yui-blue)";
+}
+
+/**
+ * What the remote's buttons do in the overlay. `back` closes Yui when it is
+ * open and otherwise goes back in the page; `home` closes Yui (the controller
+ * loads the start page); `open_yui` toggles Yui.
+ */
+export function remoteIntent(
+	action: PadRemoteAction["action"],
+	yuiOpen: boolean,
+): "open" | "close" | "history-back" | "none" {
+	switch (action) {
+		case "open_yui":
+			return yuiOpen ? "close" : "open";
+		case "back":
+			return yuiOpen ? "close" : "history-back";
+		case "home":
+			return yuiOpen ? "close" : "none";
+		default:
+			return "none";
+	}
+}
 
 /** The start/end action shared by every play button: busy while one runs, and the last error. */
 export const padAction = writable<{ busy: boolean; error: string }>({ busy: false, error: "" });

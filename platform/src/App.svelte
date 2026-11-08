@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import OnScreenKeyboard from "./components/OnScreenKeyboard.svelte";
+  import PadCursor from "./components/PadCursor.svelte";
   import FederatedStoreModal from "./components/FederatedStoreModal.svelte";
   import PermissionCards from "./components/PermissionCards.svelte";
   import TopBar from "./components/TopBar.svelte";
@@ -26,7 +27,7 @@
   import PlusIcon from "lucide-svelte/icons/plus";
   import RefreshCwIcon from "lucide-svelte/icons/refresh-cw";
   import SmartphoneIcon from "lucide-svelte/icons/smartphone";
-  import { pad } from "./sdk/pad";
+  import { pad, padKeyboard, remoteIntent } from "./sdk/pad";
   import { loadApps } from "./apps";
   import { resolveSubtitle } from "@/pages/subtitle";
   import {
@@ -145,7 +146,29 @@
       offSidebarThemeChanged,
     );
     window.addEventListener("yui:apps-changed", refreshSubtitles);
+    // Phones: Home brings Yui forward; the host's remote opens, closes and
+    // goes back; a phone keyboard hides the on-screen one.
+    const offPadHome = pad.onHome(() => {
+      if (!open && !authVisible) openMenu();
+    });
+    const offPadRemote = pad.onRemote(({ action }) => {
+      switch (remoteIntent(action, open || authVisible)) {
+        case "open":
+          openMenu();
+          break;
+        case "close":
+          closeMenu();
+          break;
+        case "history-back":
+          if (!demoMode) history.back();
+          break;
+      }
+    });
+    const offPadKeyboard = pad.onKeyboard((active) => padKeyboard.set(active));
     return () => {
+      offPadHome();
+      offPadRemote();
+      offPadKeyboard();
       window.removeEventListener("yui:shell-fullscreen", offFullscreen);
       window.removeEventListener(
         "yui:permission-request",
@@ -847,3 +870,5 @@
 
   <OnScreenKeyboard />
 {/if}
+
+<PadCursor />

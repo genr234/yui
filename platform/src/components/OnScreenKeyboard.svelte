@@ -10,6 +10,7 @@
   import UploadIcon from "lucide-svelte/icons/upload";
   import XIcon from "lucide-svelte/icons/x";
   import { onDestroy, onMount } from "svelte";
+  import { padKeyboard } from "../sdk/pad";
 
   type TextTarget = HTMLInputElement | HTMLTextAreaElement;
   type KeyAction =
@@ -390,7 +391,8 @@
 </script>
 
 <div bind:this={root} class="keyboard-anchor" aria-live="polite">
-  {#if visible}
+  <!-- A phone keyboard (pad.keyboard) replaces this one while it is active. -->
+  {#if visible && !$padKeyboard}
     <section
       class="onscreen-keyboard"
       style={`left: ${left}px; top: ${top}px; width: ${panelWidth}px; height: ${panelHeight}px;`}

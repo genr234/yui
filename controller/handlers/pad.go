@@ -4,11 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"sync"
 	"time"
 
+	"kiosk/controller/internal/pad/cdp"
+	"kiosk/controller/internal/pad/pads"
 	"kiosk/controller/internal/pad/protocol"
+	"kiosk/controller/internal/pad/router"
 	"kiosk/controller/internal/pad/session"
 )
 
@@ -124,6 +128,11 @@ func (padSensitiveCommand) Handle(r *Registry, params json.RawMessage) (any, err
 	r.padMu.Lock()
 	r.padSensitive = body.Active
 	mgr := r.padMgr
+	// Applied under padMu so it orders against padHub publishing the hub.
+	// The router takes only its own locks.
+	if r.padRouter != nil {
+		r.padRouter.SetSensitive(body.Active)
+	}
 	r.padMu.Unlock()
 	if mgr != nil {
 		mgr.SetSensitive(body.Active)
@@ -223,6 +232,8 @@ func (r *Registry) startPadSession() (session.Snapshot, error) {
 		return session.Snapshot{Players: []protocol.Player{}}, err
 	}
 	mgr.SetSensitive(sensitive)
+	hub := r.padHub()
+	hub.Attach(mgr)
 	// gate orders watcher snapshots against the final unpause. Once the run
 	// goroutine has ended the session, a late snapshot from a goroutine
 	// still inside the manager is dropped instead of pausing sync again.
@@ -254,6 +265,7 @@ func (r *Registry) startPadSession() (session.Snapshot, error) {
 	go func() {
 		defer close(done)
 		err := mgr.Run(ctx)
+		hub.Detach(mgr)
 		errCh <- err
 		if err != nil && ctx.Err() == nil {
 			log.Printf("pad session: %v", err)
@@ -307,4 +319,63 @@ func (r *Registry) endPadSession() (session.Snapshot, error) {
 	// The run goroutine has already unpaused the syncer. Doing it again here
 	// could undo the pause of a session started in the meantime.
 	return r.padSnapshot(), nil
+}
+
+// padHub returns the input hub router, creating it on first use. It lives
+// as long as the controller: providers pushed by apps survive play sessions,
+// and its DSU servers and CDP worker stop with the pad lifecycle context.
+// Callers hold padStartMu, so only one hub is ever built; padMu is not held
+// while the config is read (see the lock order on Registry).
+func (r *Registry) padHub() *router.Router {
+	r.padMu.Lock()
+	if r.padRouter != nil {
+		hub := r.padRouter
+		r.padMu.Unlock()
+		return hub
+	}
+	root := r.padRoot
+	playersAddr, systemAddr := r.padDSUAddrs[0], r.padDSUAddrs[1]
+	r.padMu.Unlock()
+	if root == nil {
+		root = context.Background()
+	}
+	cfg := r.snapshotConfig()
+	if playersAddr == "" {
+		playersAddr = pads.DefaultPlayersAddr
+	}
+	if systemAddr == "" {
+		systemAddr = pads.DefaultSystemAddr
+	}
+
+	var hub *router.Router
+	pointer := cdp.New(cdp.Options{
+		Caller:    cdp.NewPageClient(fmt.Sprintf("http://127.0.0.1:%d", cfg.PlatformDebugPort)),
+		Sensitive: func() bool { return hub.Sensitive() },
+		Emit:      r.Emit,
+		Color:     func(id string) string { return hub.Color(id) },
+	})
+	padAdapter, err := pads.Listen(root, playersAddr, systemAddr, func(id string) (int, bool) {
+		return hub.SlotOf(id)
+	})
+	if err != nil {
+		log.Printf("pad: virtual pads: %v", err)
+	}
+	hub, err = router.New(router.Config{
+		Emit:     r.Emit,
+		Pointer:  pointer,
+		Pads:     padAdapter,
+		StartURL: cfg.URL,
+	})
+	if err != nil {
+		// Only nil providers or adapters fail here, and none are nil.
+		panic(err)
+	}
+	go pointer.Run(root)
+	// Publish and apply D9 under padMu, so a pad.sensitive that lands while
+	// the hub was being built is not lost.
+	r.padMu.Lock()
+	r.padRouter = hub
+	hub.SetSensitive(r.padSensitive)
+	r.padMu.Unlock()
+	return hub
 }

@@ -2,6 +2,7 @@ package session
 
 import (
 	"encoding/json"
+	"sync"
 	"testing"
 	"time"
 
@@ -27,6 +28,19 @@ func TestDataChannelHelloInputAndRTT(t *testing.T) {
 	f := newFake(t)
 	mgr := f.manager(t)
 	mgr.cfg.PingInterval = 50 * time.Millisecond
+	readyCh := make(chan protocol.Player, 4)
+	mgr.SetPlayerHandler(func(ev PlayerEvent) {
+		if ev.Kind == PlayerReady {
+			readyCh <- ev.Player
+		}
+	})
+	var hookMu sync.Mutex
+	var hooked []uint16
+	mgr.SetInputHandler(func(id string, state protocol.InputState) {
+		hookMu.Lock()
+		hooked = append(hooked, state.Seq)
+		hookMu.Unlock()
+	})
 	cancel, done := start(t, f, mgr)
 	defer stop(t, cancel, done)
 
@@ -109,6 +123,17 @@ func TestDataChannelHelloInputAndRTT(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("welcome was not received")
 	}
+	select {
+	case p := <-readyCh:
+		if p.ID != "p1" || !p.Host {
+			t.Fatalf("ready %+v", p)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("ready event missing")
+	}
+	if err := mgr.SendControl("p1", protocol.Haptic{T: "haptic", Pattern: []int{10}}); err != nil {
+		t.Fatalf("SendControl: %v", err)
+	}
 	if err := control.SendText(string(mustJSON(protocol.Ping{T: "ping", ID: "pad", TS: 42}))); err != nil {
 		t.Fatal(err)
 	}
@@ -156,6 +181,16 @@ func TestDataChannelHelloInputAndRTT(t *testing.T) {
 	if !ok || state.Seq != 5 || state.Buttons != protocol.ButtonSouth {
 		t.Fatalf("latest %+v %v", state, ok)
 	}
+	hookMu.Lock()
+	if len(hooked) == 0 || hooked[0] != 5 {
+		t.Fatalf("input handler saw %v", hooked)
+	}
+	for _, seq := range hooked {
+		if seq == 4 {
+			t.Fatalf("input handler saw the stale frame: %v", hooked)
+		}
+	}
+	hookMu.Unlock()
 
 	deadline = time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
