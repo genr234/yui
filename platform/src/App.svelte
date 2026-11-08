@@ -3,7 +3,7 @@
   import OnScreenKeyboard from "./components/OnScreenKeyboard.svelte";
   import FederatedStoreModal from "./components/FederatedStoreModal.svelte";
   import PermissionCards from "./components/PermissionCards.svelte";
-  import Sidebar from "./components/Sidebar.svelte";
+  import TopBar from "./components/TopBar.svelte";
   import TitleBar from "./components/TitleBar.svelte";
   import Router from "./pages/Router.svelte";
   import { findRoute, routes } from "./pages/routes";
@@ -519,7 +519,7 @@
   $: activeSubtitle = resolveSubtitle(activeRoute, { appCount, pluginCount });
   $: shellRendered = open || closing || alwaysOpen() || authVisible;
   $: shellClosing = closing && !open && !alwaysOpen();
-  $: showTitleBar = !(section === "apps" && appRouteActive);
+  $: showTitleBar = section !== "apps";
   $: accountName = accountStatus?.active_account?.name ?? "Anonymous";
   $: accountImage = accountStatus?.active_account?.profile_image_url ?? "";
   $: accountState = accountStatus?.needs_pairing
@@ -668,18 +668,19 @@
       class="shell"
       aria-label="Yui Platform"
     >
-      <Sidebar
-        {sections}
-        active={section}
-        version={status?.version ?? "0.1.0"}
-        {accountName}
-        accountImage={accountImage}
-        {accountState}
-        accountSyncing={Boolean(accountStatus?.syncing)}
-        theme={sidebarTheme}
-        on:select={(event) => (section = event.detail)}
-        on:account={openAccountSettings}
-      />
+      {#if !appFullscreen}
+        <TopBar
+          {sections}
+          active={section}
+          version={status?.version ?? "0.1.0"}
+          {accountName}
+          {accountImage}
+          {accountState}
+          accountSyncing={Boolean(accountStatus?.syncing)}
+          on:select={(event) => (section = event.detail)}
+          on:account={openAccountSettings}
+        />
+      {/if}
 
       <div class="workspace">
         <main class="main">
@@ -734,6 +735,7 @@
             {settingDetails}
             {config}
             {appOpenRequest}
+            theme={sidebarTheme}
             bind:homeEditing
             {pluginSettingsRequest}
             {accountOpenRequest}

@@ -227,6 +227,18 @@ class DemoBridge {
 			"plugins.settings.get": {},
 			"update.check": { available: false, current_commit: "browser-demo", latest_commit: "browser-demo" },
 			"store.list": [],
+			"pad.players": {
+				session: { code: "KQXM", join_url: "https://yui.example/join/KQXM" },
+				players: [
+					{ id: "p1", slot: 1, name: "Riccardo", color: "blue", host: true, connected: true },
+					{ id: "p2", slot: 2, name: "Sam", color: "purple", speaker: true, connected: true },
+				],
+			},
+			"assets.status": {
+				state: "syncing",
+				paused_reasons: [],
+				current: { id: "demo-asset", bytes_done: 620, byte_size: 1000 },
+			},
 			"store.keys": [],
 			"storage.get": null,
 			"fs.list": [],

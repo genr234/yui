@@ -1,6 +1,10 @@
+/* Apps page, direction E: Jump back in banner, resume row, all apps. */
+
 .apps-page {
-	display: grid;
-	gap: 22px;
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+	min-height: 100%;
 }
 
 .empty-with-action {
@@ -9,47 +13,319 @@
 	gap: 16px;
 }
 
-.apps-page h2 {
-	margin-left: 4px;
-	color: #111925;
-	font-size: 24px;
-	font-weight: 500;
+/* Banner */
+.jump-banner {
+	position: relative;
+	flex: 0 0 auto;
+	height: 248px;
+	overflow: hidden;
+	border-radius: var(--yui-radius-hero);
+	color: var(--yui-chrome-fg);
+	background: var(--yui-chrome);
+	box-shadow: var(--yui-shadow-hero);
 }
 
-.app-category-card {
+.jump-stripes {
+	position: absolute;
+	top: 0;
+	right: -40px;
+	bottom: 0;
+	z-index: 0;
+	display: flex;
+	gap: 18px;
+	width: 520px;
+	transform: skewX(-14deg);
+}
+
+.jump-stripes span {
+	flex: 1;
+	opacity: 0.9;
+	background: var(--yui-blue);
+}
+
+.jump-stripes span:nth-child(2) {
+	background: var(--yui-violet);
+}
+
+.jump-stripes span:nth-child(3) {
+	background: var(--yui-teal);
+}
+
+.jump-banner .theme-particles {
+	z-index: 1;
+}
+
+.jump-cartridge {
+	position: absolute;
+	top: 34px;
+	right: 150px;
+	z-index: 2;
+	transform: rotate(-4deg);
+}
+
+.jump-icon {
 	display: grid;
-	gap: 14px;
-	min-height: 0;
-	padding: 20px 24px 22px;
-	border: 1px solid #dbe3ed;
-	border-radius: 14px;
-	background: rgba(255, 255, 255, 0.9);
-	box-shadow: 0 10px 28px rgba(34, 48, 65, 0.07);
+	place-items: center;
+	width: 168px;
+	height: 168px;
+	border-radius: 34px;
+	color: var(--yui-ink);
+	background: var(--yui-surface);
+	box-shadow: 0 22px 36px rgba(6, 14, 24, 0.35);
 }
 
-.app-category-card h3 {
-	color: #111925;
-	font-size: 24px;
-	font-weight: 500;
+.jump-copy {
+	position: relative;
+	z-index: 3;
+	display: flex;
+	flex-direction: column;
+	justify-content: space-between;
+	height: 100%;
+	max-width: 560px;
+	padding: 28px 32px;
+}
+
+.jump-heading {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	min-width: 0;
+}
+
+.jump-eyebrow {
+	color: var(--yui-chrome-muted);
+	font-size: 13px;
+	font-weight: 700;
+	letter-spacing: 1.6px;
+}
+
+.jump-heading h1 {
+	margin: 0;
+	overflow: hidden;
+	font-size: 50px;
+	font-weight: 700;
+	line-height: 1;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.jump-heading p {
+	margin: 0;
+	color: #c9d6e4;
+	font-size: 16px;
+}
+
+.jump-actions {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+
+.jump-resume {
+	display: inline-flex;
+	align-items: center;
+	gap: 10px;
+	height: 56px;
+	padding: 0 28px;
+	border: 0;
+	border-radius: 14px;
+	color: #ffffff;
+	background: var(--yui-blue);
+	box-shadow: 0 var(--yui-lip) 0 var(--yui-blue-lip);
+	font: inherit;
+	font-size: 18px;
+	font-weight: 700;
+	cursor: pointer;
+}
+
+.join-chip {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	height: 56px;
+	padding: 0 6px 0 16px;
+	border-radius: 14px;
+	background: var(--yui-chrome-fill);
+}
+
+.join-copy {
+	display: flex;
+	flex-direction: column;
+}
+
+.join-copy span {
+	color: var(--yui-chrome-muted);
+	font-size: 12px;
+}
+
+.join-copy strong {
+	font-size: 22px;
+	font-weight: 700;
+	letter-spacing: 3px;
 	line-height: 1.1;
+}
+
+.join-qr {
+	display: block;
+	border-radius: 7px;
+}
+
+/* Resume row */
+.resume-row {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 16px;
+	flex: 0 0 auto;
+}
+
+.resume-card {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	min-width: 0;
+	min-height: 76px;
+	padding: 14px 16px;
+	border: 1px solid var(--yui-line);
+	border-bottom-width: var(--yui-lip);
+	border-radius: var(--yui-radius-card);
+	color: var(--yui-ink);
+	background: var(--yui-surface);
+	box-shadow: var(--yui-shadow-card);
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+
+.resume-badge {
+	display: grid;
+	place-items: center;
+	flex: 0 0 auto;
+	width: 48px;
+	height: 48px;
+	overflow: hidden;
+	border-radius: var(--yui-radius-badge);
+	background: #e8eff7;
+}
+
+.resume-card:nth-child(2) .resume-badge {
+	background: #fdecec;
+}
+
+.resume-card:nth-child(3) .resume-badge {
+	background: #fdf3e3;
+}
+
+.resume-badge .app-icon-image {
+	width: 30px;
+	height: 30px;
+	object-fit: contain;
+}
+
+.resume-text {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	min-width: 0;
+}
+
+.resume-text strong,
+.resume-text span {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.resume-text strong {
+	font-size: 17px;
+	font-weight: 700;
+}
+
+.resume-text span {
+	color: var(--yui-muted);
+	font-size: 13px;
+}
+
+/* All apps */
+.all-apps {
+	display: flex;
+	flex: 1 0 auto;
+	flex-direction: column;
+	gap: 16px;
+	padding: 18px 24px 20px;
+	border: 1px solid var(--yui-line);
+	border-radius: var(--yui-radius-card);
+	background: var(--yui-surface-glass);
+	box-shadow: var(--yui-shadow-card);
+}
+
+.all-apps-head {
+	display: flex;
+	align-items: center;
+	gap: 18px;
+	min-width: 0;
+}
+
+.all-apps-head h2 {
+	margin: 0;
+	color: var(--yui-ink);
+	font-size: 22px;
+	font-weight: 500;
+	white-space: nowrap;
+}
+
+.category-chips {
+	display: flex;
+	gap: 6px;
+	min-width: 0;
+	overflow-x: auto;
+	scrollbar-width: none;
+}
+
+.category-chips button {
+	flex: 0 0 auto;
+	height: 44px;
+	padding: 0 16px;
+	border: 1px solid var(--yui-line);
+	border-radius: 999px;
+	color: var(--yui-ink-2);
+	background: var(--yui-surface);
+	font: inherit;
+	font-size: 14px;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.category-chips button.active {
+	border-color: var(--yui-ink);
+	color: #ffffff;
+	background: var(--yui-ink);
+}
+
+.all-apps-count {
+	margin-left: auto;
+	color: var(--yui-muted);
+	font-size: 14px;
+	white-space: nowrap;
 }
 
 .app-shelf {
 	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
-	gap: 18px 24px;
+	grid-template-columns: repeat(auto-fill, minmax(136px, 1fr));
+	gap: 20px 18px;
 	align-items: end;
 }
 
 .app-tile {
-	display: grid;
-	justify-items: center;
-	gap: 8px;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 10px;
 	min-width: 0;
 	padding: 4px;
 	border: 0;
-	color: #111925;
+	color: var(--yui-ink-2);
 	background: transparent;
+	font: inherit;
 	cursor: pointer;
 	text-align: center;
 }
@@ -59,31 +335,47 @@
 	place-items: center;
 	width: 104px;
 	height: 104px;
-	border-radius: 18px;
-	color: #111925;
+	overflow: hidden;
+	border-radius: var(--yui-radius-icon);
+	color: var(--yui-ink);
 	background:
 		linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(247, 249, 252, 0.92)),
 		#ffffff;
-	box-shadow:
-		0 16px 28px rgba(19, 29, 42, 0.13),
-		0 0 0 2px rgba(220, 225, 232, 0.9) inset;
-	font-size: 36px;
+	box-shadow: var(--yui-shadow-icon);
 	font-weight: 850;
 }
 
-.app-tile-icon img {
-	border-radius: 0;
-	object-fit: fill;
+.app-icon-image {
+	display: block;
+	object-fit: contain;
 }
 
-.app-tile.game .app-tile-icon {
-	width: 128px;
-	height: 116px;
-	border-radius: 0;
+.app-icon-text {
+	font-weight: 850;
+	line-height: 1;
+}
+
+.app-tile.get-more {
+	color: var(--yui-muted);
+}
+
+.app-tile.get-more .app-tile-icon {
+	border: 2px dashed #cdd7e3;
+	color: var(--yui-muted);
 	background: transparent;
 	box-shadow: none;
 }
 
+.app-tile-name {
+	max-width: 132px;
+	overflow: hidden;
+	font-size: 14px;
+	font-weight: 600;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* Cartridge: games are cartridges, sized in % so it scales. */
 .cartridge {
 	position: relative;
 	display: block;
@@ -98,28 +390,39 @@
 		0 0 0 1px rgba(128, 140, 148, 0.45) inset;
 }
 
+.cartridge.hero {
+	width: 190px;
+	height: 176px;
+	box-shadow:
+		0 26px 40px rgba(4, 10, 18, 0.45),
+		0 0 0 1px rgba(128, 140, 148, 0.45) inset;
+}
+
 .cartridge-brand {
 	position: absolute;
-	top: 22px;
-	left: 20px;
-	right: 20px;
-	z-index: 1;
-	height: 20px;
+	top: 18%;
+	left: 17%;
+	right: 17%;
+	height: 16%;
 	border-radius: 999px;
-	color: rgba(255, 255, 255, 0.32);
+	color: rgba(255, 255, 255, 0.4);
 	background: rgba(173, 183, 189, 0.76);
-	font-size: 6px;
+	font-size: 7px;
 	font-style: italic;
 	font-weight: 850;
-	line-height: 20px;
+	line-height: 2.5;
 	text-align: center;
+}
+
+.cartridge.hero .cartridge-brand {
+	font-size: 11px;
 }
 
 .cartridge-ridges {
 	position: absolute;
-	top: 31px;
-	bottom: 15px;
-	width: 16px;
+	top: 28%;
+	bottom: 14%;
+	width: 13%;
 	background: repeating-linear-gradient(
 		180deg,
 		rgba(132, 143, 151, 0.32) 0,
@@ -139,7 +442,7 @@
 
 .cartridge-label {
 	position: absolute;
-	inset: 48px 18px 18px;
+	inset: 44% 15% 16%;
 	display: grid;
 	place-items: center;
 	overflow: hidden;
@@ -149,31 +452,43 @@
 	background:
 		linear-gradient(90deg, rgba(255, 255, 255, 0.05), transparent 32%, rgba(255, 255, 255, 0.05) 66%, transparent),
 		#151a18;
-	font-size: 18px;
+	font-size: 16px;
 	font-weight: 900;
-	letter-spacing: 0;
+}
+
+.cartridge.hero .cartridge-label {
+	font-size: 26px;
+}
+
+.cartridge-label img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
 }
 
 .cartridge-notch {
 	position: absolute;
 	left: 50%;
-	bottom: 6px;
-	width: 15px;
-	height: 8px;
-	border-radius: 0 0 4px 4px;
+	bottom: 5%;
+	width: 13%;
+	height: 7%;
 	background: rgba(145, 155, 162, 0.42);
 	clip-path: polygon(0 0, 100% 0, 50% 100%);
 	transform: translateX(-50%);
 }
 
-.app-tile-name {
-	max-width: 120px;
-	overflow: hidden;
-	color: #233040;
-	font-size: 13px;
-	font-weight: 600;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+@media (max-width: 1180px) {
+	.jump-cartridge {
+		right: 60px;
+	}
+
+	.jump-stripes {
+		width: 380px;
+	}
+
+	.jump-heading h1 {
+		font-size: 40px;
+	}
 }
 
 .app-icon {
@@ -218,10 +533,11 @@
 	width: 42px;
 	height: 42px;
 	padding: 0;
-	border: 1px solid #d7e0ea;
-	border-radius: 8px;
+	border: 1px solid var(--yui-line);
+	border-bottom-width: var(--yui-lip);
+	border-radius: var(--yui-radius-control);
 	color: #172334;
-	background: #ffffff;
+	background: var(--yui-surface);
 	cursor: pointer;
 }
 
@@ -276,4 +592,34 @@
 	border: 0;
 	visibility: hidden;
 	pointer-events: none;
+}
+
+/* Shorter kiosk screens (the shell is 85vh): keep all apps on screen. */
+@media (max-height: 860px) {
+	.apps-page {
+		gap: 14px;
+	}
+
+	.jump-banner {
+		height: 210px;
+	}
+
+	.jump-copy {
+		padding: 22px 28px;
+	}
+
+	.jump-heading h1 {
+		font-size: 42px;
+	}
+
+	.jump-cartridge {
+		top: 26px;
+		transform: rotate(-4deg) scale(0.86);
+		transform-origin: top center;
+	}
+
+	.all-apps {
+		gap: 12px;
+		padding: 16px 22px 16px;
+	}
 }

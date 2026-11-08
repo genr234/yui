@@ -8,16 +8,18 @@ import overlayPermissionsCss from "./styles/overlay-permissions.css?inline";
 import pluginsCss from "./styles/plugins.css?inline";
 import settingsCss from "./styles/settings.css?inline";
 import shellCss from "./styles/shell.css?inline";
-import sidebarCss from "./styles/sidebar.css?inline";
+import topbarCss from "./styles/topbar.css?inline";
+import tokensCss from "./styles/tokens.css?inline";
 import workspaceCss from "./styles/workspace.css?inline";
 import yuiAppCss from "./styles/yui-app.css?inline";
 
 const css = [
 	baseCss,
+	tokensCss,
 	overlayPermissionsCss,
 	keyboardCss,
 	shellCss,
-	sidebarCss,
+	topbarCss,
 	workspaceCss,
 	dashboardCss,
 	appsCss,

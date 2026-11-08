@@ -4,8 +4,8 @@
 	min-height: 0;
 	flex-direction: column;
 	background:
-		radial-gradient(circle at 28% 10%, rgba(49, 116, 210, 0.08), transparent 32%),
-		#f7f9fb;
+		radial-gradient(ellipse 60% 50% at 30% 0%, rgba(234, 243, 255, 0.9), transparent 70%),
+		var(--yui-backdrop);
 }
 
 .router-panel {
@@ -16,9 +16,16 @@
 	display: none;
 }
 
+@media (max-height: 860px) {
+	.main {
+		padding: 18px 24px 22px;
+	}
+}
+
 .main {
+	flex: 1 1 auto;
 	min-height: 0;
-	padding: 36px 40px 42px;
+	padding: 24px 28px 28px;
 	overflow: auto;
 }
 
@@ -51,9 +58,10 @@
 .card {
 	margin-bottom: 30px;
 	padding: 26px;
-	border: 1px solid #e0e6ee;
-	border-radius: 14px;
-	background: rgba(255, 255, 255, 0.92);
+	border: 1px solid var(--yui-line);
+	border-radius: var(--yui-radius-card);
+	background: var(--yui-surface-glass);
+	box-shadow: var(--yui-shadow-card);
 }
 
 .card-title {

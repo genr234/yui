@@ -9,37 +9,79 @@ pre {
 		monospace;
 }
 
+/* Press feel (direction E): tappable things sink onto their lip and tighten their corners. */
 button,
 .action-card,
-.big-button,
-.nav button {
+.big-button {
 	transition:
-			transform 120ms ease,
-			box-shadow 120ms ease,
-			filter 120ms ease,
-			background-color 120ms ease;
-	will-change: transform;
+		transform var(--yui-press) var(--yui-ease-out),
+		box-shadow var(--yui-press) ease,
+		border-radius var(--yui-press) ease,
+		filter var(--yui-press) ease,
+		background-color var(--yui-press) ease;
 }
 
 button:active,
 .action-card:active,
-.big-button:active,
-.nav button:active {
+.big-button:active {
 	transform: translateY(2px) scale(0.985);
-	box-shadow:
-			0 2px 6px rgba(23, 35, 48, 0.08),
-			0 1px 0 rgba(255,255,255,0.04) inset;
 	filter: brightness(0.98) saturate(1.03);
 }
 
-.action-card {
-	transition:
-			transform 140ms cubic-bezier(.2,.8,.2,1),
-			box-shadow 140ms ease,
-			filter 140ms ease;
+/* Things with a lip lose it as they sink. */
+.jump-resume:active {
+	transform: translateY(var(--yui-lip));
+	box-shadow: 0 0 0 var(--yui-blue-lip);
+	border-radius: 11px;
+}
+
+.resume-card:active,
+.icon-button:active {
+	transform: translateY(2px);
+	border-bottom-width: 1px;
+	margin-bottom: 2px;
+	border-radius: 11px;
+	box-shadow: 0 4px 12px rgba(34, 48, 65, 0.06);
+}
+
+.app-tile:active {
+	transform: translateY(2px) scale(0.97);
+	filter: none;
+}
+
+.app-tile:active .app-tile-icon {
+	border-radius: 14px;
+}
+
+.topbar-tab:active,
+.topbar-account:active,
+.category-chips button:active {
+	transform: translateY(1px) scale(0.97);
 }
 
 .action-card:active {
 	transform: translateY(1px) scale(0.985);
-	box-shadow: 0 6px 12px rgba(23,35,48,0.08);
+	box-shadow: 0 6px 12px rgba(23, 35, 48, 0.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	button,
+	.action-card,
+	.big-button {
+		transition: none;
+	}
+
+	button:active,
+	.action-card:active,
+	.big-button:active,
+	.app-tile:active,
+	.resume-card:active,
+	.icon-button:active,
+	.jump-resume:active,
+	.topbar-tab:active,
+	.topbar-account:active,
+	.category-chips button:active {
+		transform: none;
+		filter: brightness(0.94);
+	}
 }

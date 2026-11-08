@@ -1,6 +1,11 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
-  import type { ActionItem, DetailItem, Section } from "../types";
+  import type {
+    ActionItem,
+    DetailItem,
+    Section,
+    SidebarThemeSettings,
+  } from "../types";
   import About from "./About.svelte";
   import Apps from "./Apps.svelte";
   import Home from "./Home.svelte";
@@ -19,6 +24,7 @@
     null;
   export let accountOpenRequest: { nonce: number } | null = null;
   export let pluginPages: YuiPluginShellPage[] = [];
+  export let theme: SidebarThemeSettings = { enabled: true, images: [] };
   const dispatch = createEventDispatcher<{
     appLaunched: { active: boolean };
     launchApp: { appId: string };
@@ -51,6 +57,7 @@
 >
   <Apps
     openAppRequest={appOpenRequest}
+    {theme}
     on:launched={(event) => dispatch("appLaunched", event.detail)}
     on:store={() => dispatch("store", { kind: "apps" })}
   />

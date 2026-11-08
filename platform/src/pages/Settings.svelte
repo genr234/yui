@@ -665,7 +665,7 @@
             on:click={() => goTo("sidebar-theme", "forward")}
           >
             <span>
-              <span>Sidebar theme</span>
+              <span>Theme images</span>
               <small>{sidebarThemeSummary()}</small>
             </span>
             <ChevronRightIcon size={18} strokeWidth={2.4} />
@@ -909,7 +909,7 @@
           >
             <ArrowLeftIcon size={18} strokeWidth={2.4} />
           </button>
-          <span>Sidebar theme</span>
+          <span>Theme images</span>
         </nav>
 
         <section class="settings-group">
@@ -917,7 +917,7 @@
             <span>
               <span>Floating images</span>
               <small
-                >Spawn from the bottom of the sidebar and fade upward.</small
+                >Float up behind the Jump back in banner on the Apps page.</small
               >
             </span>
             <input

@@ -4,20 +4,34 @@
   import MaximizeIcon from "lucide-svelte/icons/maximize";
   import MinimizeIcon from "lucide-svelte/icons/minimize";
   import RotateCwIcon from "lucide-svelte/icons/rotate-cw";
+  import PlayIcon from "lucide-svelte/icons/play";
+  import PlusIcon from "lucide-svelte/icons/plus";
   import EmptyState from "../components/EmptyState.svelte";
+  import JoinQr from "../components/JoinQr.svelte";
+  import ThemeParticles from "../components/ThemeParticles.svelte";
   import AppHost from "../components/apps/AppHost.svelte";
+  import AppIcon from "../components/apps/AppIcon.svelte";
+  import Cartridge from "../components/apps/Cartridge.svelte";
   import {
     appHasPermission,
-    fallbackAppIcon,
     findApp,
     groupAppsByCategory,
     isGameAppCategory,
-    isImageAppIcon,
     loadApps,
+    normalizeAppCategory,
   } from "../apps";
+  import { openedAgo, loadRecentApps, recordRecentApp, type RecentApp } from "../recent-apps";
+  import { pad, type PadState } from "../sdk/pad";
   import type { YuiDevApp } from "../sdk/apps";
+  import type { SidebarThemeSettings } from "../types";
 
   export let openAppRequest: { appId: string; nonce: number } | null = null;
+  export let theme: SidebarThemeSettings = { enabled: true, images: [] };
+
+  let recents: RecentApp[] = loadRecentApps();
+  let padState: PadState = { session: null, players: [] };
+  let filter = "";
+  let now = Date.now();
 
   let apps: YuiDevApp[] = [];
   let launchedId = "";
@@ -53,8 +67,13 @@
     window.addEventListener("yui:account-changed", onAccountChanged);
 
     void refreshApps();
+    void pad.state().then((state) => (padState = state));
+    const offPad = pad.onState((state) => (padState = state));
+    const clock = window.setInterval(() => (now = Date.now()), 60000);
 
     return () => {
+      offPad();
+      window.clearInterval(clock);
       window.clearTimeout(refreshTimer);
       window.removeEventListener("yui:shell-fullscreen", offFullscreen);
       window.removeEventListener("yui:apps-changed", onAppsChanged);
@@ -69,7 +88,28 @@
   });
 
   $: launched = findApp(apps, launchedId);
-  $: categories = groupAppsByCategory(apps);
+  $: categoryNames = groupAppsByCategory(apps).map((category) => category.name);
+  $: if (filter && !categoryNames.includes(filter)) filter = "";
+  $: visibleApps = filter ? apps.filter((app) => categoryOf(app) === filter) : apps;
+  $: recentOpened = recents
+    .map((entry) => ({ app: findApp(apps, entry.id), openedAt: entry.openedAt }))
+    .filter((entry): entry is { app: YuiDevApp; openedAt: number } => Boolean(entry.app));
+  $: heroRecent = recentOpened[0] ?? null;
+  $: hero = heroRecent?.app ?? apps.find(isGame) ?? apps[0] ?? null;
+  $: resumeRow = [
+    ...recentOpened.slice(1),
+    ...apps
+      .filter((app) => app.id !== hero?.id && !recentOpened.some((entry) => entry.app.id === app.id))
+      .map((app) => ({ app, openedAt: 0 })),
+  ].slice(0, 3);
+
+  function categoryOf(app: YuiDevApp) {
+    return normalizeAppCategory(app.app.category);
+  }
+
+  function isGame(app: YuiDevApp) {
+    return isGameAppCategory(categoryOf(app));
+  }
   $: if (
     openAppRequest &&
     openAppRequest.nonce !== consumedOpenAppNonce &&
@@ -81,6 +121,8 @@
   }
 
   function launch(app: YuiDevApp) {
+    recents = recordRecentApp(app.id);
+    now = Date.now();
     launchedId = app.id;
     reloadKey += 1;
     announceLaunched(true);
@@ -174,42 +216,92 @@
   </section>
 {:else}
   <section class="apps-page">
-    {#each categories as category}
-      <section class="app-category-card" aria-label={category.name}>
-        <h2>{category.name}</h2>
-        <div class="app-shelf">
-          {#each category.items as app}
-            <button
-              class:game={isGameAppCategory(category.name)}
-              class="app-tile"
-              on:click={() => launch(app)}
-            >
-              <span class="app-tile-icon" aria-hidden="true">
-                {#if isGameAppCategory(category.name)}
-                  <span class="cartridge">
-                    <span class="cartridge-brand">YUI</span>
-                    <span class="cartridge-ridges left"></span>
-                    <span class="cartridge-ridges right"></span>
-                    <span class="cartridge-label">
-                      {#if isImageAppIcon(app.app.icon)}
-                        <img src={app.app.icon} alt="" />
-                      {:else}
-                        <span>{fallbackAppIcon(app)}</span>
-                      {/if}
-                    </span>
-                    <span class="cartridge-notch"></span>
-                  </span>
-                {:else if isImageAppIcon(app.app.icon)}
-                  <img src={app.app.icon} alt="" width="64" height="64" />
-                {:else}
-                  <span>{fallbackAppIcon(app)}</span>
-                {/if}
-              </span>
-              <span class="app-tile-name">{app.name}</span>
+    {#if hero}
+      <section class="jump-banner" aria-label="Jump back in">
+        <ThemeParticles {theme} />
+        <div class="jump-stripes" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </div>
+        <span class="jump-cartridge">
+          {#if isGame(hero)}
+            <Cartridge app={hero} size="hero" />
+          {:else}
+            <span class="jump-icon"><AppIcon app={hero} size={84} /></span>
+          {/if}
+        </span>
+        <div class="jump-copy">
+          <div class="jump-heading">
+            <span class="jump-eyebrow">{heroRecent ? "JUMP BACK IN" : "START HERE"}</span>
+            <h1>{hero.name}</h1>
+            <p>
+              {categoryOf(hero)}
+              {#if heroRecent}· opened {openedAgo(heroRecent.openedAt, now)}{/if}
+            </p>
+          </div>
+          <div class="jump-actions">
+            <button class="jump-resume" on:click={() => hero && launch(hero)}>
+              <PlayIcon size={18} strokeWidth={0} fill="currentColor" />
+              {heroRecent ? "Resume" : "Open"}
             </button>
-          {/each}
+            {#if padState.session}
+              <div class="join-chip">
+                <span class="join-copy">
+                  <span>Join on your phone</span>
+                  <strong>{padState.session.code}</strong>
+                </span>
+                <JoinQr value={padState.session.join_url} label={`QR code to join session ${padState.session.code}`} />
+              </div>
+            {/if}
+          </div>
         </div>
       </section>
-    {/each}
+    {/if}
+
+    {#if resumeRow.length > 0}
+      <section class="resume-row" aria-label="More from your apps">
+        {#each resumeRow as item (item.app.id)}
+          <button class="resume-card" on:click={() => launch(item.app)}>
+            <span class="resume-badge"><AppIcon app={item.app} size={30} /></span>
+            <span class="resume-text">
+              <strong>{item.app.name}</strong>
+              <span>
+                {categoryOf(item.app)} · {item.openedAt ? `opened ${openedAgo(item.openedAt, now)}` : "not opened yet"}
+              </span>
+            </span>
+          </button>
+        {/each}
+      </section>
+    {/if}
+
+    <section class="all-apps" aria-label="All apps">
+      <header class="all-apps-head">
+        <h2>All apps</h2>
+        {#if categoryNames.length > 1}
+          <div class="category-chips" role="group" aria-label="Filter by category">
+            <button class:active={filter === ""} aria-pressed={filter === ""} on:click={() => (filter = "")}>All</button>
+            {#each categoryNames as name}
+              <button class:active={filter === name} aria-pressed={filter === name} on:click={() => (filter = name)}>{name}</button>
+            {/each}
+          </div>
+        {/if}
+        <span class="all-apps-count">{apps.length} installed</span>
+      </header>
+      <div class="app-shelf">
+        {#each visibleApps as app (app.id)}
+          <button class:game={isGame(app)} class="app-tile" on:click={() => launch(app)}>
+            {#if isGame(app)}
+              <Cartridge {app} />
+            {:else}
+              <span class="app-tile-icon" aria-hidden="true"><AppIcon {app} size={64} /></span>
+            {/if}
+            <span class="app-tile-name">{app.name}</span>
+          </button>
+        {/each}
+        <button class="app-tile get-more" on:click={() => dispatch("store")}>
+          <span class="app-tile-icon" aria-hidden="true"><PlusIcon size={32} strokeWidth={2.2} /></span>
+          <span class="app-tile-name">Get more</span>
+        </button>
+      </div>
+    </section>
   </section>
 {/if}

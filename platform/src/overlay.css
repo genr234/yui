@@ -1,8 +1,9 @@
 @import "./styles/base.css";
+@import "./styles/tokens.css";
 @import "./styles/overlay-permissions.css";
 @import "./styles/keyboard.css";
 @import "./styles/shell.css";
-@import "./styles/sidebar.css";
+@import "./styles/topbar.css";
 @import "./styles/workspace.css";
 @import "./styles/dashboard.css";
 @import "./styles/apps.css";

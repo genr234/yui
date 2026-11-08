@@ -1,0 +1,284 @@
+/* Top bar (replaces the sidebar). Direction E: docs/plans/yui-redesign.md */
+
+.topbar {
+	container: topbar / inline-size;
+	position: relative;
+	z-index: 1;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	min-width: 0;
+	height: 78px;
+	padding: 0 18px 0 24px;
+	color: var(--yui-chrome-fg);
+	background: var(--yui-chrome);
+}
+
+.topbar-start,
+.topbar-end {
+	display: flex;
+	align-items: center;
+	min-width: 0;
+}
+
+.topbar-start {
+	gap: 22px;
+	flex: 1 1 auto;
+}
+
+.topbar-end {
+	gap: 10px;
+	flex: 0 0 auto;
+}
+
+.brand {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	flex: 0 0 auto;
+}
+
+.brand-logo-frame {
+	display: block;
+	width: 58px;
+	height: 36px;
+	overflow: hidden;
+	flex: 0 0 auto;
+}
+
+.brand-logo {
+	display: block;
+	width: 70px;
+	height: 70px;
+	object-fit: contain;
+	object-position: left center;
+	transform: translate(-5px, -16px);
+}
+
+.brand-version {
+	color: var(--yui-chrome-muted);
+	font-size: 13px;
+	font-weight: 600;
+}
+
+.topbar-tabs {
+	display: flex;
+	gap: 4px;
+	min-width: 0;
+	overflow-x: auto;
+	scrollbar-width: none;
+}
+
+.topbar-tabs::-webkit-scrollbar {
+	display: none;
+}
+
+.topbar-tab {
+	display: inline-flex;
+	align-items: center;
+	gap: 9px;
+	flex: 0 0 auto;
+	height: 48px;
+	padding: 0 16px;
+	border: 0;
+	border-radius: var(--yui-radius-control);
+	color: rgba(255, 255, 255, 0.78);
+	background: transparent;
+	font-size: 16px;
+	font-weight: 500;
+	white-space: nowrap;
+	cursor: pointer;
+}
+
+.topbar-tab.active {
+	color: #ffffff;
+	background: var(--yui-chrome-active);
+	font-weight: 600;
+}
+
+.topbar-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 9px;
+	height: 44px;
+	padding: 0 14px;
+	border-radius: var(--yui-radius-control);
+	color: #d9e3ee;
+	background: var(--yui-chrome-fill);
+	font-size: 14px;
+	font-weight: 600;
+	white-space: nowrap;
+}
+
+.topbar-meter {
+	width: 56px;
+	height: 5px;
+	overflow: hidden;
+	border-radius: 3px;
+	background: var(--yui-chrome-line);
+}
+
+.topbar-meter span {
+	display: block;
+	height: 100%;
+	border-radius: inherit;
+	background: var(--yui-blue-soft);
+	transition: width 400ms ease;
+}
+
+.topbar-chip.players {
+	gap: 6px;
+	padding: 0 8px;
+}
+
+.player-square {
+	display: inline-grid;
+	place-items: center;
+	width: 30px;
+	height: 30px;
+	border-radius: 9px;
+	color: #ffffff;
+	font-size: 12px;
+	font-weight: 700;
+}
+
+.player-square.open {
+	border: 1.5px dashed rgba(255, 255, 255, 0.3);
+	color: rgba(255, 255, 255, 0.4);
+	background: transparent;
+}
+
+.player-square.away {
+	opacity: 0.45;
+}
+
+.topbar-account {
+	display: inline-flex;
+	align-items: center;
+	gap: 10px;
+	max-width: 200px;
+	height: 48px;
+	padding: 0 12px 0 8px;
+	border: 0;
+	border-radius: var(--yui-radius-control);
+	color: #ffffff;
+	background: transparent;
+	cursor: pointer;
+}
+
+.topbar-avatar {
+	position: relative;
+	display: grid;
+	place-items: center;
+	flex: 0 0 auto;
+	width: 32px;
+	height: 32px;
+	border-radius: 50%;
+	color: #d7e4f0;
+	background: var(--yui-chrome-fill);
+}
+
+.topbar-avatar img {
+	width: 100%;
+	height: 100%;
+	border-radius: 50%;
+	object-fit: cover;
+}
+
+.topbar-avatar-dot {
+	position: absolute;
+	right: -1px;
+	bottom: -1px;
+	width: 10px;
+	height: 10px;
+	border: 2px solid #12202f;
+	border-radius: 50%;
+	background: var(--yui-blue-soft);
+}
+
+.topbar-account-name {
+	min-width: 0;
+	overflow: hidden;
+	font-size: 14px;
+	font-weight: 500;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* Theme images float up behind content (the Jump back in banner). */
+.theme-particles {
+	position: absolute;
+	inset: 0;
+	z-index: 0;
+	overflow: hidden;
+	pointer-events: none;
+}
+
+.theme-particle {
+	position: absolute;
+	left: var(--particle-left);
+	bottom: -48px;
+	width: var(--particle-size);
+	height: var(--particle-size);
+	object-fit: contain;
+	opacity: 0;
+	filter: blur(1.4px) saturate(0.92) drop-shadow(0 6px 12px rgba(0, 0, 0, 0.16));
+	transform: translateX(-50%);
+	animation: theme-particle-rise var(--particle-duration) ease-out forwards;
+}
+
+@keyframes theme-particle-rise {
+	0% {
+		opacity: 0;
+		transform: translateX(-50%) translateY(0) rotate(0deg) scale(0.82);
+	}
+
+	12% {
+		opacity: 0.42;
+	}
+
+	78% {
+		opacity: 0.34;
+	}
+
+	100% {
+		opacity: 0;
+		transform: translateX(calc(-50% + var(--particle-drift))) translateY(-320px)
+			rotate(var(--particle-rotate)) scale(1.08);
+	}
+}
+
+/* The shell is 85% of the screen, so size by the bar, not the viewport. */
+@container topbar (max-width: 1240px) {
+	.topbar-account-name,
+	.topbar-meter {
+		display: none;
+	}
+
+	.topbar-tab {
+		padding: 0 13px;
+	}
+
+	.topbar-start {
+		gap: 16px;
+	}
+
+	.topbar-account {
+		padding: 0 8px;
+	}
+}
+
+@container topbar (max-width: 1040px) {
+	.topbar-tab:not(.active) span {
+		display: none;
+	}
+
+	.topbar-tab {
+		padding: 0 14px;
+	}
+
+	.topbar-start {
+		gap: 14px;
+	}
+}
