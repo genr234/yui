@@ -12,12 +12,14 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"kiosk/controller/bridge"
 	"kiosk/controller/internal/config"
 	controllerlog "kiosk/controller/internal/logging"
 	"kiosk/controller/internal/nativeui"
 	"kiosk/controller/internal/platform"
+	"kiosk/controller/internal/probe"
 	"kiosk/controller/internal/singleinstance"
 	"kiosk/controller/internal/status"
 	"kiosk/controller/internal/supervisor"
@@ -164,8 +166,12 @@ func buildCheckReport(cfg config.Config) string {
 		configState = "loaded"
 	}
 
+	probeCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	hardware := probe.Collect(probeCtx)
+
 	return fmt.Sprintf(
-		"Yui Kiosk Controller\nVersion: %s\nConfig: %s (%s)\nChrome path: %s (%s)\nUser data dir: %s\nLog path: %s\nStatus path: %s\nStore path: %s\nPlatform: %t\nPlatform HTTP: %s\nPlatform bridge: %s\nRemote debugging port: %d",
+		"Yui Kiosk Controller\nVersion: %s\nConfig: %s (%s)\nChrome path: %s (%s)\nUser data dir: %s\nLog path: %s\nStatus path: %s\nStore path: %s\nPlatform: %t\nPlatform HTTP: %s\nPlatform bridge: %s\nRemote debugging port: %d\n\n%s",
 		version.Version,
 		cfg.ConfigPath,
 		configState,
@@ -179,6 +185,7 @@ func buildCheckReport(cfg config.Config) string {
 		cfg.PlatformHTTPAddr,
 		cfg.PlatformBridgeAddr,
 		cfg.PlatformDebugPort,
+		hardware.Text(),
 	)
 }
 
