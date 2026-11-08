@@ -116,15 +116,30 @@ class PlaySession < ApplicationRecord
     raise ArgumentError, "player is not in this session" unless player.play_session_id == id
     return if player.kicked?
 
+    seated = nil
     transaction do
       was_host = player.host?
       was_speaker = player.speaker?
+      freed_slot = player.slot
       player.update!(kicked_at: Time.current, host: false, speaker: false, connected: false, connection_nonce: nil)
+      seated = seat_spectator!(freed_slot) if freed_slot
       assign_new_host! if was_host
       give_speaker_to_host! if was_speaker
     end
+    seated&.broadcast_updated
     PlaySessionChannel.broadcast_to(player, { type: "kicked" })
     player.disconnect_later
+  end
+
+  # A freed seat goes to the spectator who has waited longest, preferring one
+  # whose phone is connected. Returns that player (not yet announced) or nil.
+  def seat_spectator!(slot)
+    spectators = players.active.where(slot: nil).order(:id)
+    spectator = spectators.find_by(connected: true) || spectators.first
+    return unless spectator
+
+    spectator.update!(slot: slot)
+    spectator
   end
 
   # Moves the speaker role (the one phone that plays the kiosk's sound).

@@ -38,6 +38,24 @@ class PlayerTest < ActiveSupport::TestCase
     assert_equal 2, newcomer.slot
   end
 
+  test "a kicked player's seat goes to the longest-waiting connected spectator" do
+    play_session = start_session
+    seated = 4.times.map { |i| join_player(play_session, name: "P#{i + 1}").first }
+    waiting, = join_player(play_session, name: "Waiting")
+    online, = join_player(play_session, name: "Online")
+    online.mark_connected!("n1")
+    assert_nil waiting.slot
+
+    assert_broadcast_on(PlaySessionChannel.broadcasting_for(online), { type: "player_updated", player: online.reload.as_player_json.merge(slot: 3) }) do
+      play_session.kick!(seated[2])
+    end
+    assert_equal 3, online.reload.slot
+    assert_nil waiting.reload.slot
+
+    play_session.kick!(seated[0])
+    assert_equal 1, waiting.reload.slot
+  end
+
   test "stores only a digest of the token and authenticates the cookie value" do
     player, token = join_player(start_session)
 
