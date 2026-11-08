@@ -14,6 +14,7 @@ import (
 	"kiosk/controller/internal/assets"
 	"kiosk/controller/internal/config"
 	"kiosk/controller/internal/native"
+	"kiosk/controller/internal/pad/apps"
 	"kiosk/controller/internal/pad/router"
 	"kiosk/controller/internal/pad/session"
 	"kiosk/controller/internal/store"
@@ -81,6 +82,12 @@ type Registry struct {
 	// own locks; do not hold nativeMu while calling into it.
 	nativeMu  sync.Mutex
 	nativeMgr *native.Manager
+	// ctrlMu guards the app/native layer controller (controllers.go), built
+	// on the input hub the first time an app or native session needs it.
+	// Never held while calling into the hub or the controller.
+	ctrlMu     sync.Mutex
+	ctrl       *apps.Controller
+	ctrlRouter *router.Router
 }
 
 // errStoreScopeChanged means the active account store moved to a new epoch
@@ -144,6 +151,7 @@ func NewRegistry(cfg config.Config) *Registry {
 	r.Register(PadCommands()...)
 	r.Register(NativeCommands()...)
 	r.Register(LibraryCommands()...)
+	r.Register(ControllersCommands()...)
 	return r
 }
 

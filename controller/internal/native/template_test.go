@@ -87,3 +87,18 @@ func TestRenderVirtualPadDefaultResolver(t *testing.T) {
 		t.Fatalf("Render = %q, %v", got, err)
 	}
 }
+
+func TestRenderSystemPad(t *testing.T) {
+	env := testEnv(nil)
+	if _, err := Render("{{systemPad}}", env); !errors.Is(err, ErrVirtualPadsNotAttached) {
+		t.Fatalf("no resolver: %v", err)
+	}
+	env.SystemPad = func() (string, error) { return "127.0.0.1:26761/0", nil }
+	got, err := Render("hotkeys = {{ systemPad }}", env)
+	if err != nil || got != "hotkeys = 127.0.0.1:26761/0" {
+		t.Fatalf("Render = %q, %v", got, err)
+	}
+	if _, err := Render("{{systemPad:1}}", env); err == nil {
+		t.Fatal("{{systemPad:1}} accepted")
+	}
+}

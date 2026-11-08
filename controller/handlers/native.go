@@ -36,11 +36,14 @@ func (r *Registry) Native() *native.Manager {
 		DataDir:     filepath.Join(root, "data"),
 		LogDir:      filepath.Join(root, "logs"),
 		Assets:      registryAssets{r: r},
+		VirtualPads: r.dsuResolver(),
 		Focus:       native.SystemFocus{FallbackPID: r.chromePID},
 		OnStatus: func(st native.Status) {
 			r.Emit("native.status", st)
 		},
 	})
+	// The input hub follows sessions: native layer, virtual pads, watchdog.
+	r.nativeMgr.AddObserver(nativeHubObserver{r: r})
 	return r.nativeMgr
 }
 

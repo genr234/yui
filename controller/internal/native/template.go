@@ -18,6 +18,13 @@ type VirtualPadResolver interface {
 	VirtualPad(appID string, n int) (string, error)
 }
 
+// SystemPadResolver is optionally implemented by a VirtualPadResolver to
+// expand {{systemPad}}: the pad whose buttons the app binds to its runtime's
+// hotkeys.
+type SystemPadResolver interface {
+	SystemPad(appID string) (string, error)
+}
+
 type noVirtualPads struct{}
 
 func (noVirtualPads) VirtualPad(string, int) (string, error) {
@@ -35,6 +42,8 @@ type TemplateEnv struct {
 	DataDir string
 	// VirtualPad expands {{virtualPad:<n>}}.
 	VirtualPad func(n int) (string, error)
+	// SystemPad expands {{systemPad}}.
+	SystemPad func() (string, error)
 }
 
 var (
@@ -87,6 +96,11 @@ func resolvePlaceholder(key string, env TemplateEnv) (string, error) {
 			return "", errors.New("no data directory")
 		}
 		return env.DataDir, nil
+	case name == "systemPad" && !hasArg:
+		if env.SystemPad == nil {
+			return "", ErrVirtualPadsNotAttached
+		}
+		return env.SystemPad()
 	case name == "asset" && hasArg:
 		if !assetIDPattern.MatchString(arg) {
 			return "", errors.New("invalid asset id")
