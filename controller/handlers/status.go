@@ -32,7 +32,7 @@ type StatusGetCommand struct{}
 func (StatusGetCommand) Name() string { return "status.get" }
 
 func (StatusGetCommand) Handle(r *Registry, _ json.RawMessage) (any, error) {
-	return readJSONFile(r.cfg.StatusPath)
+	return readJSONFile(r.snapshotConfig().StatusPath)
 }
 
 type DiagnosticsGetCommand struct{}
@@ -40,7 +40,7 @@ type DiagnosticsGetCommand struct{}
 func (DiagnosticsGetCommand) Name() string { return "diagnostics.get" }
 
 func (DiagnosticsGetCommand) Handle(r *Registry, _ json.RawMessage) (any, error) {
-	return readTextFile(diagnosticsPath(r.cfg.StatusPath))
+	return readTextFile(diagnosticsPath(r.snapshotConfig().StatusPath))
 }
 
 func readJSONFile(path string) (any, error) {

@@ -82,7 +82,7 @@ func (AuthSetPINCommand) Handle(r *Registry, params json.RawMessage) (any, error
 	r.authMu.Lock()
 	defer r.authMu.Unlock()
 
-	if pinConfigured(r.cfg) {
+	if pinConfigured(r.snapshotConfig()) {
 		if err := r.verifyPINLocked(req.CurrentPIN); err != nil {
 			return r.authStatusLocked(), err
 		}
@@ -92,12 +92,12 @@ func (AuthSetPINCommand) Handle(r *Registry, params json.RawMessage) (any, error
 	if err != nil {
 		return nil, err
 	}
-	cfg := r.cfg
-	cfg.AdminPIN = pinHash
-	if err := config.Save(cfg); err != nil {
+	if _, err := r.mutateConfig(func(cfg *config.Config) error {
+		cfg.AdminPIN = pinHash
+		return nil
+	}); err != nil {
 		return nil, err
 	}
-	r.cfg = cfg
 	r.authState = AuthState{}
 	token, err := r.rotateAuthTokenLocked()
 	if err != nil {
@@ -121,7 +121,7 @@ func (AuthVerifyPINCommand) Handle(r *Registry, params json.RawMessage) (any, er
 	r.authMu.Lock()
 	defer r.authMu.Unlock()
 
-	if !pinConfigured(r.cfg) {
+	if !pinConfigured(r.snapshotConfig()) {
 		return authResult{OK: true, Status: r.authStatusLocked()}, nil
 	}
 	if err := r.verifyPINLocked(req.PIN); err != nil {
@@ -149,18 +149,18 @@ func (AuthClearPINCommand) Handle(r *Registry, params json.RawMessage) (any, err
 	r.authMu.Lock()
 	defer r.authMu.Unlock()
 
-	if pinConfigured(r.cfg) {
+	if pinConfigured(r.snapshotConfig()) {
 		if err := r.verifyPINLocked(req.CurrentPIN); err != nil {
 			return r.authStatusLocked(), err
 		}
 	}
 
-	cfg := r.cfg
-	cfg.AdminPIN = config.PINHash{}
-	if err := config.Save(cfg); err != nil {
+	if _, err := r.mutateConfig(func(cfg *config.Config) error {
+		cfg.AdminPIN = config.PINHash{}
+		return nil
+	}); err != nil {
 		return nil, err
 	}
-	r.cfg = cfg
 	r.authState = AuthState{}
 	r.authToken = ""
 	return r.authStatusLocked(), nil
@@ -174,7 +174,7 @@ func (r *Registry) Authorize(method string, params json.RawMessage) error {
 	r.authMu.Lock()
 	defer r.authMu.Unlock()
 
-	if !pinConfigured(r.cfg) {
+	if !pinConfigured(r.snapshotConfig()) {
 		return nil
 	}
 
@@ -212,7 +212,7 @@ func (r *Registry) authStatusLocked() authStatus {
 		attemptsLeft = 0
 	}
 	return authStatus{
-		Configured:    pinConfigured(r.cfg),
+		Configured:    pinConfigured(r.snapshotConfig()),
 		Locked:        retryAfter > 0,
 		RetryAfterSec: retryAfter,
 		AttemptsLeft:  attemptsLeft,
@@ -228,7 +228,7 @@ func (r *Registry) verifyPINLocked(pin string) error {
 		r.recordFailedPINLocked()
 		return fmt.Errorf("invalid PIN")
 	}
-	ok, err := verifyPIN(pin, r.cfg.AdminPIN)
+	ok, err := verifyPIN(pin, r.snapshotConfig().AdminPIN)
 	if err != nil {
 		return err
 	}
