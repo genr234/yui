@@ -37,6 +37,13 @@ test('vite build has no inline scripts', async () => {
     const html = await readFile(join(outDir, 'index.html'), 'utf8')
     assertExternalScriptsOnly(html, 'vite build index.html')
     expect(html).toContain('src="/pad/')
+    // public/sw.js precaches the bundle by reading these references out of index.html.
+    const sw = await readFile(join(outDir, 'sw.js'), 'utf8')
+    const pattern = /(?:src|href)="(\/pad\/assets\/[^"]+)"/g
+    expect(sw).toContain(pattern.source.replace(/\\\//g, '\\/'))
+    const assets = [...html.matchAll(pattern)].map((m) => m[1])
+    expect(assets.some((a) => a.endsWith('.js'))).toBe(true)
+    expect(assets.some((a) => a.endsWith('.css'))).toBe(true)
   } finally {
     await rm(outDir, { recursive: true, force: true })
   }
