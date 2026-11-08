@@ -13,6 +13,8 @@ export interface Player {
   color: Color | string;
   host: boolean;
   connected: boolean;
+  /** This phone plays the kiosk's audio (contracts §2). Absent on older kiosks. */
+  speaker?: boolean;
 }
 
 export interface IceServer {

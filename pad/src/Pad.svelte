@@ -27,6 +27,7 @@
   import { hapticsSupported, playPattern, pressTick } from './platform/haptics'
   import { playSound, setMasterVolume, unlockAudio } from './platform/sound'
   import { keepAwake, wakeLockSupported } from './platform/wakelock'
+  import { attachSpeakerStream, playSpeaker, speakerBlocked } from './platform/speaker'
 
   export let code: string
   export let player: Player
@@ -118,6 +119,11 @@
         if (msg.action === 'sensitive') sensitive = msg.value === true
         else if (msg.action === 'resume') homeOpen = false
         else if (msg.action === 'home') homeOpen = true
+        else if (msg.action === 'volume' && typeof msg.value === 'number') {
+          // The kiosk echoes the speaker volume (it applies the gain itself).
+          volume = Math.max(0, Math.min(1, msg.value))
+          setMasterVolume(volume)
+        }
         return
     }
   }
@@ -126,7 +132,15 @@
     session = new PadSession(
       {
         cable: (handlers) => new CableClient(cableUrl(), { channel: 'PlaySessionChannel' }, handlers),
-        peer: (config) => new RTCPeerConnection(config) as unknown as PeerLike,
+        peer: (config) => {
+          const pc = new RTCPeerConnection(config)
+          // The kiosk's audio track; silent unless this phone is the speaker.
+          pc.addEventListener('track', (ev) => {
+            if (ev.track.kind !== 'audio') return
+            attachSpeakerStream(ev.streams[0] ?? new MediaStream([ev.track]))
+          })
+          return pc as unknown as PeerLike
+        },
         ice: async () => (await getIce(code)).ice_servers,
         hello,
       },
@@ -195,6 +209,7 @@
   function openHome() {
     pressTick()
     unlockAudio()
+    void playSpeaker()
     model.releaseAll()
     homeOpen = true
     send({ t: 'system', action: 'home' })
@@ -277,6 +292,11 @@
   <header>
     <span class="slot">{player.slot ? `P${player.slot}` : 'Spectator'}</span>
     <span class="name">{player.name}</span>
+    {#if player.speaker}
+      <span class="speaker-badge" title="This phone plays the sound" aria-label="Speaker">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z" /></svg>
+      </span>
+    {/if}
     <span class="conn {conn}" title={connLabel}><span class="dot"></span><span class="txt">{connLabel}</span></span>
     <button class="home" type="button" aria-label="Home" on:click={openHome}>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" /></svg>
@@ -306,6 +326,13 @@
           {player.host ? "You're the host. " : ''}Waiting for {kioskName || 'the kiosk'}…
         </p>
       </section>
+    {/if}
+
+    {#if player.speaker && $speakerBlocked}
+      <button class="sound-gate" type="button" on:click={() => void playSpeaker()}>
+        Tap to enable sound
+        <span>This phone is the speaker</span>
+      </button>
     {/if}
 
     {#if sensitive}
@@ -388,6 +415,45 @@
   }
   .conn.online .txt {
     display: none;
+  }
+  .speaker-badge {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--yui-chrome-fill);
+  }
+  .speaker-badge svg {
+    width: 18px;
+    height: 18px;
+    fill: var(--fg);
+  }
+  .sound-gate {
+    position: absolute;
+    left: 14px;
+    right: 14px;
+    bottom: 14px;
+    z-index: 4;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    min-height: 64px;
+    padding: 12px 16px;
+    border: 0;
+    border-radius: var(--yui-radius-control, 14px);
+    background: var(--player);
+    color: #fff;
+    font: inherit;
+    font-weight: 800;
+    font-size: 1.05rem;
+    box-shadow: 0 var(--yui-lip) 0 rgba(0, 0, 0, 0.35);
+  }
+  .sound-gate span {
+    font-weight: 600;
+    font-size: 0.85rem;
+    opacity: 0.85;
   }
   .home {
     width: 48px;

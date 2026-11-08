@@ -48,13 +48,18 @@
       <span class="pct">{Math.round(volume * 100)}%</span>
     </label>
 
-    <button
-      class="secondary"
-      on:click={() => {
-        speakerAsked = true
-        onSpeaker()
-      }}>{speakerAsked ? 'Asked to be the speaker' : 'Be the speaker'}</button
-    >
+    {#if player.speaker}
+      <p class="speaker-now">This phone is the speaker</p>
+    {:else}
+      <button
+        class="secondary"
+        disabled={speakerAsked}
+        on:click={() => {
+          speakerAsked = true
+          onSpeaker()
+        }}>{speakerAsked ? 'Switching the sound here…' : 'Be the speaker'}</button
+      >
+    {/if}
 
     <button class="secondary danger" on:click={quit}>{confirmQuit ? 'Tap again to quit' : 'Quit game'}</button>
   </div>
@@ -122,6 +127,14 @@
   .big {
     min-height: 72px;
     font-size: 1.3rem;
+  }
+  .speaker-now {
+    margin: 0;
+    padding: 12px 16px;
+    border-radius: 14px;
+    background: var(--yui-chrome-fill);
+    text-align: center;
+    font-weight: 700;
   }
   .volume {
     display: grid;
