@@ -134,8 +134,12 @@ type Syncer struct {
 	// switch is blocked.
 	quiescing bool
 	// resumed is closed by Resume. Waiters must copy the channel under mu.
-	resumed     chan struct{}
-	bound       *reconcileBind
+	resumed chan struct{}
+	// binds holds every attempt that has published a cancel and not yet
+	// released it. A later Reconcile must not replace an earlier one: Quiesce
+	// cancels the whole set, including a stream that already holds reconMu
+	// while another attempt waits on it.
+	binds       map[*reconcileBind]struct{}
 	reasons     map[string]struct{}
 	wake        chan struct{}
 	reconciling bool
@@ -144,6 +148,9 @@ type Syncer struct {
 	// Tests freeze that window. The hook must not call Reconcile or Quiesce on
 	// this goroutine.
 	beforeBind func()
+	// beforeReconLock, when set, runs with no syncer lock held after this
+	// attempt has published its cancel and before it takes reconMu.
+	beforeReconLock func()
 	// onQuiesceWait, when set, runs once with no syncer lock held when an
 	// attempt notices a switch and waits instead of publishing a cancel.
 	onQuiesceWait func()
@@ -185,6 +192,7 @@ func NewSyncer(cfg Config) *Syncer {
 	return &Syncer{
 		cfg:      cfg,
 		resumed:  make(chan struct{}),
+		binds:    map[*reconcileBind]struct{}{},
 		reasons:  map[string]struct{}{},
 		wake:     make(chan struct{}),
 		failures: map[string]failure{},
@@ -247,10 +255,15 @@ func (s *Syncer) Quiesce() {
 	s.mu.Lock()
 	s.quiescing = true
 	s.generation++
-	bound := s.bound
+	cancels := make([]context.CancelFunc, 0, len(s.binds))
+	for slot := range s.binds {
+		if slot != nil && slot.cancel != nil {
+			cancels = append(cancels, slot.cancel)
+		}
+	}
 	s.mu.Unlock()
-	if bound != nil && bound.cancel != nil {
-		bound.cancel()
+	for _, cancel := range cancels {
+		cancel()
 	}
 	s.reconMu.Lock()
 	s.mu.Lock()
@@ -483,6 +496,9 @@ func (s *Syncer) lockReconcile(ctx context.Context) (uint64, context.Context, *r
 			}
 			continue
 		}
+		if s.beforeReconLock != nil {
+			s.beforeReconLock()
+		}
 		s.reconMu.Lock()
 		parentDone := ctx.Err() != nil
 		stale := recCtx.Err() != nil || s.superseded(gen) || s.quiesceActive()
@@ -528,7 +544,10 @@ func (s *Syncer) bindReconcile(ctx context.Context) (uint64, context.Context, *r
 	gen := s.generation
 	recCtx, cancel := context.WithCancel(ctx)
 	slot := &reconcileBind{cancel: cancel}
-	s.bound = slot
+	if s.binds == nil {
+		s.binds = map[*reconcileBind]struct{}{}
+	}
+	s.binds[slot] = struct{}{}
 	s.reconciling = true
 	s.mu.Unlock()
 	return gen, recCtx, slot, nil, nil
@@ -551,8 +570,8 @@ func (s *Syncer) unlockReconcile(slot *reconcileBind) {
 		slot.cancel()
 	}
 	s.mu.Lock()
-	if slot != nil && s.bound == slot {
-		s.bound = nil
+	delete(s.binds, slot)
+	if len(s.binds) == 0 {
 		s.reconciling = false
 	}
 	s.current = nil

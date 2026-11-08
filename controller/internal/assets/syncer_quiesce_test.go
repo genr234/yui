@@ -28,7 +28,7 @@ func TestQuiesceBeforeCancelBindDoesNotDownload(t *testing.T) {
 	h.s.mu.Lock()
 	h.s.beforeBind = func() {
 		h.s.mu.Lock()
-		unbound = h.s.bound == nil && !h.s.reconciling && !h.s.quiescing
+		unbound = len(h.s.binds) == 0 && !h.s.reconciling && !h.s.quiescing
 		h.s.mu.Unlock()
 		close(entered)
 		<-release
@@ -61,7 +61,7 @@ func TestQuiesceBeforeCancelBindDoesNotDownload(t *testing.T) {
 	}
 
 	h.s.mu.Lock()
-	bumped := h.s.generation == 1 && h.s.bound == nil && h.s.quiescing
+	bumped := h.s.generation == 1 && len(h.s.binds) == 0 && h.s.quiescing
 	h.s.mu.Unlock()
 	if !bumped {
 		t.Fatal("quiesce did not publish the generation bump before cancel registration")
@@ -80,7 +80,7 @@ func TestQuiesceBeforeCancelBindDoesNotDownload(t *testing.T) {
 		t.Fatal("reconcile adopted the generation Quiesce already published")
 	}
 	h.s.mu.Lock()
-	adopted := h.s.bound != nil || !h.s.quiescing
+	adopted := len(h.s.binds) != 0 || !h.s.quiescing
 	h.s.mu.Unlock()
 	if adopted {
 		t.Fatal("reconcile published a cancel for the quiesced generation")
@@ -191,6 +191,138 @@ func TestQuiesceCancelsStreamingDownload(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("reconcile did not return after the stream was cancelled")
+	}
+	if _, ok := syncer.LocalPath("game1"); ok {
+		t.Fatal("cancelled stream was published as a ready file")
+	}
+}
+
+// A second Reconcile must not replace the cancel of the attempt that is
+// already streaming. Quiesce has to cancel that stream while the second
+// attempt is registered and blocked on reconMu, before Resume.
+func TestQuiesceCancelsStreamingReconcileWhileAnotherWaits(t *testing.T) {
+	started := make(chan struct{})
+	cancelled := make(chan struct{})
+	var once sync.Once
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/kiosk/assets" && r.Method == http.MethodGet:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"assets":[{"id":"game1","kind":"game","title":"G","filename":"g.bin","byte_size":8388608,"sha256":"` + strings.Repeat("ab", 32) + `"}]}`))
+		case strings.HasSuffix(r.URL.Path, "/download"):
+			w.Header().Set("Content-Length", "8388608")
+			w.WriteHeader(http.StatusOK)
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+			if _, err := w.Write([]byte{1}); err != nil {
+				return
+			}
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+			once.Do(func() { close(started) })
+			<-r.Context().Done()
+			close(cancelled)
+		case strings.HasSuffix(r.URL.Path, "/status"):
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	dir := t.TempDir()
+	db, err := store.Open(filepath.Join(dir, "store.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	syncer := NewSyncer(Config{
+		DataDir:    filepath.Join(dir, "assets"),
+		Remote:     &HTTPRemote{Endpoint: func() (string, string, bool) { return srv.URL, "tok", true }},
+		Store:      func() (*store.DB, error) { return db, nil },
+		DiskFree:   func(string) (uint64, error) { return 1 << 40, nil },
+		RetryDelay: time.Millisecond,
+	})
+
+	bWaiting := make(chan struct{})
+	releaseB := make(chan struct{})
+	var calls int
+	syncer.beforeReconLock = func() {
+		calls++
+		if calls == 1 {
+			return
+		}
+		if calls == 2 {
+			close(bWaiting)
+			<-releaseB
+		}
+	}
+
+	ctxA, cancelA := context.WithCancel(context.Background())
+	ctxB, cancelB := context.WithCancel(context.Background())
+	t.Cleanup(func() {
+		cancelA()
+		cancelB()
+		select {
+		case <-releaseB:
+		default:
+			close(releaseB)
+		}
+	})
+	errA := make(chan error, 1)
+	errB := make(chan error, 1)
+	go func() { errA <- syncer.Reconcile(ctxA, true) }()
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first reconcile did not reach the download stream")
+	}
+	go func() { errB <- syncer.Reconcile(ctxB, true) }()
+	select {
+	case <-bWaiting:
+	case <-time.After(5 * time.Second):
+		t.Fatal("second reconcile did not register before taking reconMu")
+	}
+	syncer.mu.Lock()
+	registered := len(syncer.binds)
+	syncer.mu.Unlock()
+	if registered != 2 {
+		t.Fatalf("expected both attempts registered while A streams, got %d", registered)
+	}
+
+	// B leaves the hook and blocks on reconMu, which A still holds.
+	close(releaseB)
+	quiesced := make(chan struct{})
+	go func() {
+		syncer.Quiesce()
+		close(quiesced)
+	}()
+	select {
+	case <-quiesced:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Quiesce did not cancel the streaming reconcile before Resume")
+	}
+	select {
+	case <-cancelled:
+	case <-time.After(3 * time.Second):
+		t.Fatal("streaming download was not cancelled")
+	}
+
+	// Stop a not-yet-read retry from blocking on another stream after Resume.
+	cancelA()
+	cancelB()
+	syncer.Resume()
+	for _, ch := range []chan error{errA, errB} {
+		select {
+		case err := <-ch:
+			if err != nil && err != context.Canceled {
+				t.Fatal(err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("reconcile did not return after Quiesce")
+		}
 	}
 	if _, ok := syncer.LocalPath("game1"); ok {
 		t.Fatal("cancelled stream was published as a ready file")
