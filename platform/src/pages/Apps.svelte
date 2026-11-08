@@ -6,6 +6,7 @@
   import RotateCwIcon from "lucide-svelte/icons/rotate-cw";
   import PlayIcon from "lucide-svelte/icons/play";
   import PlusIcon from "lucide-svelte/icons/plus";
+  import SmartphoneIcon from "lucide-svelte/icons/smartphone";
   import EmptyState from "../components/EmptyState.svelte";
   import JoinQr from "../components/JoinQr.svelte";
   import ThemeParticles from "../components/ThemeParticles.svelte";
@@ -40,6 +41,8 @@
   let error = "";
   let loading = true;
   let shellFullscreen = false;
+  let playBusy = false;
+  let playError = "";
   let consumedOpenAppNonce = 0;
   let refreshTimer: number | undefined;
   const dispatch = createEventDispatcher<{
@@ -105,6 +108,18 @@
       .filter((app) => app.id !== hero?.id && !recentOpened.some((entry) => entry.app.id === app.id))
       .map((app) => ({ app, openedAt: 0 })),
   ].slice(0, 3);
+
+  async function togglePhonePlay() {
+    playBusy = true;
+    playError = "";
+    try {
+      padState = padState.session ? await pad.end() : await pad.start();
+    } catch (err) {
+      playError = err instanceof Error ? err.message : "Could not change phone play";
+    } finally {
+      playBusy = false;
+    }
+  }
 
   function categoryOf(app: YuiDevApp) {
     return normalizeAppCategory(app.app.category);
@@ -292,6 +307,11 @@
     <section class="all-apps" aria-label="All apps">
       <header class="all-apps-head">
         <h2>All apps</h2>
+        <button class="play-phones" type="button" disabled={playBusy} on:click={togglePhonePlay}>
+          <SmartphoneIcon size={18} strokeWidth={2.2} />
+          {padState.session ? "End phone play" : "Play on your phones"}
+        </button>
+        {#if playError}<span class="play-phones-error">{playError}</span>{/if}
         {#if categoryNames.length > 1}
           <div class="category-chips" role="group" aria-label="Filter by category">
             <button class:active={filter === ""} aria-pressed={filter === ""} on:click={() => (filter = "")}>All</button>

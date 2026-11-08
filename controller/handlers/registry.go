@@ -12,6 +12,7 @@ import (
 
 	"kiosk/controller/internal/assets"
 	"kiosk/controller/internal/config"
+	"kiosk/controller/internal/pad/session"
 	"kiosk/controller/internal/store"
 )
 
@@ -48,6 +49,14 @@ type Registry struct {
 	assetEndpoint *assetEndpointCache
 	emitMu        sync.RWMutex
 	emitter       Emitter
+	// padMu guards the play-session handle. Do not take config, store, or
+	// asset locks while holding it.
+	padMu        sync.Mutex
+	padRoot      context.Context
+	padMgr       *session.Manager
+	padCancel    context.CancelFunc
+	padDone      chan struct{}
+	padSensitive bool
 }
 
 func NewRegistry(cfg config.Config) *Registry {
@@ -70,6 +79,7 @@ func NewRegistry(cfg config.Config) *Registry {
 	r.Register(PluginCommands()...)
 	r.Register(UpdateCommands()...)
 	r.Register(EmbedBlockerCommands()...)
+	r.Register(PadCommands()...)
 	return r
 }
 

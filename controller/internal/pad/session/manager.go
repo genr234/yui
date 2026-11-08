@@ -149,7 +149,6 @@ func (m *Manager) Run(ctx context.Context) error {
 	}
 	m.mu.Lock()
 	m.record = &record
-	m.active = true
 	for i := range record.Players {
 		p := record.Players[i]
 		m.players[p.ID] = &playerState{Player: p}
@@ -158,6 +157,9 @@ func (m *Manager) Run(ctx context.Context) error {
 	if err := m.publishQR(); err != nil {
 		log.Printf("pad session: qr: %v", err)
 	}
+	m.mu.Lock()
+	m.active = true
+	m.mu.Unlock()
 	m.emit()
 
 	runCtx, cancel := context.WithCancel(ctx)

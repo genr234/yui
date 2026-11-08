@@ -32,6 +32,11 @@ export const pad = {
 			.catch(() => empty),
 	onState: (fn: (state: PadState) => void) =>
 		bridge.on<PadState>("pad.players", (state) => fn(normalize(state))),
+	start: () => bridge.send<PadState | null>("pad.session.start").then((state) => normalize(state)),
+	end: () => bridge.send<PadState | null>("pad.session.end").then((state) => normalize(state)),
+	/** True while the PIN screen or Settings is open. The controller stores it and later drops pointer/text input. */
+	setSensitive: (active: boolean) =>
+		bridge.send("pad.sensitive", { active }).then(() => undefined).catch(() => undefined),
 };
 
 function normalize(state: PadState | null | undefined): PadState {

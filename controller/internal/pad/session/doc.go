@@ -6,16 +6,11 @@
 // hello with welcome. Input frames are decoded with internal/pad/protocol;
 // stale seq values are dropped. Callers read the latest state per player.
 //
-// ICE-failure fallback carries control JSON on the ActionCable signal action.
-// That path is not live on Rails yet. PlaySessionChannel relays only kiosk
-// types offer|ice|bye and player types answer|ice|hello, and drops anything
-// else. This package still speaks the extra type "control" so the fallback
-// can be tested against a fake cable server:
+// ICE-failure fallback carries control JSON on the ActionCable signal action
+// as type "control" (contracts §2). data is one control object, the same
+// shape as a §3 frame, and stays under the channel's 64 KiB limit. It does
+// not reuse offer, answer, or ice payloads.
 //
 //	kiosk  -> {to, type:"control", data:{...control object...}}
 //	player -> {from, type:"control", data:{...control object...}}
-//
-// data is a JSON object, the same shape as a control frame, and stays under
-// the channel's 64 KiB limit. It does not reuse offer, answer, or ice payloads.
-// Wiring it up means extending contracts §2 and the channel allow-lists together.
 package session

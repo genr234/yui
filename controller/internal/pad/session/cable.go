@@ -87,6 +87,9 @@ func dialCable(ctx context.Context, serverURL, token, sessionID string, dialer *
 	}
 	header := http.Header{}
 	header.Set("Authorization", "Bearer "+token)
+	if origin := cableOrigin(wsURL); origin != "" {
+		header.Set("Origin", origin)
+	}
 	conn, _, err := dialer.DialContext(ctx, wsURL, header)
 	if err != nil {
 		return nil, fmt.Errorf("pad session: cable: %w", err)
@@ -96,6 +99,27 @@ func dialCable(ctx context.Context, serverURL, token, sessionID string, dialer *
 		ident:   string(identRaw),
 		confirm: make(chan error, 1),
 	}, nil
+}
+
+// cableOrigin is the server's own origin. Action Cable accepts that, and
+// rejects a foreign Origin even when the bearer token is valid.
+func cableOrigin(wsURL string) string {
+	parsed, err := url.Parse(wsURL)
+	if err != nil {
+		return ""
+	}
+	switch parsed.Scheme {
+	case "ws":
+		parsed.Scheme = "http"
+	case "wss":
+		parsed.Scheme = "https"
+	default:
+		return ""
+	}
+	parsed.Path = ""
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String()
 }
 
 func cableURL(serverURL string) (string, error) {

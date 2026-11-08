@@ -3,12 +3,13 @@
 # Kiosk:  subscribe { channel: "PlaySessionChannel", session_id }, streams the session.
 # Player: subscribe { channel: "PlaySessionChannel" }, streams its own player record.
 #
-# Kiosk -> player: perform "signal", { to, type: offer|ice|bye, data } -> { type, data }
-# Player -> kiosk: perform "signal", { type: answer|ice|hello, data } -> { from, type, data }
+# Kiosk -> player: perform "signal", { to, type: offer|ice|bye|control, data } -> { type, data }
+# Player -> kiosk: perform "signal", { type: answer|ice|hello|control, data } -> { from, type, data }
+# "control" is the ICE-failure fallback: data is one §3 control object.
 # Anything else is dropped.
 class PlaySessionChannel < ApplicationCable::Channel
-  KIOSK_SIGNAL_TYPES = %w[offer ice bye].freeze
-  PLAYER_SIGNAL_TYPES = %w[answer ice hello].freeze
+  KIOSK_SIGNAL_TYPES = %w[offer ice bye control].freeze
+  PLAYER_SIGNAL_TYPES = %w[answer ice hello control].freeze
   MAX_SIGNAL_BYTES = 64.kilobytes
 
   def subscribed
