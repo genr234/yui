@@ -12,6 +12,21 @@ class PlayerTest < ActiveSupport::TestCase
     assert_equal [ true, false, false, false, false ], players.map(&:host)
   end
 
+  test "a second player asking for a taken color gets the first free one" do
+    play_session = start_session
+    first, = Player.join!(play_session, name: "Ann", color: "blue")
+    second, = Player.join!(play_session, name: "Bo", color: "blue")
+    third, = Player.join!(play_session, name: "Cy", color: "green")
+
+    assert_equal "blue", first.color
+    assert_equal "red", second.color
+    assert_equal "green", third.color
+
+    first.update!(kicked_at: Time.current)
+    fourth, = Player.join!(play_session, name: "Di", color: "blue")
+    assert_equal "blue", fourth.color
+  end
+
   test "a kicked player's slot is freed for the next joiner" do
     play_session = start_session
     _first, = join_player(play_session, name: "One")

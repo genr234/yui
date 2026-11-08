@@ -94,7 +94,7 @@ class PlayController < ActionController::Base
   # Rejoin keeps the slot; name and color may change.
   def rejoin(player)
     player.name = params[:name] if params.key?(:name)
-    player.color = params[:color] if params.key?(:color)
+    player.color = @play_session.free_color(params[:color], except: player) if params.key?(:color)
     changed = player.changed?
     return render_invalid(player) unless player.save
 

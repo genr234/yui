@@ -151,6 +151,16 @@ class PlaySession < ApplicationRecord
     new_host.broadcast_updated
   end
 
+  # The requested color, or the first free one when another active player
+  # already has it. Two phones that open the join screen together both see
+  # the same free color, so the join itself settles it.
+  def free_color(preferred, except: nil)
+    taken = players.active.where.not(id: except&.id).pluck(:color)
+    return preferred unless taken.include?(preferred)
+
+    Player::COLORS.find { |color| !taken.include?(color) } || preferred
+  end
+
   def free_slot
     taken = players.active.where.not(slot: nil).pluck(:slot)
     (Player::SLOTS.to_a - taken).min

@@ -33,7 +33,7 @@ class Player < ApplicationRecord
       player = transaction do
         play_session.players.create!(
           name: name,
-          color: color,
+          color: play_session.free_color(color),
           slot: play_session.free_slot,
           host: !play_session.players.active.exists?(host: true),
           token_digest: digest_token(token)
