@@ -149,6 +149,49 @@
     </section>
 
     <%= render "accounts/play_sessions", kiosks: @kiosks %>
+    <section id="asset-library" class="project-section project-section--assets"
+             data-controller="asset-library"
+             data-asset-library-url-value="<%= account_assets_path(@account) %>"
+             data-action="asset-upload:changed->asset-library#refresh turbo:frame-load->asset-library#loaded">
+      <div class="project-cell__header">
+        <h2>Asset Library</h2>
+      </div>
+
+      <form class="asset-upload" data-controller="asset-upload"
+            data-asset-upload-endpoint-value="<%= account_asset_uploads_url(@account) %>"
+            data-action="submit->asset-upload#start">
+        <label class="field asset-upload__file">
+          <span>File</span>
+          <input type="file" name="file" required data-asset-upload-target="file">
+        </label>
+        <label class="field">
+          <span>Kind</span>
+          <%= select_tag :kind, options_for_select(asset_kind_options, "wii-game"), data: { asset_upload_target: "kind", action: "asset-upload#toggleRuntime" } %>
+        </label>
+        <label class="field">
+          <span>Title <small>(optional)</small></span>
+          <input type="text" name="title" maxlength="200" placeholder="From the disc or file name" data-asset-upload-target="title">
+        </label>
+        <div class="asset-upload__runtime" data-asset-upload-target="runtimeFields" hidden>
+          <label class="field">
+            <span>Runtime</span>
+            <input type="text" name="runtime" maxlength="64" placeholder="dolphin" data-asset-upload-target="runtime">
+          </label>
+          <label class="field">
+            <span>Version</span>
+            <input type="text" name="version" maxlength="64" placeholder="2509" data-asset-upload-target="version">
+          </label>
+        </div>
+        <div class="asset-upload__actions">
+          <button type="submit" class="button button--primary" data-asset-upload-target="submit">Upload</button>
+          <button type="button" class="button button--ghost" data-asset-upload-target="pause" data-action="asset-upload#pause" hidden>Pause</button>
+        </div>
+        <progress class="asset-progress asset-upload__progress" value="0" max="1" data-asset-upload-target="progress" hidden></progress>
+        <p class="asset-upload__message" data-asset-upload-target="message" aria-live="polite"></p>
+      </form>
+
+      <%= render "assets/library", account: @account, assets: @assets, kiosks: @kiosks %>
+    </section>
 
     <section class="project-section project-section--commands">
       <% if @kiosks.any? %>

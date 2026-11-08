@@ -62,6 +62,35 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_100000) do
     t.index ["blob_id"], name: "index_active_storage_variant_records_on_blob_id"
   end
 
+  create_table "assets", force: :cascade do |t|
+    t.integer "account_id", null: false
+    t.bigint "byte_size", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.text "error"
+    t.string "filename", null: false
+    t.string "kind", null: false
+    t.json "metadata", default: {}, null: false
+    t.string "sha256"
+    t.string "status", default: "uploading", null: false
+    t.string "title", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "status"], name: "index_assets_on_account_id_and_status"
+    t.index ["account_id"], name: "index_assets_on_account_id"
+    t.index ["status", "updated_at"], name: "index_assets_on_status_and_updated_at"
+  end
+
+  create_table "kiosk_assets", force: :cascade do |t|
+    t.integer "asset_id", null: false
+    t.bigint "bytes_done", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.text "error"
+    t.integer "kiosk_id", null: false
+    t.string "state", default: "queued", null: false
+    t.datetime "updated_at", null: false
+    t.index ["asset_id"], name: "index_kiosk_assets_on_asset_id"
+    t.index ["kiosk_id", "asset_id"], name: "index_kiosk_assets_on_kiosk_id_and_asset_id", unique: true
+  end
+
   create_table "kiosk_commands", force: :cascade do |t|
     t.string "command_type", null: false
     t.datetime "completed_at"
@@ -177,6 +206,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_100000) do
   add_foreign_key "account_state_records", "accounts"
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "assets", "accounts"
+  add_foreign_key "kiosk_assets", "assets", on_delete: :cascade
+  add_foreign_key "kiosk_assets", "kiosks", on_delete: :cascade
   add_foreign_key "kiosk_commands", "kiosks"
   add_foreign_key "kiosk_operations", "accounts"
   add_foreign_key "kiosk_operations", "kiosks"

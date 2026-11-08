@@ -5,6 +5,8 @@ class Kiosk < ApplicationRecord
 
   # Yui Pad play sessions
   has_many :play_sessions, dependent: :destroy
+  # Asset library sync state (Phase 4).
+  has_many :kiosk_assets, dependent: :delete_all
 
   validates :name, :device_uid, :device_token_digest, presence: true
   validates :device_uid, uniqueness: { scope: :account_id }

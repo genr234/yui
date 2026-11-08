@@ -3,6 +3,7 @@ require_relative "../config/environment"
 require "rails/test_help"
 require "webauthn/fake_client"
 require_relative "test_helpers/play_session_test_helper"
+require_relative "support/disc_fixtures"
 
 module ActiveSupport
   class TestCase
@@ -13,6 +14,21 @@ module ActiveSupport
     fixtures :all
 
     # Add more helper methods to be used by all tests here...
+
+    # Asset library files go to a throwaway directory per test process, and covers are
+    # never fetched from the network unless a test installs its own downloader.
+    AssetStorage.root = Rails.root.join("tmp", "test-storage", "main-#{Process.pid}")
+    parallelize_setup do |worker|
+      AssetStorage.root = Rails.root.join("tmp", "test-storage", "worker-#{worker}-#{Process.pid}")
+    end
+
+    setup do
+      GameCover.downloader = ->(_uri) { nil }
+    end
+
+    teardown do
+      FileUtils.rm_rf(AssetStorage.root)
+    end
   end
 end
 
