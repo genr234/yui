@@ -21,24 +21,25 @@ type Command interface {
 }
 
 type Registry struct {
-	cfg       config.Config
-	processMu sync.Mutex
-	processes map[int]*exec.Cmd
-	commands  map[string]Command
-	storeMu   sync.Mutex
-	store     *store.DB
-	migrated  bool
-	plugins   *PluginManager
-	authMu    sync.Mutex
-	authState AuthState
-	authToken string
-	pluginCtx context.Context
-	syncMu    sync.Mutex
-	syncState accountSyncState
-	assetsMu  sync.Mutex
-	assetSync *assets.Syncer
-	emitMu    sync.RWMutex
-	emitter   Emitter
+	cfg        config.Config
+	processMu  sync.Mutex
+	processes  map[int]*exec.Cmd
+	commands   map[string]Command
+	storeMu    sync.Mutex
+	store      *store.DB
+	migrated   bool
+	storeEpoch uint64
+	plugins    *PluginManager
+	authMu     sync.Mutex
+	authState  AuthState
+	authToken  string
+	pluginCtx  context.Context
+	syncMu     sync.Mutex
+	syncState  accountSyncState
+	assetsMu   sync.Mutex
+	assetSync  *assets.Syncer
+	emitMu     sync.RWMutex
+	emitter    Emitter
 }
 
 func NewRegistry(cfg config.Config) *Registry {
@@ -103,14 +104,35 @@ func (r *Registry) DispatchRemote(method string, params json.RawMessage) (any, e
 func (r *Registry) Store() (*store.DB, error) {
 	r.storeMu.Lock()
 	defer r.storeMu.Unlock()
+	if err := r.ensureStoreLocked(); err != nil {
+		return nil, err
+	}
+	return r.store, nil
+}
 
+// withStore runs fn while the active database and its epoch stay paired.
+// Account publication takes the same lock, so a read cannot observe one
+// account's document with another account's epoch.
+func (r *Registry) withStore(fn func(db *store.DB, epoch uint64) error) error {
+	r.storeMu.Lock()
+	defer r.storeMu.Unlock()
+	if err := r.ensureStoreLocked(); err != nil {
+		return err
+	}
+	return fn(r.store, r.storeEpoch)
+}
+
+// ensureStoreLocked opens the active account database. The caller holds
+// storeMu. Migration uses that database directly: calling Store or withStore
+// from here would lock storeMu again and deadlock.
+func (r *Registry) ensureStoreLocked() error {
 	if r.store != nil {
-		return r.store, nil
+		return nil
 	}
 
 	db, err := store.Open(r.activeStorePath())
 	if err != nil {
-		return nil, err
+		return err
 	}
 	r.store = db
 
@@ -120,8 +142,7 @@ func (r *Registry) Store() (*store.DB, error) {
 			log.Printf("legacy storage migration failed: %v", err)
 		}
 	}
-
-	return r.store, nil
+	return nil
 }
 
 func (r *Registry) Close() error {
@@ -139,18 +160,19 @@ func (r *Registry) Close() error {
 	return err
 }
 
-func (r *Registry) resetStore() error {
-	r.storeMu.Lock()
-	defer r.storeMu.Unlock()
-
+// resetStoreLocked drops the open database and bumps the epoch. The caller
+// holds storeMu and must publish the config that selects the next database
+// before releasing it. The epoch still bumps when nothing is open, because a
+// switch can happen before the first store command.
+func (r *Registry) resetStoreLocked() error {
+	r.storeEpoch++
+	r.migrated = false
 	if r.store == nil {
-		r.migrated = false
 		return nil
 	}
-	err := r.store.Close()
+	db := r.store
 	r.store = nil
-	r.migrated = false
-	return err
+	return db.Close()
 }
 
 func (r *Registry) migrateLegacyStorage() error {

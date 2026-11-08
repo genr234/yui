@@ -23,22 +23,24 @@
 }
 
 .plugin-health-gauge {
-	--gauge-color: #20b56b;
+	--gauge-color: var(--yui-green);
+	/* Declared here so color-mix sees this gauge's --gauge-color, not a baked :host value. */
+	--yui-shadow-gauge-pulse: 0 0 5px color-mix(in srgb, var(--gauge-color) 42%, transparent);
 	display: grid;
 	gap: 4px;
 	justify-items: center;
 	padding: 10px 12px 12px;
-	border: 1px solid #dfe6ee;
-	border-radius: 12px;
-	background: #ffffff;
+	border: 1px solid var(--yui-line);
+	border-radius: var(--yui-radius-control);
+	background: var(--yui-surface);
 }
 
 .plugin-health-gauge.warning {
-	--gauge-color: #f2b72f;
+	--gauge-color: var(--yui-orange);
 }
 
 .plugin-health-gauge.danger {
-	--gauge-color: #df3d2f;
+	--gauge-color: var(--yui-red);
 }
 
 .plugin-gauge-svg {
@@ -57,18 +59,18 @@
 }
 
 .plugin-gauge-outer {
-	stroke: #dce2e9;
+	stroke: var(--yui-track);
 	stroke-width: 8;
 }
 
 .plugin-gauge-band {
-	stroke: #e6ebf1;
+	stroke: var(--yui-track);
 	stroke-width: 18;
 	opacity: 0.72;
 }
 
 .plugin-gauge-tick {
-	stroke: #c9d2dc;
+	stroke: var(--yui-line-strong);
 	stroke-width: 2;
 	stroke-linecap: round;
 	opacity: 0.72;
@@ -78,13 +80,13 @@
 	stroke: var(--gauge-color);
 	stroke-width: 9;
 	stroke-linecap: round;
-	filter: drop-shadow(0 2px 4px rgba(23, 35, 52, 0.14));
+	filter: drop-shadow(var(--yui-shadow-gauge));
 	transition: stroke 180ms ease;
 }
 
 .plugin-gauge-hub-ring {
-	fill: #ffffff;
-	filter: drop-shadow(0 1px 5px rgba(23, 35, 52, 0.18));
+	fill: var(--yui-surface);
+	filter: drop-shadow(var(--yui-shadow-gauge-hub));
 }
 
 .plugin-gauge-hub {
@@ -100,10 +102,10 @@
 @keyframes plugin-hub-pulse {
 	0%,
 	100% {
-		filter: drop-shadow(0 0 0 rgba(223, 61, 47, 0));
+		filter: drop-shadow(var(--yui-shadow-none));
 	}
 	50% {
-		filter: drop-shadow(0 0 5px color-mix(in srgb, var(--gauge-color) 42%, transparent));
+		filter: drop-shadow(var(--yui-shadow-gauge-pulse));
 	}
 }
 
@@ -115,14 +117,14 @@
 }
 
 .plugin-gauge-copy strong {
-	color: #172334;
+	color: var(--yui-ink-2);
 	font-size: 16px;
 	font-weight: 600;
 	line-height: 1.1;
 }
 
 .plugin-gauge-copy small {
-	color: #647487;
+	color: var(--yui-muted);
 	font-size: 12px;
 	font-weight: 500;
 }
@@ -163,7 +165,7 @@
 
 .settings-nav {
 	display: grid;
-	grid-template-columns: 42px minmax(0, 1fr);
+	grid-template-columns: 44px minmax(0, 1fr);
 	gap: 12px;
 	align-items: center;
 }
@@ -171,16 +173,16 @@
 .settings-nav p {
 	min-width: 0;
 	overflow-wrap: anywhere;
-	color: #111925;
+	color: var(--yui-ink);
 	font-size: 22px;
 	font-weight: 500;
 }
 
 .settings-group {
 	overflow: hidden;
-	border: 1px solid #dfe6ee;
-	border-radius: 12px;
-	background: #ffffff;
+	border: 1px solid var(--yui-line);
+	border-radius: var(--yui-radius-control);
+	background: var(--yui-surface);
 }
 
 .settings-row {
@@ -192,9 +194,9 @@
 	min-height: 58px;
 	padding: 12px 16px;
 	border: 0;
-	border-bottom: 1px solid #e6edf4;
-	color: #172334;
-	background: #ffffff;
+	border-bottom: 1px solid var(--yui-track);
+	color: var(--yui-ink-2);
+	background: var(--yui-surface);
 	text-align: left;
 	cursor: pointer;
 }
@@ -221,7 +223,7 @@
 
 .settings-row small {
 	margin-top: 3px;
-	color: #647487;
+	color: var(--yui-muted);
 	font-size: 13px;
 	font-weight: 500;
 }
@@ -258,13 +260,13 @@
 	gap: 14px;
 	align-items: center;
 	padding: 16px;
-	border: 1px solid #dfe6ee;
-	border-radius: 12px;
-	background: #ffffff;
+	border: 1px solid var(--yui-line);
+	border-radius: var(--yui-radius-control);
+	background: var(--yui-surface);
 }
 
 .settings-app-hero h2 {
-	color: #111925;
+	color: var(--yui-ink);
 	font-size: 22px;
 	font-weight: 600;
 	line-height: 1.15;
@@ -279,14 +281,14 @@
 
 .settings-app-hero p {
 	margin-top: 5px;
-	color: #647487;
+	color: var(--yui-muted);
 	font-size: 14px;
 	font-weight: 500;
 }
 
 .settings-app-hero small {
 	margin-top: 6px;
-	color: #728095;
+	color: var(--yui-muted);
 	font-size: 12px;
 	font-weight: 400;
 }
@@ -300,13 +302,13 @@
 .yui-app-check input[type="checkbox"] {
 	position: relative;
 	flex: 0 0 auto;
-	width: 46px;
-	height: 28px;
+	width: 64px;
+	height: 44px;
 	margin: 0;
-	border: 1px solid #c8d3df;
+	border: 1px solid var(--yui-line-strong);
 	border-radius: 999px;
 	appearance: none;
-	background: #dbe3ec;
+	background: var(--yui-track);
 	cursor: pointer;
 	transform: translateZ(0);
 	transition:
@@ -319,13 +321,13 @@
 .permission-row input[type="checkbox"]::after,
 .yui-app-check input[type="checkbox"]::after {
 	position: absolute;
-	top: 2px;
-	left: 2px;
-	width: 22px;
-	height: 22px;
+	top: 4px;
+	left: 4px;
+	width: 36px;
+	height: 36px;
 	border-radius: 50%;
-	background: #ffffff;
-	box-shadow: 0 1px 3px rgba(17, 25, 37, 0.16);
+	background: var(--yui-surface);
+	box-shadow: var(--yui-shadow-knob);
 	content: "";
 	transition:
 		box-shadow 260ms ease,
@@ -341,24 +343,21 @@
 .permission-card input[type="checkbox"]:checked,
 .permission-row input[type="checkbox"]:checked,
 .yui-app-check input[type="checkbox"]:checked {
-	border-color: #007be0;
-	background: #007be0;
+	border-color: var(--yui-blue);
+	background: var(--yui-blue);
 }
 
 .permission-card input[type="checkbox"]:checked::after,
 .permission-row input[type="checkbox"]:checked::after,
 .yui-app-check input[type="checkbox"]:checked::after {
-	box-shadow: 0 2px 6px rgba(17, 25, 37, 0.22);
-	transform: translateX(18px);
+	box-shadow: var(--yui-shadow-knob-raised);
+	transform: translateX(20px);
 }
 
-.permission-card input[type="checkbox"]:checked:active::after {
-	transform: translateX(14px) scaleX(1.08);
-}
-
+.permission-card input[type="checkbox"]:checked:active::after,
 .permission-row input[type="checkbox"]:checked:active::after,
 .yui-app-check input[type="checkbox"]:checked:active::after {
-	transform: translateX(18px) scaleX(1.08);
+	transform: translateX(20px) scaleX(1.08);
 }
 
 .permission-card input[type="checkbox"]:focus-visible,
@@ -372,20 +371,6 @@
 .yui-app-check input[type="checkbox"]:disabled {
 	cursor: not-allowed;
 	opacity: 0.52;
-}
-
-.permission-card input[type="checkbox"] {
-	width: 34px;
-	height: 20px;
-}
-
-.permission-card input[type="checkbox"]::after {
-	width: 14px;
-	height: 14px;
-}
-
-.permission-card input[type="checkbox"]:checked::after {
-	transform: translateX(14px);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -405,12 +390,13 @@
 	gap: 6px;
 	align-items: center;
 	justify-content: center;
-	min-height: 32px;
-	padding: 6px 10px;
-	border: 1px solid #ccd7e3;
+	min-width: 44px;
+	min-height: 44px;
+	padding: 8px 12px;
+	border: 1px solid var(--yui-line);
 	border-radius: 8px;
-	color: #172334;
-	background: #ffffff;
+	color: var(--yui-ink-2);
+	background: var(--yui-surface);
 	font-size: 12px;
 	font-weight: 600;
 	cursor: pointer;
@@ -422,13 +408,13 @@
 }
 
 .settings-inline-button.danger {
-	border-color: #e2b7b7;
-	color: #a73535;
-	background: #fff7f7;
+	border-color: var(--yui-red);
+	color: var(--yui-red);
+	background: color-mix(in srgb, var(--yui-red) 8%, var(--yui-surface));
 }
 
 .settings-row.active-account {
-	background: #f5f9ff;
+	background: color-mix(in srgb, var(--yui-blue) 8%, var(--yui-surface));
 }
 
 .settings-row:disabled {
@@ -438,12 +424,12 @@
 
 .settings-text-input {
 	width: min(100%, 440px);
-	min-height: 36px;
-	padding: 7px 10px;
-	border: 1px solid #ccd7e3;
+	min-height: 44px;
+	padding: 8px 12px;
+	border: 1px solid var(--yui-line);
 	border-radius: 8px;
-	color: #172334;
-	background: #ffffff;
+	color: var(--yui-ink-2);
+	background: var(--yui-surface);
 	font-size: 13px;
 	font-weight: 600;
 }
@@ -479,14 +465,14 @@
 	width: 42px;
 	height: 42px;
 	overflow: hidden;
-	border: 1px solid #dfe6ee;
-	border-radius: 10px;
+	border: 1px solid var(--yui-line);
+	border-radius: var(--yui-radius-badge);
 	background:
-		linear-gradient(45deg, #eef3f8 25%, transparent 25%),
-		linear-gradient(-45deg, #eef3f8 25%, transparent 25%),
-		linear-gradient(45deg, transparent 75%, #eef3f8 75%),
-		linear-gradient(-45deg, transparent 75%, #eef3f8 75%),
-		#ffffff;
+		linear-gradient(45deg, var(--yui-backdrop) 25%, transparent 25%),
+		linear-gradient(-45deg, var(--yui-backdrop) 25%, transparent 25%),
+		linear-gradient(45deg, transparent 75%, var(--yui-backdrop) 75%),
+		linear-gradient(-45deg, transparent 75%, var(--yui-backdrop) 75%),
+		var(--yui-surface);
 	background-position:
 		0 0,
 		0 8px,
@@ -517,7 +503,7 @@
 .account-form label {
 	display: grid;
 	gap: 6px;
-	color: #172334;
+	color: var(--yui-ink-2);
 	font-size: 13px;
 	font-weight: 500;
 }
@@ -529,11 +515,11 @@
 
 .settings-message {
 	margin: -4px 4px 0;
-	color: #526477;
+	color: var(--yui-muted);
 	font-size: 13px;
 	font-weight: 500;
 }
 
 .settings-message.error {
-	color: #a73535;
+	color: var(--yui-red);
 }

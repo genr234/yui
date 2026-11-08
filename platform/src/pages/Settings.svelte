@@ -419,25 +419,28 @@
     return value.length > 12 ? value.slice(0, 12) : value;
   }
 
-  function autoUpdateEnabled() {
-    return config?.auto_update_enabled !== false;
+  function autoUpdateEnabled(currentConfig = config) {
+    return currentConfig?.auto_update_enabled !== false;
   }
 
-  function updateSummary() {
-    if (!autoUpdateEnabled()) return "Off";
-    if (updateStatus?.update_available) {
-      return `Update ready: ${shortCommit(updateStatus.latest_commit)}`;
+  function updateSummary(
+    status: UpdateStatus | null = updateStatus,
+    currentConfig = config,
+  ) {
+    if (!autoUpdateEnabled(currentConfig)) return "Off";
+    if (status?.update_available) {
+      return `Update ready: ${shortCommit(status.latest_commit)}`;
     }
-    if (updateStatus?.latest_commit) return "Latest build installed";
+    if (status?.latest_commit) return "Latest build installed";
     return "On";
   }
 
-  function sidebarThemeSummary() {
-    if (!sidebarTheme.enabled) return "Off";
-    if (sidebarTheme.images.length === 0) return "No images yet";
-    return sidebarTheme.images.length === 1
+  function sidebarThemeSummary(theme: SidebarThemeSettings = sidebarTheme) {
+    if (!theme.enabled) return "Off";
+    if (theme.images.length === 0) return "No images yet";
+    return theme.images.length === 1
       ? "1 image"
-      : `${sidebarTheme.images.length} images`;
+      : `${theme.images.length} images`;
   }
 
   function setSidebarThemeEnabled(enabled: boolean) {
@@ -498,23 +501,23 @@
     accountError = result.last_sync_error ?? "";
   }
 
-  function accountSummary() {
-    if (accountStatus?.syncing) return "Syncing";
-    if (accountStatus?.last_sync_error) return "Sync error";
-    if (accountStatus?.needs_pairing) return "Reconnect";
-    if (accountStatus?.active_account) return accountStatus.active_account.name;
+  function accountSummary(status: AccountStatus | null = accountStatus) {
+    if (status?.syncing) return "Syncing";
+    if (status?.last_sync_error) return "Sync error";
+    if (status?.needs_pairing) return "Reconnect";
+    if (status?.active_account) return status.active_account.name;
     return "Anonymous";
   }
 
-  function accountConnectionDetail() {
-    if (accountStatus?.needs_pairing) return "Pair this kiosk again";
-    if (accountStatus?.server_url) return accountStatus.server_url;
+  function accountConnectionDetail(status: AccountStatus | null = accountStatus) {
+    if (status?.needs_pairing) return "Pair this kiosk again";
+    if (status?.server_url) return status.server_url;
     return "Local data only";
   }
 
-  function accountLastSync() {
-    if (!accountStatus?.last_sync_at) return "Not synced yet";
-    return new Date(accountStatus.last_sync_at).toLocaleString();
+  function accountLastSync(status: AccountStatus | null = accountStatus) {
+    if (!status?.last_sync_at) return "Not synced yet";
+    return new Date(status.last_sync_at).toLocaleString();
   }
 
   async function runAccountAction(
@@ -646,7 +649,7 @@
           >
             <span>
               <span>Auto update</span>
-              <small>{updateSummary()}</small>
+              <small>{updateSummary(updateStatus, config)}</small>
             </span>
             <ChevronRightIcon size={18} strokeWidth={2.4} />
           </button>
@@ -656,7 +659,7 @@
           >
             <span>
               <span>Account</span>
-              <small>{accountSummary()}</small>
+              <small>{accountSummary(accountStatus)}</small>
             </span>
             <ChevronRightIcon size={18} strokeWidth={2.4} />
           </button>
@@ -666,7 +669,7 @@
           >
             <span>
               <span>Theme images</span>
-              <small>{sidebarThemeSummary()}</small>
+              <small>{sidebarThemeSummary(sidebarTheme)}</small>
             </span>
             <ChevronRightIcon size={18} strokeWidth={2.4} />
           </button>
@@ -723,13 +726,13 @@
           </span>
           <div>
             <h2>{accountStatus?.active_account?.name ?? "Anonymous"}</h2>
-            <p>{accountConnectionDetail()}</p>
+            <p>{accountConnectionDetail(accountStatus)}</p>
             <small>
               {accountStatus?.needs_pairing
                 ? "Device token missing"
                 : accountStatus?.syncing
                   ? "Syncing"
-                  : `Last sync: ${accountLastSync()}`}
+                  : `Last sync: ${accountLastSync(accountStatus)}`}
             </small>
           </div>
         </section>
@@ -1006,7 +1009,7 @@
             </span>
             <input
               type="checkbox"
-              checked={autoUpdateEnabled()}
+              checked={autoUpdateEnabled(config)}
               disabled={updateBusy || updateApplying}
               on:change={(event) =>
                 setAutoUpdateEnabled(event.currentTarget.checked)}

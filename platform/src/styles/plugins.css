@@ -2,7 +2,7 @@
 	display: grid;
 	gap: 10px;
 	padding: 10px;
-	border-radius: 12px;
+	border-radius: var(--yui-radius-control);
 	max-height: 360px;
 	overflow: scroll;
 }
@@ -13,13 +13,13 @@
 	gap: 10px;
 	align-items: start;
 	padding: 10px;
-	border: 1px solid #dfe7f1;
-	border-radius: 10px;
-	background: #f8fcfa;
+	border: 1px solid var(--yui-line);
+	border-radius: var(--yui-radius-badge);
+	background: var(--yui-backdrop);
 }
 
 .plugin-log-card.failed {
-	background: #fff8f8;
+	background: color-mix(in srgb, var(--yui-red) 8%, var(--yui-surface));
 }
 
 .plugin-log-icon {
@@ -28,13 +28,13 @@
 	width: 34px;
 	height: 34px;
 	border-radius: 9px;
-	color: #1f8f46;
-	background: #e8f7ee;
+	color: var(--yui-green);
+	background: color-mix(in srgb, var(--yui-green) 16%, var(--yui-surface));
 }
 
 .plugin-log-card.failed .plugin-log-icon {
-	color: #b73737;
-	background: #ffeaea;
+	color: var(--yui-red);
+	background: color-mix(in srgb, var(--yui-red) 12%, var(--yui-surface));
 }
 
 .plugin-log-copy {
@@ -43,7 +43,7 @@
 
 .plugin-log-copy span {
 	display: block;
-	color: #172334;
+	color: var(--yui-ink-2);
 	font-size: 13px;
 	font-weight: 500;
 }
@@ -51,7 +51,7 @@
 .plugin-log-copy small {
 	display: block;
 	margin-top: 3px;
-	color: #647487;
+	color: var(--yui-muted);
 	font-size: 12px;
 	font-weight: 600;
 	overflow-wrap: anywhere;
