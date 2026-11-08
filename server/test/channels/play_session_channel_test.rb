@@ -23,6 +23,7 @@ class PlaySessionChannelTest < ActionCable::Channel::TestCase
 
     assert subscription.confirmed?
     assert_has_stream kiosk_stream
+    assert @kiosk.reload.last_seen_at.present?, "subscribing counts as kiosk activity"
   end
 
   test "the kiosk can't subscribe to another kiosk's or an ended session" do

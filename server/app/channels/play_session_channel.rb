@@ -48,6 +48,7 @@ class PlaySessionChannel < ApplicationCable::Channel
     @play_session = current_kiosk.play_sessions.active.find_by(id: params[:session_id])
     return reject unless @play_session
 
+    current_kiosk.touch_seen!
     stream_for @play_session
   end
 

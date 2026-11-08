@@ -69,7 +69,9 @@ class KioskPlaySessionsApiTest < ActionDispatch::IntegrationTest
     assert other.reload.host?
     assert_not host.reload.host?
 
-    post "/api/kiosk/play_sessions/#{play_session.id}/players/#{host.id}/kick", headers: @auth
+    assert_enqueued_with(job: DisconnectPlayerJob, args: [ host ]) do
+      post "/api/kiosk/play_sessions/#{play_session.id}/players/#{host.id}/kick", headers: @auth
+    end
     assert_response :no_content
     assert host.reload.kicked?
 
