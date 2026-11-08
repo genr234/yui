@@ -1,0 +1,737 @@
+// Package assets keeps the kiosk's local asset library in sync with the
+// account's manifest on the server: background, resumable, verified downloads.
+package assets
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"hash"
+	"io"
+	"log"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	"kiosk/controller/internal/store"
+)
+
+const (
+	// Collection is the Bolt collection holding local asset records.
+	Collection = "assets-local"
+
+	StateQueued      = "queued"
+	StateDownloading = "downloading"
+	StatePaused      = "paused"
+	StateVerifying   = "verifying"
+	StateReady       = "ready"
+	StateFailed      = "failed"
+
+	DefaultReserve        = uint64(5) << 30
+	DefaultReportInterval = 5 * time.Second
+	DefaultInterval       = 15 * time.Minute
+
+	chunkSize = 256 << 10
+)
+
+var safeName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
+
+// Local is the persisted record for one asset (contract: assets-local).
+type Local struct {
+	ID        string          `json:"id"`
+	Kind      string          `json:"kind"`
+	Title     string          `json:"title"`
+	Filename  string          `json:"filename"`
+	ByteSize  int64           `json:"byte_size"`
+	SHA256    string          `json:"sha256"`
+	Metadata  json.RawMessage `json:"metadata,omitempty"`
+	State     string          `json:"state"`
+	BytesDone int64           `json:"bytes_done"`
+	Error     string          `json:"error,omitempty"`
+	Path      string          `json:"path,omitempty"`
+	UpdatedAt string          `json:"updated_at"`
+}
+
+// Item is the public view of an asset. It never includes a filesystem path.
+type Item struct {
+	ID        string          `json:"id"`
+	Kind      string          `json:"kind"`
+	Title     string          `json:"title"`
+	Metadata  json.RawMessage `json:"metadata,omitempty"`
+	State     string          `json:"state"`
+	BytesDone int64           `json:"bytes_done"`
+	ByteSize  int64           `json:"byte_size"`
+}
+
+type Current struct {
+	ID        string `json:"id"`
+	BytesDone int64  `json:"bytes_done"`
+	ByteSize  int64  `json:"byte_size"`
+}
+
+type Status struct {
+	State           string   `json:"state"`
+	PausedReasons   []string `json:"paused_reasons"`
+	Current         *Current `json:"current"`
+	LastReconcileAt *string  `json:"last_reconcile_at"`
+	Error           *string  `json:"error"`
+}
+
+// Config holds the injected dependencies of a Syncer.
+type Config struct {
+	DataDir  string // <ConfigDir>/assets
+	Remote   Remote
+	Store    func() (*store.DB, error)
+	DiskFree func(path string) (uint64, error)
+	Now      func() time.Time
+	OnChange func()
+
+	Reserve        uint64        // default 5 GB
+	ReportInterval time.Duration // default 5 s
+	Interval       time.Duration // default 15 min
+	RetryDelay     time.Duration // pause between in-process resume attempts (default 2 s)
+	MaxAttempts    int           // in-process attempts per reconcile (default 3)
+}
+
+type failure struct {
+	count int
+	next  time.Time
+}
+
+type Syncer struct {
+	cfg Config
+
+	reconMu sync.Mutex // serialises reconciles
+
+	mu            sync.Mutex
+	reasons       map[string]struct{}
+	wake          chan struct{}
+	reconciling   bool
+	lastReconcile time.Time
+	lastErr       string
+	current       *Current
+	failures      map[string]failure
+
+	trigger chan struct{}
+	forced  bool
+}
+
+func NewSyncer(cfg Config) *Syncer {
+	if cfg.Now == nil {
+		cfg.Now = time.Now
+	}
+	if cfg.DiskFree == nil {
+		cfg.DiskFree = DiskFree
+	}
+	if cfg.Reserve == 0 {
+		cfg.Reserve = DefaultReserve
+	}
+	if cfg.ReportInterval == 0 {
+		cfg.ReportInterval = DefaultReportInterval
+	}
+	if cfg.Interval == 0 {
+		cfg.Interval = DefaultInterval
+	}
+	if cfg.RetryDelay == 0 {
+		cfg.RetryDelay = 2 * time.Second
+	}
+	if cfg.MaxAttempts == 0 {
+		cfg.MaxAttempts = 3
+	}
+	return &Syncer{
+		cfg:      cfg,
+		reasons:  map[string]struct{}{},
+		wake:     make(chan struct{}),
+		failures: map[string]failure{},
+		trigger:  make(chan struct{}, 1),
+	}
+}
+
+// Run reconciles on start, on TriggerReconcile and on every interval until ctx ends.
+func (s *Syncer) Run(ctx context.Context) {
+	ticker := time.NewTicker(s.cfg.Interval)
+	defer ticker.Stop()
+	s.runReconcile(ctx, false)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.runReconcile(ctx, false)
+		case <-s.trigger:
+			s.mu.Lock()
+			force := s.forced
+			s.forced = false
+			s.mu.Unlock()
+			s.runReconcile(ctx, force)
+		}
+	}
+}
+
+func (s *Syncer) runReconcile(ctx context.Context, force bool) {
+	if err := s.Reconcile(ctx, force); err != nil && ctx.Err() == nil {
+		log.Printf("assets reconcile failed: %v", err)
+	}
+}
+
+// TriggerReconcile requests a reconcile without blocking; requests coalesce.
+// An explicit trigger also clears retry backoff.
+func (s *Syncer) TriggerReconcile() {
+	s.mu.Lock()
+	s.forced = true
+	s.mu.Unlock()
+	select {
+	case s.trigger <- struct{}{}:
+	default:
+	}
+}
+
+// SetPaused adds or removes a pause reason. Downloads stop between chunks
+// while any reason is set.
+func (s *Syncer) SetPaused(reason string, paused bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if paused {
+		s.reasons[reason] = struct{}{}
+		return
+	}
+	if _, ok := s.reasons[reason]; !ok {
+		return
+	}
+	delete(s.reasons, reason)
+	if len(s.reasons) == 0 {
+		close(s.wake)
+		s.wake = make(chan struct{})
+	}
+}
+
+// waitUnpaused blocks while paused. It reports whether it had to wait.
+func (s *Syncer) waitUnpaused(ctx context.Context, onPause func()) (bool, error) {
+	waited := false
+	for {
+		s.mu.Lock()
+		if len(s.reasons) == 0 {
+			s.mu.Unlock()
+			return waited, ctx.Err()
+		}
+		ch := s.wake
+		s.mu.Unlock()
+		if !waited {
+			waited = true
+			if onPause != nil {
+				onPause()
+			}
+		}
+		select {
+		case <-ch:
+		case <-ctx.Done():
+			return waited, ctx.Err()
+		}
+	}
+}
+
+func (s *Syncer) Status() Status {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st := Status{PausedReasons: []string{}}
+	for r := range s.reasons {
+		st.PausedReasons = append(st.PausedReasons, r)
+	}
+	sort.Strings(st.PausedReasons)
+	if s.current != nil {
+		c := *s.current
+		st.Current = &c
+	}
+	if !s.lastReconcile.IsZero() {
+		t := s.lastReconcile.UTC().Format(time.RFC3339)
+		st.LastReconcileAt = &t
+	}
+	if s.lastErr != "" {
+		e := s.lastErr
+		st.Error = &e
+	}
+	switch {
+	case len(s.reasons) > 0:
+		st.State = "paused"
+	case s.reconciling:
+		st.State = "syncing"
+	case s.lastErr != "":
+		st.State = "error"
+	default:
+		st.State = "idle"
+	}
+	return st
+}
+
+func (s *Syncer) records() (map[string]Local, error) {
+	db, err := s.cfg.Store()
+	if err != nil {
+		return nil, err
+	}
+	docs, err := db.Collection(Collection).List(store.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]Local, len(docs))
+	for _, d := range docs {
+		var l Local
+		if json.Unmarshal(d.Value, &l) == nil && l.ID != "" {
+			out[l.ID] = l
+		}
+	}
+	return out, nil
+}
+
+func (s *Syncer) save(l Local) error {
+	db, err := s.cfg.Store()
+	if err != nil {
+		return err
+	}
+	l.UpdatedAt = s.cfg.Now().UTC().Format(time.RFC3339)
+	return db.Collection(Collection).Put(l.ID, l)
+}
+
+// List returns the public view of local assets, optionally filtered by kind.
+func (s *Syncer) List(kind string) ([]Item, error) {
+	recs, err := s.records()
+	if err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	cur := s.current
+	s.mu.Unlock()
+	items := make([]Item, 0, len(recs))
+	for _, l := range recs {
+		if kind != "" && l.Kind != kind {
+			continue
+		}
+		done := l.BytesDone
+		if cur != nil && cur.ID == l.ID && l.State != StateReady {
+			done = cur.BytesDone
+		}
+		items = append(items, Item{ID: l.ID, Kind: l.Kind, Title: l.Title, Metadata: l.Metadata, State: l.State, BytesDone: done, ByteSize: l.ByteSize})
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Title != items[j].Title {
+			return items[i].Title < items[j].Title
+		}
+		return items[i].ID < items[j].ID
+	})
+	return items, nil
+}
+
+// LocalPath returns the path of a fully downloaded asset. Go-internal only.
+func (s *Syncer) LocalPath(id string) (string, bool) {
+	db, err := s.cfg.Store()
+	if err != nil {
+		return "", false
+	}
+	var l Local
+	ok, err := db.Collection(Collection).Decode(id, &l)
+	if err != nil || !ok || l.State != StateReady || l.Path == "" {
+		return "", false
+	}
+	if _, err := os.Stat(l.Path); err != nil {
+		return "", false
+	}
+	return l.Path, true
+}
+
+func (s *Syncer) changed() {
+	if s.cfg.OnChange != nil {
+		s.cfg.OnChange()
+	}
+}
+
+func (s *Syncer) finalDir(kind, id string) string {
+	return filepath.Join(s.cfg.DataDir, kind, id)
+}
+
+func (s *Syncer) partialPath(id string) string {
+	return filepath.Join(s.cfg.DataDir, ".partial", id)
+}
+
+func validItem(it ManifestItem) error {
+	switch {
+	case !safeName.MatchString(it.ID):
+		return fmt.Errorf("unsafe id %q", it.ID)
+	case !safeName.MatchString(it.Kind):
+		return fmt.Errorf("unsafe kind %q", it.Kind)
+	case it.Filename == "" || it.Filename != filepath.Base(it.Filename) || strings.ContainsAny(it.Filename, `/\:`) || it.Filename == "." || it.Filename == "..":
+		return fmt.Errorf("unsafe filename %q", it.Filename)
+	case it.ByteSize < 0:
+		return fmt.Errorf("negative size")
+	case len(it.SHA256) != 64:
+		return fmt.Errorf("bad sha256")
+	}
+	return nil
+}
+
+// Reconcile diffs the manifest against local state and downloads what is
+// missing. force clears retry backoff.
+func (s *Syncer) Reconcile(ctx context.Context, force bool) error {
+	s.reconMu.Lock()
+	defer s.reconMu.Unlock()
+
+	s.mu.Lock()
+	s.reconciling = true
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.reconciling = false
+		s.current = nil
+		s.mu.Unlock()
+	}()
+
+	manifest, err := s.cfg.Remote.Manifest(ctx)
+	if err != nil {
+		s.mu.Lock()
+		if errors.Is(err, ErrNoAccount) {
+			s.lastErr = ""
+		} else {
+			s.lastErr = err.Error()
+		}
+		s.mu.Unlock()
+		if errors.Is(err, ErrNoAccount) {
+			return nil
+		}
+		return err // never delete anything without a manifest
+	}
+
+	recs, err := s.records()
+	if err != nil {
+		s.setErr(err)
+		return err
+	}
+
+	wanted := map[string]ManifestItem{}
+	for _, it := range manifest {
+		if err := validItem(it); err != nil {
+			log.Printf("assets: skipping manifest item %q: %v", it.ID, err)
+			continue
+		}
+		it.SHA256 = strings.ToLower(it.SHA256)
+		wanted[it.ID] = it
+	}
+
+	changed := false
+	// Delete what is no longer wanted.
+	for id, l := range recs {
+		if _, ok := wanted[id]; ok {
+			continue
+		}
+		s.removeFiles(l)
+		if db, err := s.cfg.Store(); err == nil {
+			_ = db.Collection(Collection).Delete(id)
+		}
+		s.mu.Lock()
+		delete(s.failures, id)
+		s.mu.Unlock()
+		changed = true
+	}
+
+	ids := make([]string, 0, len(wanted))
+	for id := range wanted {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	var pending []ManifestItem
+	for _, id := range ids {
+		it := wanted[id]
+		old, had := recs[id]
+		if had && old.SHA256 == it.SHA256 && old.State == StateReady && old.Filename == it.Filename && old.Kind == it.Kind {
+			if st, err := os.Stat(old.Path); err == nil && st.Size() == it.ByteSize {
+				if old.Title != it.Title || string(old.Metadata) != string(it.Metadata) || old.ByteSize != it.ByteSize {
+					old.Title, old.Metadata, old.ByteSize = it.Title, it.Metadata, it.ByteSize
+					_ = s.save(old)
+					changed = true
+				}
+				continue
+			}
+		}
+		if had && (old.SHA256 != it.SHA256 || old.Filename != it.Filename || old.Kind != it.Kind) {
+			s.removeFiles(old) // different version: drop the old file and partial
+		}
+		pending = append(pending, it)
+	}
+	if changed {
+		s.changed()
+	}
+
+	// Queue everything first so the UI shows the whole backlog.
+	for _, it := range pending {
+		rec := Local{ID: it.ID, Kind: it.Kind, Title: it.Title, Filename: it.Filename, ByteSize: it.ByteSize, SHA256: it.SHA256, Metadata: it.Metadata, State: StateQueued}
+		if prev, ok := recs[it.ID]; ok && prev.SHA256 == it.SHA256 {
+			rec.BytesDone = prev.BytesDone
+		}
+		s.setState(ctx, &rec, StateQueued, "")
+	}
+
+	for _, it := range pending {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		s.mu.Lock()
+		f := s.failures[it.ID]
+		s.mu.Unlock()
+		if !force && !f.next.IsZero() && s.cfg.Now().Before(f.next) {
+			continue
+		}
+		s.downloadOne(ctx, it)
+	}
+
+	s.mu.Lock()
+	s.lastReconcile = s.cfg.Now()
+	s.lastErr = ""
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *Syncer) setErr(err error) {
+	s.mu.Lock()
+	s.lastErr = err.Error()
+	s.mu.Unlock()
+}
+
+func (s *Syncer) removeFiles(l Local) {
+	if safeName.MatchString(l.ID) {
+		_ = os.Remove(s.partialPath(l.ID))
+		if safeName.MatchString(l.Kind) {
+			_ = os.RemoveAll(s.finalDir(l.Kind, l.ID))
+		}
+	}
+}
+
+// setState persists a record, reports the change to the server (best effort)
+// and notifies listeners.
+func (s *Syncer) setState(ctx context.Context, rec *Local, state, errText string) {
+	rec.State = state
+	rec.Error = errText
+	if err := s.save(*rec); err != nil {
+		log.Printf("assets: save %s: %v", rec.ID, err)
+	}
+	s.report(ctx, rec)
+	s.changed()
+}
+
+func (s *Syncer) report(ctx context.Context, rec *Local) {
+	if err := s.cfg.Remote.ReportStatus(ctx, rec.ID, rec.State, rec.BytesDone, rec.Error); err != nil && !errors.Is(err, ErrNoAccount) {
+		log.Printf("assets: report %s %s failed: %v", rec.ID, rec.State, err)
+	}
+}
+
+type fatalError struct{ error }
+
+func (s *Syncer) downloadOne(ctx context.Context, it ManifestItem) {
+	rec := Local{ID: it.ID, Kind: it.Kind, Title: it.Title, Filename: it.Filename, ByteSize: it.ByteSize, SHA256: it.SHA256, Metadata: it.Metadata}
+	var err error
+	for attempt := 1; attempt <= s.cfg.MaxAttempts; attempt++ {
+		err = s.attempt(ctx, it, &rec)
+		if err == nil {
+			s.mu.Lock()
+			delete(s.failures, it.ID)
+			s.mu.Unlock()
+			return
+		}
+		var fatal fatalError
+		if ctx.Err() != nil || errors.As(err, &fatal) || errors.Is(err, ErrNoAccount) {
+			break
+		}
+		log.Printf("assets: download %s attempt %d: %v", it.ID, attempt, err)
+		select {
+		case <-ctx.Done():
+		case <-time.After(s.cfg.RetryDelay):
+		}
+	}
+	if ctx.Err() != nil {
+		return
+	}
+	s.mu.Lock()
+	f := s.failures[it.ID]
+	f.count++
+	delay := 30 * time.Second << min(f.count-1, 6)
+	if delay > s.cfg.Interval {
+		delay = s.cfg.Interval
+	}
+	f.next = s.cfg.Now().Add(delay)
+	s.failures[it.ID] = f
+	s.mu.Unlock()
+	s.setState(ctx, &rec, StateFailed, err.Error())
+}
+
+func (s *Syncer) attempt(ctx context.Context, it ManifestItem, rec *Local) error {
+	setDownloading := func() { s.setState(ctx, rec, StateDownloading, "") }
+	if _, err := s.waitUnpaused(ctx, func() { s.setState(ctx, rec, StatePaused, "") }); err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(s.partialPath(it.ID)), 0o755); err != nil {
+		return err
+	}
+	partial := s.partialPath(it.ID)
+	size := int64(0)
+	if st, err := os.Stat(partial); err == nil {
+		size = st.Size()
+		if size > it.ByteSize {
+			_ = os.Remove(partial)
+			size = 0
+		}
+	}
+
+	need := uint64(it.ByteSize - size)
+	if free, err := s.cfg.DiskFree(s.cfg.DataDir); err != nil {
+		log.Printf("assets: disk free check failed: %v", err)
+	} else if free < need+s.cfg.Reserve {
+		return fatalError{fmt.Errorf("not enough disk space: need %s plus %s reserve, %s free",
+			humanBytes(need), humanBytes(s.cfg.Reserve), humanBytes(free))}
+	}
+
+	f, err := os.OpenFile(partial, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return err
+	}
+	closed := false
+	defer func() {
+		if !closed {
+			f.Close()
+		}
+	}()
+
+	h := sha256.New()
+	if size > 0 {
+		if _, err := io.Copy(h, io.LimitReader(f, size)); err != nil {
+			return err
+		}
+	}
+	if _, err := f.Seek(size, io.SeekStart); err != nil {
+		return err
+	}
+
+	rec.BytesDone = size
+	s.mu.Lock()
+	s.current = &Current{ID: it.ID, BytesDone: size, ByteSize: it.ByteSize}
+	s.mu.Unlock()
+	setDownloading()
+
+	if size < it.ByteSize {
+		if err := s.stream(ctx, it, rec, f, h, size); err != nil {
+			return err
+		}
+	}
+
+	if st, err := f.Stat(); err != nil || st.Size() != it.ByteSize {
+		return errors.New("download incomplete")
+	}
+
+	s.setState(ctx, rec, StateVerifying, "")
+	sum := hex.EncodeToString(h.Sum(nil))
+	if sum != it.SHA256 {
+		f.Close()
+		closed = true
+		_ = os.Remove(partial)
+		return fatalError{fmt.Errorf("checksum mismatch: expected %s, got %s", it.SHA256, sum)}
+	}
+	if err := f.Close(); err != nil {
+		closed = true
+		return err
+	}
+	closed = true
+
+	dir := s.finalDir(it.Kind, it.ID)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	final := filepath.Join(dir, it.Filename)
+	_ = os.Remove(final)
+	if err := os.Rename(partial, final); err != nil {
+		return err
+	}
+	rec.Path = final
+	rec.BytesDone = it.ByteSize
+	s.mu.Lock()
+	s.current = nil
+	s.mu.Unlock()
+	s.setState(ctx, rec, StateReady, "")
+	return nil
+}
+
+func (s *Syncer) stream(ctx context.Context, it ManifestItem, rec *Local, f *os.File, h hash.Hash, offset int64) error {
+	body, _, sha, err := s.cfg.Remote.Download(ctx, it.ID, offset)
+	if err != nil {
+		return err
+	}
+	defer body.Close()
+	if sha != "" && !strings.EqualFold(sha, it.SHA256) {
+		return fatalError{fmt.Errorf("server file changed (sha %s, manifest %s); will retry after next manifest", sha, it.SHA256)}
+	}
+
+	buf := make([]byte, chunkSize)
+	done := offset
+	lastReport := s.cfg.Now()
+	for done < it.ByteSize {
+		if waited, err := s.waitUnpaused(ctx, func() { s.setState(ctx, rec, StatePaused, "") }); err != nil {
+			return err
+		} else if waited {
+			rec.BytesDone = done
+			s.setState(ctx, rec, StateDownloading, "")
+		}
+		want := int64(len(buf))
+		if rem := it.ByteSize - done; rem < want {
+			want = rem
+		}
+		n, rerr := body.Read(buf[:want])
+		if n > 0 {
+			if _, err := f.Write(buf[:n]); err != nil {
+				return err
+			}
+			h.Write(buf[:n])
+			done += int64(n)
+			s.mu.Lock()
+			if s.current != nil {
+				s.current.BytesDone = done
+			}
+			s.mu.Unlock()
+			if now := s.cfg.Now(); now.Sub(lastReport) >= s.cfg.ReportInterval {
+				lastReport = now
+				rec.BytesDone = done
+				if err := s.save(*rec); err != nil {
+					log.Printf("assets: save progress %s: %v", rec.ID, err)
+				}
+				s.report(ctx, rec)
+				s.changed()
+			}
+		}
+		if rerr != nil {
+			if rerr == io.EOF {
+				if done < it.ByteSize {
+					return io.ErrUnexpectedEOF
+				}
+				break
+			}
+			return rerr
+		}
+	}
+	rec.BytesDone = done
+	return nil
+}
+
+func humanBytes(n uint64) string {
+	const unit = 1 << 10
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := uint64(unit), 0
+	for m := n / unit; m >= unit; m /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
+}
