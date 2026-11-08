@@ -19,7 +19,31 @@ import (
 type Runtime struct {
 	cfg      config.Config
 	commands *handlers.Registry
+
+	connMu sync.Mutex
+	conns  map[*bridgeConn]struct{}
 }
+
+// bridgeConn is one connected overlay socket. writeMu serialises every write
+// to the socket (RPC responses and broadcast events share it).
+type bridgeConn struct {
+	conn    *websocket.Conn
+	writeMu sync.Mutex
+}
+
+func (c *bridgeConn) writeJSON(v any) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	return c.conn.WriteJSON(v)
+}
+
+type eventFrame struct {
+	Event string `json:"event"`
+	Data  any    `json:"data"`
+}
+
+// broadcastWriteTimeout bounds how long one slow socket can hold up a broadcast.
+const broadcastWriteTimeout = 5 * time.Second
 
 type rpcRequest struct {
 	ID     string          `json:"id"`
@@ -48,15 +72,58 @@ func New(cfg config.Config) *Runtime {
 	r := &Runtime{
 		cfg:      cfg,
 		commands: handlers.NewRegistry(cfg),
+		conns:    make(map[*bridgeConn]struct{}),
 	}
+	r.commands.SetEmitter(r.Broadcast)
 	return r
 }
 
-func (r *Runtime) serve(ctx context.Context) {
-	mux := http.NewServeMux()
-	upgrader := websocket.Upgrader{CheckOrigin: func(req *http.Request) bool { return true }}
+// Broadcast sends an event frame {"event": name, "data": data} to every
+// connected bridge socket. A socket that fails to accept the write is closed;
+// its read loop then removes it.
+func (r *Runtime) Broadcast(event string, data any) {
+	r.connMu.Lock()
+	conns := make([]*bridgeConn, 0, len(r.conns))
+	for c := range r.conns {
+		conns = append(conns, c)
+	}
+	r.connMu.Unlock()
 
-	mux.HandleFunc("/ws", func(w http.ResponseWriter, req *http.Request) {
+	frame := eventFrame{Event: event, Data: data}
+	for _, c := range conns {
+		c.writeMu.Lock()
+		_ = c.conn.SetWriteDeadline(time.Now().Add(broadcastWriteTimeout))
+		err := c.conn.WriteJSON(frame)
+		_ = c.conn.SetWriteDeadline(time.Time{})
+		c.writeMu.Unlock()
+		if err != nil {
+			log.Printf("bridge broadcast %s failed: %v", event, err)
+			_ = c.conn.Close()
+		}
+	}
+}
+
+func (r *Runtime) addConn(c *bridgeConn) {
+	r.connMu.Lock()
+	r.conns[c] = struct{}{}
+	r.connMu.Unlock()
+}
+
+func (r *Runtime) removeConn(c *bridgeConn) {
+	r.connMu.Lock()
+	delete(r.conns, c)
+	r.connMu.Unlock()
+}
+
+func (r *Runtime) connCount() int {
+	r.connMu.Lock()
+	defer r.connMu.Unlock()
+	return len(r.conns)
+}
+
+func (r *Runtime) wsHandler() http.HandlerFunc {
+	upgrader := websocket.Upgrader{CheckOrigin: func(req *http.Request) bool { return true }}
+	return func(w http.ResponseWriter, req *http.Request) {
 		if !r.authorizeUpgrade(req) {
 			http.Error(w, "bridge token required", http.StatusUnauthorized)
 			return
@@ -68,7 +135,12 @@ func (r *Runtime) serve(ctx context.Context) {
 		}
 		defer conn.Close()
 		r.handle(conn)
-	})
+	}
+}
+
+func (r *Runtime) serve(ctx context.Context) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ws", r.wsHandler())
 
 	server := &http.Server{Addr: r.cfg.PlatformBridgeAddr, Handler: mux}
 	go func() {
@@ -118,7 +190,10 @@ func (r *Runtime) authorizeDevServerOrigin(req *http.Request) bool {
 }
 
 func (r *Runtime) handle(conn *websocket.Conn) {
-	var writeMu sync.Mutex
+	c := &bridgeConn{conn: conn}
+	r.addConn(c)
+	defer r.removeConn(c)
+
 	dispatchSlots := make(chan struct{}, 16)
 	for {
 		var req rpcRequest
@@ -135,9 +210,7 @@ func (r *Runtime) handle(conn *websocket.Conn) {
 				resp.Error = err.Error()
 				resp.Result = nil
 			}
-			writeMu.Lock()
-			defer writeMu.Unlock()
-			_ = conn.WriteJSON(resp)
+			_ = c.writeJSON(resp)
 		}(req)
 	}
 }
