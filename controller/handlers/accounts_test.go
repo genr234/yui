@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"kiosk/controller/internal/config"
@@ -214,4 +215,45 @@ func TestPushOperationsBatchesPendingOperations(t *testing.T) {
 	if len(pending) != 0 {
 		t.Fatalf("expected all operations synced, got %d pending", len(pending))
 	}
+}
+
+func TestReloadAccountConfigConcurrent(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Config{
+		ConfigPath:      filepath.Join(dir, "controller.json"),
+		ConfigDir:       dir,
+		StorePath:       filepath.Join(dir, "yui-store.db"),
+		ServerURL:       "https://yui.example",
+		DeviceUID:       "device-one",
+		ActiveAccountID: "one",
+		Accounts: []config.AccountConfig{
+			{ID: "one", Name: "One", KioskID: "kiosk-one", DeviceToken: "token-one"},
+			{ID: "two", Name: "Two", KioskID: "kiosk-two", DeviceToken: "token-two"},
+		},
+	}
+	t.Setenv("YUI_KIOSK_CONFIG", cfg.ConfigPath)
+	if err := config.Save(cfg); err != nil {
+		t.Fatal(err)
+	}
+	registry := NewRegistry(cfg)
+	t.Cleanup(func() { _ = registry.Close() })
+
+	var wg sync.WaitGroup
+	for i := 0; i < 32; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			registry.reloadAccountConfig()
+			status := registry.accountStatus()
+			if status.ServerURL != "https://yui.example" || status.ActiveAccount == nil || status.ActiveAccount.ID != "one" {
+				t.Errorf("torn account status: %+v", status)
+			}
+			account, ok := registry.activeAccount()
+			if !ok || account.DeviceToken == "" {
+				t.Errorf("missing active account: %+v ok=%v", account, ok)
+			}
+			_, _, _ = registry.refreshedAccount()
+		}()
+	}
+	wg.Wait()
 }

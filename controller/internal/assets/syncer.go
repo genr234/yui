@@ -37,6 +37,9 @@ const (
 	DefaultReserve        = uint64(5) << 30
 	DefaultReportInterval = 5 * time.Second
 	DefaultInterval       = 15 * time.Minute
+	// DefaultOrphanGrace is how long a file a native session still has open
+	// survives after it disappears from the account manifest.
+	DefaultOrphanGrace = 2 * time.Minute
 
 	chunkSize = 256 << 10
 )
@@ -98,6 +101,14 @@ type Config struct {
 	Interval       time.Duration // default 15 min
 	RetryDelay     time.Duration // pause between in-process resume attempts (default 2 s)
 	MaxAttempts    int           // in-process attempts per reconcile (default 3)
+
+	// InUse reports that a native session still has this asset open. While it
+	// returns true the file is not deleted. After it returns false the file
+	// stays until OrphanGrace (default 2 minutes) from the reconcile that first
+	// saw it in use. Nil means nothing is in use (plan 05 has not wired the
+	// native session registry yet), so leftovers are removed immediately.
+	InUse       func(id string) bool
+	OrphanGrace time.Duration
 }
 
 type failure struct {
@@ -105,19 +116,49 @@ type failure struct {
 	next  time.Time
 }
 
+// reconcileBind is one reconcile attempt's cancel. Pointer identity lets a
+// finishing attempt clear only its own registration.
+type reconcileBind struct {
+	cancel context.CancelFunc
+}
+
 type Syncer struct {
 	cfg Config
 
-	reconMu sync.Mutex // serialises reconciles
+	reconMu sync.Mutex // serialises reconciles; Quiesce holds it across an account switch
 
-	mu            sync.Mutex
-	reasons       map[string]struct{}
-	wake          chan struct{}
-	reconciling   bool
+	mu         sync.Mutex
+	generation uint64
+	// quiescing is set for the whole switch, before Quiesce waits on reconMu,
+	// so an attempt cannot adopt the bumped generation and download while the
+	// switch is blocked.
+	quiescing bool
+	// resumed is closed by Resume. Waiters must copy the channel under mu.
+	resumed chan struct{}
+	// binds holds every attempt that has published a cancel and not yet
+	// released it. A later Reconcile must not replace an earlier one: Quiesce
+	// cancels the whole set, including a stream that already holds reconMu
+	// while another attempt waits on it.
+	binds       map[*reconcileBind]struct{}
+	reasons     map[string]struct{}
+	wake        chan struct{}
+	reconciling bool
+	// beforeBind, when set, runs once with no syncer lock held after Reconcile
+	// sees a clear switch and before it publishes its cancel or takes reconMu.
+	// Tests freeze that window. The hook must not call Reconcile or Quiesce on
+	// this goroutine.
+	beforeBind func()
+	// beforeReconLock, when set, runs with no syncer lock held after this
+	// attempt has published its cancel and before it takes reconMu.
+	beforeReconLock func()
+	// onQuiesceWait, when set, runs once with no syncer lock held when an
+	// attempt notices a switch and waits instead of publishing a cancel.
+	onQuiesceWait func()
 	lastReconcile time.Time
 	lastErr       string
 	current       *Current
 	failures      map[string]failure
+	orphans       map[string]time.Time // id -> first reconcile that saw it in use but unwanted
 
 	trigger chan struct{}
 	forced  bool
@@ -145,11 +186,17 @@ func NewSyncer(cfg Config) *Syncer {
 	if cfg.MaxAttempts == 0 {
 		cfg.MaxAttempts = 3
 	}
+	if cfg.OrphanGrace == 0 {
+		cfg.OrphanGrace = DefaultOrphanGrace
+	}
 	return &Syncer{
 		cfg:      cfg,
+		resumed:  make(chan struct{}),
+		binds:    map[*reconcileBind]struct{}{},
 		reasons:  map[string]struct{}{},
 		wake:     make(chan struct{}),
 		failures: map[string]failure{},
+		orphans:  map[string]time.Time{},
 		trigger:  make(chan struct{}, 1),
 	}
 }
@@ -191,6 +238,49 @@ func (s *Syncer) TriggerReconcile() {
 	case s.trigger <- struct{}{}:
 	default:
 	}
+}
+
+// Quiesce cancels the in-flight reconcile and holds the reconcile lock until
+// Resume. Call Resume after the new account config and database are published
+// so a reconcile that already read the previous account cannot write or delete
+// on the new one. A reconcile that has not read yet waits here and then runs
+// against the published account.
+//
+// quiescing and the generation bump are published before this waits on
+// reconMu. An attempt publishes its cancel before it takes reconMu, and it
+// will not keep a generation that this bump already made. Otherwise an attempt
+// that held reconMu before registering its cancel would sample the new
+// generation, skip cancellation, and block this switch on the old download.
+func (s *Syncer) Quiesce() {
+	s.mu.Lock()
+	s.quiescing = true
+	s.generation++
+	cancels := make([]context.CancelFunc, 0, len(s.binds))
+	for slot := range s.binds {
+		if slot != nil && slot.cancel != nil {
+			cancels = append(cancels, slot.cancel)
+		}
+	}
+	s.mu.Unlock()
+	for _, cancel := range cancels {
+		cancel()
+	}
+	s.reconMu.Lock()
+	s.mu.Lock()
+	s.orphans = map[string]time.Time{}
+	s.failures = map[string]failure{}
+	s.mu.Unlock()
+}
+
+// Resume lets reconciles run again after Quiesce.
+func (s *Syncer) Resume() {
+	s.mu.Lock()
+	s.quiescing = false
+	resumed := s.resumed
+	s.resumed = make(chan struct{})
+	s.mu.Unlock()
+	close(resumed)
+	s.reconMu.Unlock()
 }
 
 // SetPaused adds or removes a pause reason. Downloads stop between chunks
@@ -377,21 +467,149 @@ func validItem(it ManifestItem) error {
 // Reconcile diffs the manifest against local state and downloads what is
 // missing. force clears retry backoff.
 func (s *Syncer) Reconcile(ctx context.Context, force bool) error {
-	s.reconMu.Lock()
-	defer s.reconMu.Unlock()
+	gen, recCtx, slot, err := s.lockReconcile(ctx)
+	if err != nil {
+		return err
+	}
+	err = s.reconcileLocked(ctx, recCtx, gen, force)
+	s.unlockReconcile(slot)
+	return err
+}
 
+// lockReconcile publishes this attempt's cancel before taking reconMu. mu is
+// never held while waiting for reconMu. Quiesce takes mu and drops it before
+// taking reconMu, so the two locks are not inverted.
+func (s *Syncer) lockReconcile(ctx context.Context) (uint64, context.Context, *reconcileBind, error) {
+	for {
+		if err := ctx.Err(); err != nil {
+			return 0, nil, nil, err
+		}
+		gen, recCtx, slot, wait, err := s.bindReconcile(ctx)
+		if err != nil {
+			return 0, nil, nil, err
+		}
+		if wait != nil {
+			select {
+			case <-ctx.Done():
+				return 0, nil, nil, ctx.Err()
+			case <-wait:
+			}
+			continue
+		}
+		if s.beforeReconLock != nil {
+			s.beforeReconLock()
+		}
+		s.reconMu.Lock()
+		parentDone := ctx.Err() != nil
+		stale := recCtx.Err() != nil || s.superseded(gen) || s.quiesceActive()
+		if parentDone || stale {
+			s.unlockReconcile(slot)
+			if parentDone {
+				return 0, nil, nil, ctx.Err()
+			}
+			if err := s.waitUntilResumed(ctx); err != nil {
+				return 0, nil, nil, err
+			}
+			continue
+		}
+		return gen, recCtx, slot, nil
+	}
+}
+
+// bindReconcile registers cancel for the current generation, or reports that
+// the caller has to wait out a switch. It does not take reconMu.
+func (s *Syncer) bindReconcile(ctx context.Context) (uint64, context.Context, *reconcileBind, <-chan struct{}, error) {
 	s.mu.Lock()
+	if err := ctx.Err(); err != nil {
+		s.mu.Unlock()
+		return 0, nil, nil, nil, err
+	}
+	if s.quiescing {
+		return 0, nil, nil, s.takeQuiesceWait(), nil
+	}
+	if s.beforeBind != nil {
+		hook := s.beforeBind
+		s.beforeBind = nil
+		s.mu.Unlock()
+		hook()
+		s.mu.Lock()
+		if err := ctx.Err(); err != nil {
+			s.mu.Unlock()
+			return 0, nil, nil, nil, err
+		}
+		if s.quiescing {
+			return 0, nil, nil, s.takeQuiesceWait(), nil
+		}
+	}
+	gen := s.generation
+	recCtx, cancel := context.WithCancel(ctx)
+	slot := &reconcileBind{cancel: cancel}
+	if s.binds == nil {
+		s.binds = map[*reconcileBind]struct{}{}
+	}
+	s.binds[slot] = struct{}{}
 	s.reconciling = true
 	s.mu.Unlock()
-	defer func() {
-		s.mu.Lock()
-		s.reconciling = false
-		s.current = nil
-		s.mu.Unlock()
-	}()
+	return gen, recCtx, slot, nil, nil
+}
 
-	manifest, err := s.cfg.Remote.Manifest(ctx)
+// takeQuiesceWait releases mu and returns the channel Resume closes.
+func (s *Syncer) takeQuiesceWait() <-chan struct{} {
+	wait := s.resumed
+	hook := s.onQuiesceWait
+	s.onQuiesceWait = nil
+	s.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
+	return wait
+}
+
+func (s *Syncer) unlockReconcile(slot *reconcileBind) {
+	if slot != nil && slot.cancel != nil {
+		slot.cancel()
+	}
+	s.mu.Lock()
+	delete(s.binds, slot)
+	if len(s.binds) == 0 {
+		s.reconciling = false
+	}
+	s.current = nil
+	s.mu.Unlock()
+	s.reconMu.Unlock()
+}
+
+func (s *Syncer) quiesceActive() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.quiescing
+}
+
+func (s *Syncer) waitUntilResumed(ctx context.Context) error {
+	s.mu.Lock()
+	quiescing := s.quiescing
+	resumed := s.resumed
+	s.mu.Unlock()
+	if !quiescing {
+		return nil
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-resumed:
+		return nil
+	}
+}
+
+func (s *Syncer) reconcileLocked(ctx, recCtx context.Context, gen uint64, force bool) error {
+	manifest, err := s.cfg.Remote.Manifest(recCtx)
 	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if recCtx.Err() != nil || s.superseded(gen) {
+			return nil
+		}
 		s.mu.Lock()
 		if errors.Is(err, ErrNoAccount) {
 			s.lastErr = ""
@@ -403,6 +621,9 @@ func (s *Syncer) Reconcile(ctx context.Context, force bool) error {
 			return nil
 		}
 		return err // never delete anything without a manifest
+	}
+	if s.superseded(gen) || recCtx.Err() != nil {
+		return nil
 	}
 
 	recs, err := s.records()
@@ -422,9 +643,19 @@ func (s *Syncer) Reconcile(ctx context.Context, force bool) error {
 	}
 
 	changed := false
-	// Delete what is no longer wanted.
+	s.forgetWantedOrphans(wanted)
+	// Delete records that are no longer wanted. Files a native session still
+	// has open stay on disk until the orphan grace passes; the disk sweep
+	// below also removes leftovers that are not in this account's bolt DB
+	// (the asset directory is shared across accounts).
 	for id, l := range recs {
+		if s.superseded(gen) || recCtx.Err() != nil {
+			return nil
+		}
 		if _, ok := wanted[id]; ok {
+			continue
+		}
+		if s.keepOrphan(id) {
 			continue
 		}
 		s.removeFiles(l)
@@ -434,6 +665,12 @@ func (s *Syncer) Reconcile(ctx context.Context, force bool) error {
 		s.mu.Lock()
 		delete(s.failures, id)
 		s.mu.Unlock()
+		changed = true
+	}
+	if s.superseded(gen) || recCtx.Err() != nil {
+		return nil
+	}
+	if s.sweepUnwanted(wanted) {
 		changed = true
 	}
 
@@ -472,12 +709,15 @@ func (s *Syncer) Reconcile(ctx context.Context, force bool) error {
 		if prev, ok := recs[it.ID]; ok && prev.SHA256 == it.SHA256 {
 			rec.BytesDone = prev.BytesDone
 		}
-		s.setState(ctx, &rec, StateQueued, "")
+		s.setState(recCtx, &rec, StateQueued, "")
 	}
 
 	for _, it := range pending {
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+		if s.superseded(gen) || recCtx.Err() != nil {
+			return nil
 		}
 		s.mu.Lock()
 		f := s.failures[it.ID]
@@ -485,7 +725,15 @@ func (s *Syncer) Reconcile(ctx context.Context, force bool) error {
 		if !force && !f.next.IsZero() && s.cfg.Now().Before(f.next) {
 			continue
 		}
-		s.downloadOne(ctx, it)
+		s.downloadOne(recCtx, it)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		// A switch that cancelled this stream must not record success or
+		// continue into another asset's download.
+		if s.superseded(gen) || recCtx.Err() != nil {
+			return nil
+		}
 	}
 
 	s.mu.Lock()
@@ -499,6 +747,125 @@ func (s *Syncer) setErr(err error) {
 	s.mu.Lock()
 	s.lastErr = err.Error()
 	s.mu.Unlock()
+}
+
+func (s *Syncer) forgetWantedOrphans(wanted map[string]ManifestItem) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id := range s.orphans {
+		if _, ok := wanted[id]; ok {
+			delete(s.orphans, id)
+		}
+	}
+}
+
+func (s *Syncer) superseded(gen uint64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.generation != gen
+}
+
+// keepOrphan reports whether an unwanted file stays on disk. While InUse
+// reports the file open, grace never expires. Once it is not open, it stays
+// only until OrphanGrace after the reconcile that first saw it in use. A nil
+// InUse hook means nothing is open. The stamp is left in place after the
+// window closes so a second check in the same reconcile does not restart it.
+func (s *Syncer) keepOrphan(id string) bool {
+	inUse := s.cfg.InUse != nil && s.cfg.InUse(id)
+	now := s.cfg.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if inUse {
+		if _, ok := s.orphans[id]; !ok {
+			s.orphans[id] = now
+		}
+		return true
+	}
+	first, ok := s.orphans[id]
+	if !ok {
+		return false
+	}
+	return now.Sub(first) < s.cfg.OrphanGrace
+}
+
+// sweepUnwanted removes asset directories and partials whose id is not in the
+// manifest. Returns whether anything was removed.
+func (s *Syncer) sweepUnwanted(wanted map[string]ManifestItem) bool {
+	entries, err := os.ReadDir(s.cfg.DataDir)
+	if err != nil {
+		return false
+	}
+	removed := false
+	for _, ent := range entries {
+		name := ent.Name()
+		if name == ".partial" {
+			if s.sweepPartial(wanted) {
+				removed = true
+			}
+			continue
+		}
+		if !ent.IsDir() || !safeName.MatchString(name) {
+			continue
+		}
+		kindDir := filepath.Join(s.cfg.DataDir, name)
+		ids, err := os.ReadDir(kindDir)
+		if err != nil {
+			continue
+		}
+		left := 0
+		for _, idEnt := range ids {
+			id := idEnt.Name()
+			if !idEnt.IsDir() || !safeName.MatchString(id) {
+				left++
+				continue
+			}
+			if _, ok := wanted[id]; ok {
+				left++
+				continue
+			}
+			if s.keepOrphan(id) {
+				left++
+				continue
+			}
+			path := filepath.Join(kindDir, id)
+			if err := os.RemoveAll(path); err != nil {
+				log.Printf("assets: remove orphan %s: %v", path, err)
+				left++
+				continue
+			}
+			log.Printf("assets: removed %s/%s (not in manifest)", name, id)
+			removed = true
+		}
+		if left == 0 {
+			_ = os.Remove(kindDir)
+		}
+	}
+	return removed
+}
+
+func (s *Syncer) sweepPartial(wanted map[string]ManifestItem) bool {
+	dir := filepath.Join(s.cfg.DataDir, ".partial")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	removed := false
+	for _, ent := range entries {
+		id := ent.Name()
+		if !safeName.MatchString(id) {
+			continue
+		}
+		if _, ok := wanted[id]; ok || s.keepOrphan(id) {
+			continue
+		}
+		path := filepath.Join(dir, id)
+		if err := os.RemoveAll(path); err != nil {
+			log.Printf("assets: remove partial %s: %v", path, err)
+			continue
+		}
+		removed = true
+	}
+	return removed
 }
 
 func (s *Syncer) removeFiles(l Local) {

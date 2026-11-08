@@ -10,6 +10,17 @@ module ApplicationCable
       reject_unauthorized_connection unless current_kiosk || current_player
     end
 
+    # Production rejects a missing or foreign Origin. Browsers always send one,
+    # and a page cannot set Authorization on a WebSocket, so a foreign Origin is
+    # never treated as the kiosk. The Go client sends the server's own Origin.
+    # A missing Origin is not a browser; allow it only after the bearer token
+    # authenticates a kiosk. Any "Bearer " prefix must not skip the check, or an
+    # invalid token plus a player cookie could connect from another site.
+    def allow_request_origin?
+      return true if request.get_header("HTTP_ORIGIN").blank? && find_verified_kiosk
+      super
+    end
+
     private
 
     def find_verified_kiosk

@@ -24,7 +24,16 @@
 #
 # Any libraries that use a connection pool or another resource pool should
 # be configured to provide at least as many connections as the number of
-# threads. This includes Active Record's `pool` parameter in `database.yml`.
+# threads. database.yml adds ACTION_CABLE_WORKER_POOL_SIZE on top of
+# RAILS_MAX_THREADS: cable callbacks run on a separate pool in this process,
+# and a streamed download holds its connection until the body closes.
+#
+# Asset downloads stream through a Puma thread for the whole response (see
+# Api::Kiosk::AssetsController). config/deploy.yml sets RAILS_MAX_THREADS=8
+# so a multi-GB transfer does not consume every web slot. The Solid Queue
+# plugin below forks its supervisor (do not set solid_queue_mode :async);
+# those job threads are not part of this pool. The default below stays 3
+# for local development.
 threads_count = ENV.fetch("RAILS_MAX_THREADS", 3)
 threads threads_count, threads_count
 
@@ -34,7 +43,9 @@ port ENV.fetch("PORT", 3000)
 # Allow puma to be restarted by `bin/rails restart` command.
 plugin :tmp_restart
 
-# Run the Solid Queue supervisor inside of Puma for single-server deployments.
+# Fork the Solid Queue supervisor from this process for single-server
+# deployments. The plugin default is :fork. Do not switch that to async:
+# job threads would then share this process's database pools.
 plugin :solid_queue if ENV["SOLID_QUEUE_IN_PUMA"]
 
 # Specify the PID file. Defaults to tmp/pids/server.pid in development.

@@ -517,7 +517,7 @@ func (m *PluginManager) localPluginRoots() []string {
 	roots := []string{
 		filepath.Join(cwd, "plugins"),
 		filepath.Join(cwd, "..", "plugins"),
-		filepath.Join(m.r.cfg.ConfigDir, "plugins"),
+		filepath.Join(m.r.snapshotConfig().ConfigDir, "plugins"),
 	}
 	uniqueRoots := make([]string, 0, len(roots))
 	seen := map[string]bool{}
@@ -1254,9 +1254,10 @@ func (m *PluginManager) configModule(inst *pluginInstance) starlark.Value {
 			if err := m.require(inst, "config.read"); err != nil {
 				return nil, err
 			}
+			cfg := m.r.snapshotConfig()
 			return toStarlark(map[string]any{
-				"config_path": m.r.cfg.ConfigPath, "config_dir": m.r.cfg.ConfigDir, "url": m.r.cfg.URL,
-				"platform_http_addr": m.r.cfg.PlatformHTTPAddr, "platform_bridge_addr": m.r.cfg.PlatformBridgeAddr,
+				"config_path": cfg.ConfigPath, "config_dir": cfg.ConfigDir, "url": cfg.URL,
+				"platform_http_addr": cfg.PlatformHTTPAddr, "platform_bridge_addr": cfg.PlatformBridgeAddr,
 			})
 		}),
 	})
@@ -1309,7 +1310,7 @@ func (m *PluginManager) requirePluginFSPath(inst *pluginInstance, path string) e
 		}
 	}
 
-	root := m.r.cfg.ConfigDir
+	root := m.r.snapshotConfig().ConfigDir
 	if root == "" {
 		return fmt.Errorf("plugin %s filesystem access is not configured", inst.record.ID)
 	}

@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,9 +16,12 @@ import (
 	"strings"
 	"time"
 
+	"kiosk/controller/internal/assets"
 	"kiosk/controller/internal/config"
 	"kiosk/controller/internal/store"
 )
+
+var errConfigUnchanged = errors.New("config unchanged")
 
 const (
 	accountStoreDir  = "accounts"
@@ -93,12 +97,12 @@ func (AccountConnectCommand) Handle(r *Registry, params json.RawMessage) (any, e
 		return nil, err
 	}
 
-	cfg := r.cfg
-	if cfg.DeviceUID == "" {
-		cfg.DeviceUID = newDeviceUID()
+	deviceUID := r.snapshotConfig().DeviceUID
+	if deviceUID == "" {
+		deviceUID = newDeviceUID()
 	}
 
-	pairing, err := pairWithServer(serverURL, cfg.DeviceUID, req.Code, req.Name)
+	pairing, err := pairWithServer(serverURL, deviceUID, req.Code, req.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -112,13 +116,15 @@ func (AccountConnectCommand) Handle(r *Registry, params json.RawMessage) (any, e
 		SyncCursor:      pairing.SyncCursor,
 	}
 
-	cfg.ServerURL = serverURL
-	cfg.ActiveAccountID = account.ID
-	cfg.Accounts = upsertAccount(cfg.Accounts, account)
-	if err := config.Save(cfg); err != nil {
-		return nil, err
-	}
-	if err := r.switchConfig(cfg); err != nil {
+	if err := r.commitAccountSwitch(func(cfg *config.Config) error {
+		if cfg.DeviceUID == "" {
+			cfg.DeviceUID = deviceUID
+		}
+		cfg.ServerURL = serverURL
+		cfg.ActiveAccountID = account.ID
+		cfg.Accounts = upsertAccount(cfg.Accounts, account)
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 	if err := r.applyRemoteOperations(pairing.Operations); err != nil {
@@ -139,17 +145,15 @@ func (AccountSwitchCommand) Handle(r *Registry, params json.RawMessage) (any, er
 		return nil, err
 	}
 
-	cfg := r.cfg
-	if req.AccountID != "" {
-		if _, ok := findAccount(cfg.Accounts, req.AccountID); !ok {
-			return nil, fmt.Errorf("account %q is not cached on this kiosk", req.AccountID)
+	if err := r.commitAccountSwitch(func(cfg *config.Config) error {
+		if req.AccountID != "" {
+			if _, ok := findAccount(cfg.Accounts, req.AccountID); !ok {
+				return fmt.Errorf("account %q is not cached on this kiosk", req.AccountID)
+			}
 		}
-	}
-	cfg.ActiveAccountID = req.AccountID
-	if err := config.Save(cfg); err != nil {
-		return nil, err
-	}
-	if err := r.switchConfig(cfg); err != nil {
+		cfg.ActiveAccountID = req.AccountID
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 	return r.accountStatus(), nil
@@ -160,14 +164,12 @@ type AccountDisconnectCommand struct{}
 func (AccountDisconnectCommand) Name() string { return "accounts.disconnect" }
 
 func (AccountDisconnectCommand) Handle(r *Registry, _ json.RawMessage) (any, error) {
-	cfg := r.cfg
-	cfg.ServerURL = ""
-	cfg.ActiveAccountID = ""
-	cfg.Accounts = nil
-	if err := config.Save(cfg); err != nil {
-		return nil, err
-	}
-	if err := r.switchConfig(cfg); err != nil {
+	if err := r.commitAccountSwitch(func(cfg *config.Config) error {
+		cfg.ServerURL = ""
+		cfg.ActiveAccountID = ""
+		cfg.Accounts = nil
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 	return r.accountStatus(), nil
@@ -178,10 +180,13 @@ type AccountImportAnonymousCommand struct{}
 func (AccountImportAnonymousCommand) Name() string { return "accounts.importAnonymous" }
 
 func (AccountImportAnonymousCommand) Handle(r *Registry, _ json.RawMessage) (any, error) {
-	if r.cfg.ActiveAccountID == "" {
+	r.switchMu.Lock()
+	defer r.switchMu.Unlock()
+	cfg := r.snapshotConfig()
+	if cfg.ActiveAccountID == "" {
 		return nil, fmt.Errorf("connect or switch to an account before importing anonymous data")
 	}
-	anonymous, err := store.Open(r.cfg.StorePath)
+	anonymous, err := store.Open(cfg.StorePath)
 	if err != nil {
 		return nil, err
 	}
@@ -226,10 +231,11 @@ func (AccountSyncNowCommand) Handle(r *Registry, _ json.RawMessage) (any, error)
 }
 
 func (r *Registry) activeStorePath() string {
-	if r.cfg.ActiveAccountID == "" {
-		return r.cfg.StorePath
+	cfg := r.snapshotConfig()
+	if cfg.ActiveAccountID == "" {
+		return cfg.StorePath
 	}
-	return filepath.Join(r.cfg.ConfigDir, accountStoreDir, accountPathID(r.cfg.ActiveAccountID), accountStoreName)
+	return filepath.Join(cfg.ConfigDir, accountStoreDir, accountPathID(cfg.ActiveAccountID), accountStoreName)
 }
 
 func (r *Registry) accountStatus() accountStatus {
@@ -238,32 +244,86 @@ func (r *Registry) accountStatus() accountStatus {
 	syncState := r.syncState
 	r.syncMu.Unlock()
 
-	active, _ := findAccount(r.cfg.Accounts, r.cfg.ActiveAccountID)
+	cfg := r.snapshotConfig()
+	active, _ := findAccount(cfg.Accounts, cfg.ActiveAccountID)
 	return accountStatus{
-		ServerURL:     r.cfg.ServerURL,
-		Connected:     r.cfg.ServerURL != "" && r.cfg.ActiveAccountID != "" && active != nil && active.DeviceToken != "",
-		NeedsPairing:  r.cfg.ServerURL != "" && r.cfg.ActiveAccountID != "" && (active == nil || active.DeviceToken == ""),
+		ServerURL:     cfg.ServerURL,
+		Connected:     cfg.ServerURL != "" && cfg.ActiveAccountID != "" && active != nil && active.DeviceToken != "",
+		NeedsPairing:  cfg.ServerURL != "" && cfg.ActiveAccountID != "" && (active == nil || active.DeviceToken == ""),
 		ActiveAccount: accountViewPtr(active),
-		Accounts:      accountViews(r.cfg.Accounts),
-		Anonymous:     r.cfg.ActiveAccountID == "",
+		Accounts:      accountViews(cfg.Accounts),
+		Anonymous:     cfg.ActiveAccountID == "",
 		Syncing:       syncState.Syncing,
 		LastSyncAt:    syncState.LastSyncAt,
 		LastSyncError: syncState.LastSyncError,
 	}
 }
 
+// reloadAccountConfig re-reads the account fields from disk. configMu is held
+// across the load and the publish so a stale read cannot overwrite a switch
+// that saved a newer config.
 func (r *Registry) reloadAccountConfig() {
+	r.configMu.Lock()
+	defer r.configMu.Unlock()
 	cfg, err := config.Load()
 	if err != nil {
 		return
 	}
+	r.cfgMu.Lock()
+	defer r.cfgMu.Unlock()
 	if cfg.ConfigPath != "" && r.cfg.ConfigPath != "" && cfg.ConfigPath != r.cfg.ConfigPath {
 		return
 	}
 	r.cfg.ServerURL = cfg.ServerURL
 	r.cfg.DeviceUID = cfg.DeviceUID
 	r.cfg.ActiveAccountID = cfg.ActiveAccountID
-	r.cfg.Accounts = cfg.Accounts
+	r.cfg.Accounts = append([]config.AccountConfig(nil), cfg.Accounts...)
+}
+
+func copyConfig(cfg config.Config) config.Config {
+	cfg.Accounts = append([]config.AccountConfig(nil), cfg.Accounts...)
+	return cfg
+}
+
+// mutateConfig applies fn to the latest config, saves it, and publishes that
+// same value. The lock is held across save and publish so a copy cannot
+// clobber a newer write. fn must not call back into the registry.
+func (r *Registry) mutateConfig(fn func(*config.Config) error) (config.Config, error) {
+	r.configMu.Lock()
+	defer r.configMu.Unlock()
+	r.cfgMu.RLock()
+	cfg := copyConfig(r.cfg)
+	r.cfgMu.RUnlock()
+	if err := fn(&cfg); err != nil {
+		return config.Config{}, err
+	}
+	if err := config.Save(cfg); err != nil {
+		return config.Config{}, err
+	}
+	r.cfgMu.Lock()
+	r.cfg = cfg
+	r.cfgMu.Unlock()
+	return cfg, nil
+}
+
+// snapshotConfig is a stable copy of the registry config. The Accounts slice
+// is copied so a caller can edit it without racing a reload.
+func (r *Registry) snapshotConfig() config.Config {
+	r.cfgMu.RLock()
+	defer r.cfgMu.RUnlock()
+	cfg := r.cfg
+	cfg.Accounts = append([]config.AccountConfig(nil), r.cfg.Accounts...)
+	return cfg
+}
+
+func (r *Registry) refreshedAccount() (config.Config, config.AccountConfig, bool) {
+	r.reloadAccountConfig()
+	cfg := r.snapshotConfig()
+	account, ok := findAccount(cfg.Accounts, cfg.ActiveAccountID)
+	if !ok {
+		return cfg, config.AccountConfig{}, false
+	}
+	return cfg, *account, true
 }
 
 func accountViews(accounts []config.AccountConfig) []accountView {
@@ -285,33 +345,83 @@ func accountViewPtr(account *config.AccountConfig) *accountView {
 // accountSwitchBoundary runs inside publishAccountConfig while storeMu is
 // held, after the new account config is published and the previous database
 // is dropped. Tests interleave a read there. The hook must not call Store,
-// withStore, or switchConfig, because those lock storeMu again.
+// withStore, switchConfig, or anything that takes configMu, switchMu, or
+// storeMu again.
 var accountSwitchBoundary func(*Registry)
 
-func (r *Registry) switchConfig(cfg config.Config) error {
-	// Stop and start plugins outside storeMu. They take the plugin mutex and
-	// then Store, so holding storeMu across them deadlocks.
+// commitAccountSwitch applies an account-field change to the latest config.
+// apply may run twice and must only edit the config it is given. An in-flight
+// asset reconcile is cancelled and held off before the new account's database
+// is opened. A reconcile that has not yet read may then run against the new
+// account; one that already read the previous account does not write after
+// the swap.
+func (r *Registry) commitAccountSwitch(apply func(*config.Config) error) error {
+	r.switchMu.Lock()
+	defer r.switchMu.Unlock()
+
+	r.configMu.Lock()
+	r.cfgMu.RLock()
+	probe := copyConfig(r.cfg)
+	r.cfgMu.RUnlock()
+	r.configMu.Unlock()
+	if err := apply(&probe); err != nil {
+		return err
+	}
+
+	var syncer *assets.Syncer
+	if syncer = r.assetSyncerIfStarted(); syncer != nil {
+		syncer.Quiesce()
+		defer syncer.Resume()
+	}
+	r.invalidateAssetEndpoint()
+
+	// Plugins take their own mutex and then Store. Stopping them while
+	// storeMu or configMu is held deadlocks.
 	if r.plugins != nil {
 		r.plugins.Stop()
 	}
-	if err := r.publishAccountConfig(cfg); err != nil {
+	restartPlugins := func() {
+		if r.plugins != nil && r.pluginCtx != nil {
+			r.plugins.Start(r.pluginCtx)
+		}
+	}
+
+	r.configMu.Lock()
+	r.cfgMu.RLock()
+	cfg := copyConfig(r.cfg)
+	r.cfgMu.RUnlock()
+	if err := apply(&cfg); err != nil {
+		r.configMu.Unlock()
+		restartPlugins()
 		return err
 	}
-	if r.plugins != nil && r.pluginCtx != nil {
-		r.plugins.Start(r.pluginCtx)
+	if err := config.Save(cfg); err != nil {
+		r.configMu.Unlock()
+		restartPlugins()
+		return err
 	}
+	err := r.publishAccountConfig(cfg)
+	r.configMu.Unlock()
+	restartPlugins()
+	if err != nil {
+		return err
+	}
+	r.triggerAssetReconcile()
 	return nil
 }
 
 // publishAccountConfig installs cfg and the store epoch together. storeMu
 // stays held from the epoch bump until the new account is the one a reopened
-// database would serve.
+// database would serve. The caller holds configMu so a reload cannot publish
+// a stale account over this write.
 func (r *Registry) publishAccountConfig(cfg config.Config) error {
 	r.storeMu.Lock()
 	defer r.storeMu.Unlock()
 
 	closeErr := r.resetStoreLocked()
+	r.cfgMu.Lock()
 	r.cfg = cfg
+	r.cfgMu.Unlock()
 	if accountSwitchBoundary != nil {
 		accountSwitchBoundary(r)
 	}

@@ -35,6 +35,43 @@ class ApplicationCable::ConnectionTest < ActionCable::Connection::TestCase
     assert_reject_connection { connect }
   end
 
+  test "production origin check allows only an authenticated kiosk with no Origin" do
+    create_kiosk(token: "kiosk-token")
+    player, token = join_player(start_session)
+    cookies.signed[:yui_player] = Player.cookie_value(player, token)
+
+    with_production_cable_origins do
+      assert cable_origin_allowed?("HTTP_AUTHORIZATION" => "Bearer kiosk-token"),
+        "an authenticated kiosk with no Origin is a non-browser handshake"
+      assert cable_origin_allowed?(
+        "HTTP_AUTHORIZATION" => "Bearer kiosk-token",
+        "HTTP_ORIGIN" => "https://www.example.com"
+      )
+      assert_not cable_origin_allowed?(
+        "HTTP_AUTHORIZATION" => "Bearer kiosk-token",
+        "HTTP_ORIGIN" => "https://evil.example"
+      ), "the Go client sends the server Origin; a foreign Origin is rejected"
+
+      assert_not cable_origin_allowed?("HTTP_AUTHORIZATION" => "Bearer wrong")
+      assert_not cable_origin_allowed?("HTTP_AUTHORIZATION" => "Bearer ")
+      assert_not cable_origin_allowed?(
+        "HTTP_AUTHORIZATION" => "Bearer wrong",
+        "HTTP_ORIGIN" => "https://evil.example",
+        "HTTP_COOKIE" => "yui_player=present"
+      ), "an invalid bearer plus a player cookie must not skip a foreign Origin"
+      assert_not cable_origin_allowed?(
+        { "HTTP_AUTHORIZATION" => "Bearer wrong", "HTTP_ORIGIN" => "https://evil.example" },
+        cookies
+      )
+
+      assert cable_origin_allowed?("HTTP_ORIGIN" => "https://www.example.com")
+      assert cable_origin_allowed?({ "HTTP_ORIGIN" => "https://www.example.com" }, cookies)
+      assert_not cable_origin_allowed?({})
+      assert_not cable_origin_allowed?("HTTP_ORIGIN" => "https://evil.example")
+      assert_not cable_origin_allowed?({ "HTTP_ORIGIN" => "https://evil.example" }, cookies)
+    end
+  end
+
   test "rejects kicked players and ended sessions" do
     play_session = start_session
     kicked, kicked_token = join_player(play_session, name: "Kicked")
@@ -48,4 +85,37 @@ class ApplicationCable::ConnectionTest < ActionCable::Connection::TestCase
     cookies.signed[:yui_player] = Player.cookie_value(player, token)
     assert_reject_connection { connect }
   end
+
+  private
+    def with_production_cable_origins
+      config = ActionCable.server.config
+      previous = [
+        config.disable_request_forgery_protection,
+        config.allow_same_origin_as_host,
+        config.allowed_request_origins
+      ]
+      config.disable_request_forgery_protection = false
+      config.allow_same_origin_as_host = true
+      config.allowed_request_origins = []
+      yield
+    ensure
+      config.disable_request_forgery_protection, config.allow_same_origin_as_host, config.allowed_request_origins = previous
+    end
+
+    def cable_origin_allowed?(headers, cookie_jar = nil)
+      env = Rack::MockRequest.env_for(
+        "https://www.example.com/cable",
+        {
+          "HTTPS" => "on",
+          "HTTP_HOST" => "www.example.com",
+          "HTTP_CONNECTION" => "upgrade",
+          "HTTP_UPGRADE" => "websocket",
+          "HTTP_SEC_WEBSOCKET_KEY" => Base64.strict_encode64("0123456789abcdef"),
+          "HTTP_SEC_WEBSOCKET_VERSION" => "13"
+        }.merge(headers)
+      )
+      connection = ApplicationCable::Connection.new(ActionCable.server, env)
+      connection.send(:request).cookie_jar = cookie_jar if cookie_jar
+      connection.allow_request_origin?
+    end
 end
