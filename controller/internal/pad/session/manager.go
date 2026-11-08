@@ -32,6 +32,16 @@ type Config struct {
 	Dialer       *websocket.Dialer
 	Now          func() time.Time
 	PingInterval time.Duration
+	// Audio sends the kiosk's sound to the speaker phone. nil leaves the
+	// peers without an audio track.
+	Audio *Audio
+}
+
+// Player is a roster entry: the contracts §2 Player JSON, which carries the
+// speaker role (the one phone that plays the kiosk's sound).
+type Player struct {
+	protocol.Player
+	Speaker bool `json:"speaker"`
 }
 
 // SessionView is the bridge session object: code plus the current QR URL.
@@ -42,8 +52,8 @@ type SessionView struct {
 
 // Snapshot is the pad.players payload (session is null when none is running).
 type Snapshot struct {
-	Session *SessionView      `json:"session"`
-	Players []protocol.Player `json:"players"`
+	Session *SessionView `json:"session"`
+	Players []Player     `json:"players"`
 }
 
 // PlayerInput is the latest accepted input frame for one player.
@@ -58,6 +68,8 @@ type Manager struct {
 	cfg     Config
 	api     *apiClient
 	peerAPI *webrtc.API
+
+	audioMu sync.Mutex // see syncSpeaker
 
 	mu        sync.Mutex
 	running   bool
@@ -74,10 +86,16 @@ type Manager struct {
 	watchers  map[int]func(Snapshot)
 	nextWatch int
 	sensitive bool
-	onControl func(playerID string, msg any)
-	onInput   func(playerID string, state protocol.InputState)
-	onPlayer  func(ev PlayerEvent)
-	cable     *cable
+	// speakerID holds the speaker role as Rails reports it. audioTo is the
+	// player whose track the encoder writes into: the speaker, or the host
+	// while the speaker is not connected, or nobody.
+	speakerID   string
+	audioTo     string
+	audioTarget *webrtc.TrackLocalStaticSample
+	onControl   func(playerID string, msg any)
+	onInput     func(playerID string, state protocol.InputState)
+	onPlayer    func(ev PlayerEvent)
+	cable       *cable
 }
 
 type playerState struct {
@@ -134,10 +152,12 @@ func (m *Manager) Run(ctx context.Context) error {
 		m.record = nil
 		m.token = ""
 		m.joinURL = ""
+		m.speakerID = ""
 		left := sortedPlayers(m.players)
 		m.players = map[string]*playerState{}
 		m.mu.Unlock()
 		m.closePeers()
+		m.syncSpeaker()
 		for _, p := range left {
 			m.notifyPlayer(PlayerLeft, p)
 		}
@@ -153,12 +173,13 @@ func (m *Manager) Run(ctx context.Context) error {
 	} else {
 		log.Printf("pad session: reusing %s code %s", record.ID, record.Code)
 	}
+	if m.cfg.Audio != nil {
+		// Each session starts at full volume; the speaker's slider lowers it.
+		m.cfg.Audio.SetVolume(1)
+	}
 	m.mu.Lock()
 	m.record = &record
-	for i := range record.Players {
-		p := record.Players[i]
-		m.players[p.ID] = &playerState{Player: p}
-	}
+	m.mergePlayersLocked(record.Players)
 	m.mu.Unlock()
 	if err := m.publishQR(); err != nil {
 		log.Printf("pad session: qr: %v", err)
@@ -276,14 +297,180 @@ func (m *Manager) Snapshot() Snapshot {
 }
 
 func (m *Manager) snapshotLocked() Snapshot {
-	snap := Snapshot{Players: sortedPlayers(m.players)}
+	snap := Snapshot{Players: m.rosterLocked()}
 	if m.record != nil && m.active {
 		snap.Session = &SessionView{Code: m.record.Code, JoinURL: m.joinURL}
 	}
-	if snap.Players == nil {
-		snap.Players = []protocol.Player{}
-	}
 	return snap
+}
+
+// rosterLocked is the sorted roster with the speaker flag. m.mu held.
+func (m *Manager) rosterLocked() []Player {
+	sorted := sortedPlayers(m.players)
+	out := make([]Player, len(sorted))
+	for i, p := range sorted {
+		out[i] = m.withSpeakerLocked(p)
+	}
+	return out
+}
+
+func (m *Manager) withSpeakerLocked(p protocol.Player) Player {
+	return Player{Player: p, Speaker: p.ID != "" && p.ID == m.speakerID}
+}
+
+// Speaker returns the player holding the speaker role ("" when none).
+func (m *Manager) Speaker() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.speakerID
+}
+
+// AudioTarget returns the player whose phone gets the sound now: the
+// speaker, or the host while the speaker is away, or "" for nobody.
+func (m *Manager) AudioTarget() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.audioTo
+}
+
+// SetSpeaker moves the speaker role to playerID (system be_speaker, or the
+// overlay's pad.speaker). Rails stores it; the sound moves to that phone
+// right away, without renegotiation.
+func (m *Manager) SetSpeaker(ctx context.Context, playerID string) error {
+	id, err := m.sessionID()
+	if err != nil {
+		return err
+	}
+	m.mu.Lock()
+	st := m.players[playerID]
+	prev := m.speakerID
+	m.mu.Unlock()
+	if st == nil {
+		return fmt.Errorf("pad session: unknown player %s", playerID)
+	}
+	if prev == playerID {
+		return nil
+	}
+	if err := m.api.TransferSpeaker(ctx, id, playerID); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	if m.players[playerID] == nil {
+		m.mu.Unlock()
+		return nil
+	}
+	m.speakerID = playerID
+	var changed []Player
+	for _, pid := range []string{prev, playerID} {
+		if st := m.players[pid]; st != nil {
+			changed = append(changed, m.withSpeakerLocked(st.Player))
+		}
+	}
+	m.mu.Unlock()
+	log.Printf("pad session: speaker is now %s", playerID)
+	m.emit()
+	for _, p := range changed {
+		_ = m.pushPlayer(p, false)
+	}
+	m.sendVolume(playerID)
+	return nil
+}
+
+// SetVolume sets the hub gain (0–1, linear) and returns the value applied.
+// The speaker phone also gets it back as system volume, so its slider
+// matches (pad.volume from the overlay, or another phone becoming speaker).
+func (m *Manager) SetVolume(v float64) (float64, error) {
+	if m.cfg.Audio == nil {
+		return 0, errors.New("pad session: no audio")
+	}
+	v = m.cfg.Audio.SetVolume(v)
+	m.mu.Lock()
+	speaker := m.speakerID
+	m.mu.Unlock()
+	if speaker != "" {
+		m.sendVolume(speaker)
+	}
+	return v, nil
+}
+
+// systemValue is a §3 system message whose value is always present (the
+// protocol type omits a zero value).
+type systemValue struct {
+	T      string `json:"t"`
+	Action string `json:"action"`
+	Value  any    `json:"value"`
+}
+
+func (m *Manager) sendVolume(playerID string) {
+	if m.cfg.Audio == nil || playerID == "" {
+		return
+	}
+	msg := systemValue{T: "system", Action: "volume", Value: m.cfg.Audio.Volume()}
+	m.mu.Lock()
+	peer := m.peers[playerID]
+	st := m.players[playerID]
+	ready := (peer != nil && (peer.fallback.Load() || peer.controlReady())) || (st != nil && st.fallback)
+	m.mu.Unlock()
+	if !ready {
+		return // sent with welcome instead
+	}
+	if err := m.sendControl(playerID, msg); err != nil {
+		log.Printf("pad session: volume to %s: %v", playerID, err)
+	}
+}
+
+// syncSpeaker points the session audio at the right phone's track and
+// starts or stops the capture with it.
+func (m *Manager) syncSpeaker() {
+	a := m.cfg.Audio
+	if a == nil {
+		return
+	}
+	// audioMu orders whole syncs, so the last roster state wins; m.mu is not
+	// held while Audio starts or stops a capture.
+	m.audioMu.Lock()
+	defer m.audioMu.Unlock()
+	m.mu.Lock()
+	to := ""
+	var target *webrtc.TrackLocalStaticSample
+	if m.active {
+		to = m.effectiveSpeakerLocked()
+		if p := m.peers[to]; p != nil && !p.closed.Load() && p.audio != nil {
+			target = p.audio
+		} else {
+			to = ""
+		}
+	}
+	if to == m.audioTo && target == m.audioTarget {
+		m.mu.Unlock()
+		return
+	}
+	m.audioTo = to
+	m.audioTarget = target
+	m.mu.Unlock()
+	if target == nil {
+		a.SetTarget(nil) // an untyped nil: no speaker
+	} else {
+		a.SetTarget(target)
+	}
+	if to == "" {
+		log.Printf("pad session: no speaker phone; audio capture stops")
+	} else {
+		log.Printf("pad session: sound goes to %s", to)
+	}
+}
+
+// effectiveSpeakerLocked: the speaker if connected, else the connected host.
+func (m *Manager) effectiveSpeakerLocked() string {
+	if st := m.players[m.speakerID]; st != nil && st.Connected {
+		return m.speakerID
+	}
+	for id, st := range m.players {
+		if st.Host && st.Connected {
+			return id
+		}
+	}
+	return ""
 }
 
 // Watch calls fn after roster changes and after each QR rotation.
@@ -511,7 +698,8 @@ func (m *Manager) onCable(msg cableMessage) {
 	}
 }
 
-func (m *Manager) applyPlayer(p protocol.Player, event string) {
+func (m *Manager) applyPlayer(rp Player, event string) {
+	p := rp.Player
 	m.mu.Lock()
 	st := m.players[p.ID]
 	if st == nil {
@@ -519,7 +707,9 @@ func (m *Manager) applyPlayer(p protocol.Player, event string) {
 		m.players[p.ID] = st
 	}
 	st.Player = p
+	m.noteSpeakerLocked(rp)
 	wasFallback := st.fallback
+	pushed := m.withSpeakerLocked(p)
 	m.mu.Unlock()
 	m.emit()
 
@@ -533,12 +723,24 @@ func (m *Manager) applyPlayer(p protocol.Player, event string) {
 		if p.Connected {
 			m.negotiateIfIdle(p)
 		}
-		_ = m.pushPlayer(p, wasFallback)
+		_ = m.pushPlayer(pushed, wasFallback)
 		if p.Connected {
 			m.notifyPlayer(PlayerUpdated, p)
 		} else {
 			m.notifyPlayer(PlayerLeft, p)
 		}
+	}
+}
+
+// noteSpeakerLocked applies one player's speaker flag from Rails. Rails
+// sends the old and the new speaker as separate updates in either order, so
+// a false only clears the role if that player still holds it.
+func (m *Manager) noteSpeakerLocked(p Player) {
+	switch {
+	case p.Speaker:
+		m.speakerID = p.ID
+	case m.speakerID == p.ID:
+		m.speakerID = ""
 	}
 }
 
@@ -590,7 +792,11 @@ func (m *Manager) negotiate(p protocol.Player) {
 		old.Close()
 	}
 
-	created, err := openPeer(api, servers, p.ID, gen, m.hooks())
+	if old != nil {
+		// The replaced peer may have been the sound's target.
+		m.syncSpeaker()
+	}
+	created, err := openPeer(api, servers, p.ID, gen, m.cfg.Audio != nil, m.hooks())
 	if err != nil {
 		log.Printf("pad session: peer %s: %v", p.ID, err)
 		return
@@ -603,6 +809,7 @@ func (m *Manager) negotiate(p protocol.Player) {
 	}
 	m.peers[p.ID] = created
 	m.mu.Unlock()
+	m.syncSpeaker()
 
 	desc, err := created.offer()
 	if err != nil {
@@ -754,6 +961,10 @@ func (m *Manager) removePlayer(playerID string) {
 	}
 	delete(m.players, playerID)
 	delete(m.pings, playerID)
+	if m.speakerID == playerID {
+		// Rails hands the role to the host and says so with player_updated.
+		m.speakerID = ""
+	}
 	m.mu.Unlock()
 	m.notifyPlayer(PlayerLeft, player)
 	m.emit()
@@ -768,6 +979,7 @@ func (m *Manager) closePeer(playerID string) {
 	delete(m.peers, playerID)
 	m.mu.Unlock()
 	if peer != nil {
+		m.syncSpeaker()
 		peer.Close()
 	}
 }
@@ -777,13 +989,15 @@ func (m *Manager) closePeers() {
 	peers := m.peers
 	m.peers = map[string]*peer{}
 	m.mu.Unlock()
+	m.syncSpeaker()
 	for _, peer := range peers {
 		peer.Close()
 	}
 }
 
-func (m *Manager) mergePlayersLocked(list []protocol.Player) {
+func (m *Manager) mergePlayersLocked(list []Player) {
 	seen := map[string]bool{}
+	speaker := ""
 	for _, p := range list {
 		seen[p.ID] = true
 		st := m.players[p.ID]
@@ -791,13 +1005,17 @@ func (m *Manager) mergePlayersLocked(list []protocol.Player) {
 			st = &playerState{}
 			m.players[p.ID] = st
 		}
-		st.Player = p
+		st.Player = p.Player
+		if p.Speaker && (speaker == "" || p.ID == m.speakerID) {
+			speaker = p.ID
+		}
 	}
 	for id := range m.players {
 		if !seen[id] {
 			delete(m.players, id)
 		}
 	}
+	m.speakerID = speaker
 }
 
 func (m *Manager) sendSignal(to, typ string, data any) error {
@@ -851,15 +1069,30 @@ func (m *Manager) sendControl(playerID string, payload any) error {
 	return m.sendSignal(playerID, signalControl, obj)
 }
 
-func (m *Manager) pushPlayer(p protocol.Player, fallback bool) error {
+// playerMsg is §3 "player" with the roster Player (it carries speaker).
+type playerMsg struct {
+	T      string `json:"t"`
+	Player Player `json:"player"`
+}
+
+// welcomeMsg is §3 "welcome" with the roster Player (it carries speaker).
+type welcomeMsg struct {
+	T         string `json:"t"`
+	V         int    `json:"v"`
+	Player    Player `json:"player"`
+	KioskName string `json:"kiosk_name"`
+}
+
+func (m *Manager) pushPlayer(p Player, fallback bool) error {
 	m.mu.Lock()
 	peer := m.peers[p.ID]
-	ready := fallback || (peer != nil && (peer.fallback.Load() || peer.controlReady()))
+	st := m.players[p.ID]
+	ready := fallback || (st != nil && st.fallback) || (peer != nil && (peer.fallback.Load() || peer.controlReady()))
 	m.mu.Unlock()
 	if !ready {
 		return nil
 	}
-	return m.sendControl(p.ID, protocol.PlayerMsg{T: "player", Player: p})
+	return m.sendControl(p.ID, playerMsg{T: "player", Player: p})
 }
 
 func (m *Manager) publishQR() error {
@@ -962,6 +1195,9 @@ func (m *Manager) notifyPlayer(kind PlayerEventKind, p protocol.Player) {
 }
 
 func (m *Manager) emit() {
+	// Every roster change comes through here; keep the sound on the right
+	// phone before telling the overlay.
+	m.syncSpeaker()
 	m.mu.Lock()
 	snap := m.snapshotLocked()
 	fns := make([]func(Snapshot), 0, len(m.watchers))

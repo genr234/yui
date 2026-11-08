@@ -4,8 +4,6 @@ import (
 	"errors"
 	"testing"
 	"time"
-
-	"kiosk/controller/internal/pad/protocol"
 )
 
 // dropCable closes the fake server's side of the signaling socket.
@@ -34,7 +32,7 @@ func TestReconnectResyncsRoster(t *testing.T) {
 	f := newFake(t)
 	stale := playerFixture("p-stale", 1, true, false)
 	f.mu.Lock()
-	f.sess.Players = []protocol.Player{stale}
+	f.sess.Players = []Player{{Player: stale}}
 	f.mu.Unlock()
 	mgr := f.manager(t)
 	cancel, done := start(t, f, mgr)
@@ -49,7 +47,7 @@ func TestReconnectResyncsRoster(t *testing.T) {
 	f.dropCable()
 	joined := playerFixture("p-new", 2, true, true)
 	f.mu.Lock()
-	f.sess.Players = []protocol.Player{joined}
+	f.sess.Players = []Player{{Player: joined}}
 	f.mu.Unlock()
 
 	waitFor(t, "roster resync", func() bool {

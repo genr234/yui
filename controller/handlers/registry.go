@@ -67,6 +67,9 @@ type Registry struct {
 	padRouter *router.Router
 	// padDSUAddrs overrides the DSU listen addresses (players, system pad).
 	padDSUAddrs [2]string
+	// padAudio sends kiosk sound to the speaker phone; created on first use
+	// and kept for the controller's lifetime (see audio.go).
+	padAudio *session.Audio
 	// mutationMu: a command that records an outbox entry (local or remote)
 	// holds the read side from its write until that entry is recorded. An
 	// account transition holds the write side while it publishes, so the

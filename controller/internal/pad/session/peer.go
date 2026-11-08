@@ -7,6 +7,8 @@ import (
 
 	"github.com/pion/ice/v4"
 	"github.com/pion/webrtc/v4"
+
+	"kiosk/controller/internal/audio"
 )
 
 func newPeerAPI() *webrtc.API {
@@ -23,6 +25,9 @@ type peer struct {
 	pc      *webrtc.PeerConnection
 	control *webrtc.DataChannel
 	input   *webrtc.DataChannel
+	// audio is this phone's Opus send track (nil without session audio).
+	// Only the speaker's track gets samples; the others stay silent.
+	audio *webrtc.TrackLocalStaticSample
 
 	closed   atomic.Bool
 	fallback atomic.Bool
@@ -33,12 +38,36 @@ type peer struct {
 	pending   []webrtc.ICECandidateInit
 }
 
-func openPeer(api *webrtc.API, servers []webrtc.ICEServer, id string, gen int, hooks peerHooks) (*peer, error) {
+func openPeer(api *webrtc.API, servers []webrtc.ICEServer, id string, gen int, withAudio bool, hooks peerHooks) (*peer, error) {
 	pc, err := api.NewPeerConnection(webrtc.Configuration{ICEServers: servers})
 	if err != nil {
 		return nil, err
 	}
 	p := &peer{id: id, gen: gen, pc: pc}
+	if withAudio {
+		// Every phone gets a send track in its first offer, so moving the
+		// speaker later only changes which track the encoder writes into.
+		track, err := audio.NewWebRTCTrack(id)
+		if err != nil {
+			_ = pc.Close()
+			return nil, err
+		}
+		sender, err := pc.AddTrack(track)
+		if err != nil {
+			_ = pc.Close()
+			return nil, err
+		}
+		p.audio = track
+		// Drain RTCP so the interceptors (NACK, reports) keep running.
+		go func() {
+			buf := make([]byte, 1500)
+			for {
+				if _, _, err := sender.Read(buf); err != nil {
+					return
+				}
+			}
+		}()
+	}
 	ordered := true
 	control, err := pc.CreateDataChannel("control", &webrtc.DataChannelInit{Ordered: &ordered})
 	if err != nil {
