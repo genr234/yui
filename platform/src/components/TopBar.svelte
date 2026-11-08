@@ -6,7 +6,8 @@
 	import { platformAssetUrl } from "../assets";
 	import logoUrl from "../assets/images/logo.png";
 	import { assetSync, type AssetSyncStatus } from "../sdk/assets";
-	import { pad, playerSwatch, type PadState } from "../sdk/pad";
+	import { pad, type PadState } from "../sdk/pad";
+	import SessionChip from "./SessionChip.svelte";
 	import type { Section, SectionItem } from "../types";
 
 	export let sections: SectionItem[] = [];
@@ -21,7 +22,6 @@
 	export let accountSyncing = false;
 
 	const dispatch = createEventDispatcher<{ select: Section; account: void }>();
-	const slots = [1, 2, 3, 4];
 
 	let sync: AssetSyncStatus | null = null;
 	let padState: PadState = { session: null, players: [] };
@@ -35,7 +35,6 @@
 	$: download = sync?.current && sync.current.byte_size > 0 ? sync.current : null;
 	$: downloadPercent = download ? Math.min(100, Math.round((download.bytes_done / download.byte_size) * 100)) : 0;
 	$: showDownload = Boolean(download) && (sync?.state === "syncing" || sync?.state === "paused");
-	$: playerBySlot = new Map(padState.players.filter((player) => player.slot).map((player) => [player.slot, player]));
 
 	onMount(() => {
 		void assetSync.status().then((status) => (sync = status));
@@ -93,13 +92,6 @@
 			arrived = next;
 		}, 720);
 	}
-
-	function playerTitle(slot: number) {
-		const player = playerBySlot.get(slot);
-		if (!player) return `Player ${slot}: open`;
-		const roles = [player.host && "host", player.speaker && "speaker"].filter(Boolean).join(", ");
-		return `Player ${slot}: ${player.name}${roles ? ` (${roles})` : ""}`;
-	}
 </script>
 
 <header class="topbar">
@@ -142,23 +134,7 @@
 			</div>
 		{/if}
 
-		{#if padState.session}
-			<div class="topbar-chip players" aria-label={`Players: ${padState.players.length} of 4`}>
-				{#each slots as slot}
-					{@const player = playerBySlot.get(slot)}
-					<span
-						class="player-square"
-						class:open={!player}
-						class:away={player && !player.connected}
-						class:arrive={player && arrived[player.id]}
-						title={playerTitle(slot)}
-						style={player ? `background: ${playerSwatch[player.color] ?? "#2f76dc"}` : ""}
-					>
-						P{slot}
-					</span>
-				{/each}
-			</div>
-		{/if}
+		<SessionChip {padState} {arrived} />
 
 		<div class="topbar-account-wrap" bind:this={accountWrap}>
 			<button

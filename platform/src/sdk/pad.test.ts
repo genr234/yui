@@ -85,3 +85,24 @@ describe("pad.run", () => {
 		});
 	});
 });
+
+describe("session admin", () => {
+	test("lobby, kick, host and speaker call their bridge commands", async () => {
+		sends.length = 0;
+		void pad.kick("p2");
+		void pad.makeHost("p2");
+		void pad.makeSpeaker("p2");
+		const lobby = pad.setLobby(true);
+		release({ session: { code: "KQXM", join_url: "https://yui.example/j", lobby_open: true }, players: [] });
+		expect(sends).toEqual(["pad.kick", "pad.host", "pad.speaker", "pad.lobby"]);
+		expect((await lobby)?.session?.lobby_open).toBe(true);
+	});
+
+	test("a failed kick resolves null and shows its error without marking busy", async () => {
+		fail = new Error("player not found");
+		const result = await pad.kick("p9");
+		fail = null;
+		expect(result).toBeNull();
+		expect(get(padAction)).toEqual({ busy: false, error: "player not found" });
+	});
+});

@@ -129,9 +129,320 @@
 	transition: width 400ms ease;
 }
 
-.topbar-chip.players {
+/* Phone play: a start chip when idle, the code and P1–P4 when a session runs. */
+.session-wrap {
+	position: relative;
+	flex: 0 0 auto;
+}
+
+button.topbar-chip {
+	border: 0;
+	font: inherit;
+	font-size: 14px;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.session-start {
+	color: #ffffff;
+	background: var(--yui-blue);
+	box-shadow: 0 var(--yui-lip) 0 var(--yui-blue-lip);
+	transition: transform var(--yui-press) ease, box-shadow var(--yui-press) ease;
+}
+
+.session-start:active:not(:disabled) {
+	transform: translateY(var(--yui-lip));
+	box-shadow: var(--yui-shadow-none);
+}
+
+.session-start:disabled {
+	opacity: 0.65;
+	cursor: default;
+}
+
+.session-chip {
+	gap: 10px;
+	padding: 0 7px 0 14px;
+	color: var(--yui-chrome-fg);
+}
+
+.session-chip[aria-expanded="true"] {
+	background: var(--yui-chrome-active);
+}
+
+.session-code {
+	font-size: 15px;
+	font-weight: 700;
+	letter-spacing: 2.5px;
+}
+
+.session-squares {
+	display: inline-flex;
+	gap: 5px;
+}
+
+.session-popover {
+	position: absolute;
+	top: calc(100% + 8px);
+	right: 0;
+	z-index: 6;
+	display: grid;
+	gap: 14px;
+	width: 380px;
+	padding: 16px;
+	border: 1px solid var(--yui-line);
+	border-radius: var(--yui-radius-card);
+	color: var(--yui-ink);
+	background: var(--yui-surface);
+	box-shadow: var(--yui-shadow-overlay);
+	text-align: left;
+	animation: session-pop 160ms var(--yui-ease-out);
+}
+
+@keyframes session-pop {
+	from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+	to { opacity: 1; transform: none; }
+}
+
+.session-join {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	gap: 16px;
+	align-items: center;
+}
+
+.session-qr {
+	display: block;
+	padding: 4px;
+	border: 1px solid var(--yui-line);
+	border-radius: 12px;
+	background: #ffffff;
+}
+
+.session-qr .join-qr {
+	border-radius: 8px;
+}
+
+.session-join-copy {
+	display: grid;
+	gap: 4px;
+	min-width: 0;
+}
+
+.session-eyebrow {
+	color: var(--yui-muted);
+	font-size: 12px;
+	font-weight: 700;
+	letter-spacing: 1px;
+	text-transform: uppercase;
+}
+
+.session-join-code {
+	font-size: 34px;
+	font-weight: 750;
+	letter-spacing: 6px;
+	line-height: 1.05;
+}
+
+.session-join-host {
+	color: var(--yui-muted);
+	font-size: 13px;
+	line-height: 1.3;
+	overflow-wrap: anywhere;
+}
+
+.session-lobby {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	min-height: 44px;
+	margin-top: 4px;
+	padding: 0;
+	border: 0;
+	color: var(--yui-ink);
+	background: transparent;
+	font: inherit;
+	font-size: 13px;
+	font-weight: 600;
+	text-align: left;
+	cursor: pointer;
+}
+
+.session-lobby:disabled {
+	opacity: 0.6;
+}
+
+.session-switch {
+	position: relative;
+	flex: 0 0 auto;
+	width: 40px;
+	height: 24px;
+	border-radius: 12px;
+	background: var(--yui-track);
+	transition: background 160ms ease;
+}
+
+.session-switch::after {
+	content: "";
+	position: absolute;
+	top: 3px;
+	left: 3px;
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	background: #ffffff;
+	box-shadow: var(--yui-shadow-knob);
+	transition: transform 160ms var(--yui-ease-out);
+}
+
+.session-switch.on {
+	background: var(--yui-blue);
+}
+
+.session-switch.on::after {
+	transform: translateX(16px);
+}
+
+.session-players {
+	display: grid;
 	gap: 6px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.session-player {
+	display: grid;
+	grid-template-columns: 36px minmax(0, 1fr) auto;
+	gap: 12px;
+	align-items: center;
+	min-height: 52px;
+	padding: 6px 6px 6px 8px;
+	border-radius: 12px;
+	background: var(--yui-backdrop);
+}
+
+.session-player.empty {
+	background: transparent;
+	border: 1.5px dashed var(--yui-line);
+}
+
+.session-slot {
+	display: grid;
+	place-items: center;
+	width: 36px;
+	height: 36px;
+	border-radius: 10px;
+	color: #ffffff;
+	background: transparent;
+	font-size: 13px;
+	font-weight: 700;
+}
+
+.session-player.empty .session-slot {
+	color: var(--yui-muted);
+}
+
+.session-player-name {
+	display: grid;
+	min-width: 0;
+}
+
+.session-player-name strong,
+.session-player-name span {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.session-player-name strong {
+	font-size: 15px;
+	font-weight: 650;
+}
+
+.session-player-name span {
+	color: var(--yui-muted);
+	font-size: 12.5px;
+	font-weight: 500;
+}
+
+.session-player-actions {
+	display: flex;
+	gap: 4px;
+}
+
+.session-player-actions button {
+	display: grid;
+	place-items: center;
+	min-width: 40px;
+	height: 40px;
 	padding: 0 8px;
+	border: 1px solid var(--yui-line);
+	border-radius: 10px;
+	color: var(--yui-muted);
+	background: var(--yui-surface);
+	font: inherit;
+	font-size: 13px;
+	font-weight: 700;
+	cursor: pointer;
+}
+
+.session-player-actions button.kick.confirm {
+	border-color: var(--yui-red);
+	color: #ffffff;
+	background: var(--yui-red);
+}
+
+.session-watching {
+	margin: -4px 0 0;
+	color: var(--yui-muted);
+	font-size: 13px;
+}
+
+.session-error {
+	margin: 0;
+	color: var(--yui-red);
+	font-size: 13px;
+	font-weight: 600;
+}
+
+.session-end {
+	min-height: 48px;
+	border: 1px solid var(--yui-line);
+	border-radius: var(--yui-radius-control);
+	color: var(--yui-red);
+	background: var(--yui-surface);
+	font: inherit;
+	font-size: 15px;
+	font-weight: 700;
+	cursor: pointer;
+}
+
+.session-end.confirm {
+	border-color: var(--yui-red);
+	color: #ffffff;
+	background: var(--yui-red);
+}
+
+.session-end:disabled {
+	opacity: 0.6;
+	cursor: default;
+}
+
+.session-toast {
+	position: absolute;
+	top: calc(100% + 8px);
+	right: 0;
+	z-index: 6;
+	width: max-content;
+	max-width: 280px;
+	margin: 0;
+	padding: 10px 12px;
+	border-radius: var(--yui-radius-control);
+	color: #ffffff;
+	background: var(--yui-red);
+	font-size: 13px;
+	font-weight: 600;
 }
 
 .player-square {
@@ -353,7 +664,8 @@
 /* The shell is 85% of the screen, so size by the bar, not the viewport. */
 @container topbar (max-width: 1240px) {
 	.topbar-account-name,
-	.topbar-meter {
+	.topbar-meter,
+	.session-code {
 		display: none;
 	}
 

@@ -44,10 +44,12 @@ type Player struct {
 	Speaker bool `json:"speaker"`
 }
 
-// SessionView is the bridge session object: code plus the current QR URL.
+// SessionView is the bridge session object: code, the current QR URL and
+// whether anyone with the code can join without scanning the QR.
 type SessionView struct {
-	Code    string `json:"code"`
-	JoinURL string `json:"join_url"`
+	Code      string `json:"code"`
+	JoinURL   string `json:"join_url"`
+	LobbyOpen bool   `json:"lobby_open"`
 }
 
 // Snapshot is the pad.players payload (session is null when none is running).
@@ -299,7 +301,7 @@ func (m *Manager) Snapshot() Snapshot {
 func (m *Manager) snapshotLocked() Snapshot {
 	snap := Snapshot{Players: m.rosterLocked()}
 	if m.record != nil && m.active {
-		snap.Session = &SessionView{Code: m.record.Code, JoinURL: m.joinURL}
+		snap.Session = &SessionView{Code: m.record.Code, JoinURL: m.joinURL, LobbyOpen: m.record.LobbyOpen}
 	}
 	return snap
 }

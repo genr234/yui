@@ -6,7 +6,6 @@
   import RotateCwIcon from "lucide-svelte/icons/rotate-cw";
   import PlayIcon from "lucide-svelte/icons/play";
   import PlusIcon from "lucide-svelte/icons/plus";
-  import SmartphoneIcon from "lucide-svelte/icons/smartphone";
   import EmptyState from "../components/EmptyState.svelte";
   import JoinQr from "../components/JoinQr.svelte";
   import ThemeParticles from "../components/ThemeParticles.svelte";
@@ -25,7 +24,7 @@
   import { selectJumpBackIn, type JumpEntry } from "../jump-back-in";
   import { loadLibraryRecent, onLibraryChanged, type RecentLibraryTitle } from "../sdk/library";
   import { setLaunchItem } from "../sdk/apps/launch-intent";
-  import { pad, padAction, type PadState } from "../sdk/pad";
+  import { pad, type PadState } from "../sdk/pad";
   import type { YuiDevApp } from "../sdk/apps";
   import type { SidebarThemeSettings } from "../types";
 
@@ -113,11 +112,6 @@
   });
   $: hero = jump.hero;
   $: resumeRow = jump.row;
-
-  async function togglePhonePlay() {
-    const next = await pad.run(padState.session ? "end" : "start");
-    if (next) padState = next;
-  }
 
   function categoryOf(app: YuiDevApp) {
     return normalizeAppCategory(app.app.category);
@@ -341,11 +335,6 @@
     <section class="all-apps" aria-label="All apps">
       <header class="all-apps-head">
         <h2>All apps</h2>
-        <button class="play-phones" type="button" disabled={$padAction.busy} on:click={togglePhonePlay}>
-          <SmartphoneIcon size={18} strokeWidth={2.2} />
-          {padState.session ? "End phone play" : "Play on your phones"}
-        </button>
-        {#if $padAction.error}<span class="play-phones-error">{$padAction.error}</span>{/if}
         {#if categoryNames.length > 1}
           <div class="category-chips" role="group" aria-label="Filter by category">
             <button class:active={filter === ""} aria-pressed={filter === ""} on:click={() => (filter = "")}>All</button>

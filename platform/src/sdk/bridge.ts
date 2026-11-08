@@ -172,15 +172,9 @@ class DemoBridge {
 	private values = new Map<string, unknown>();
 	private listeners = new Map<string, Set<BridgeEventListener<any>>>();
 	private padState: {
-		session: { code: string; join_url: string } | null;
+		session: { code: string; join_url: string; lobby_open?: boolean } | null;
 		players: Array<Record<string, unknown>>;
-	} = {
-		session: { code: "KQXM", join_url: "https://yui.example/play/KQXM?t=OT56FOOG" },
-		players: [
-			{ id: "p1", slot: 1, name: "Riccardo", color: "blue", host: true, connected: true },
-			{ id: "p2", slot: 2, name: "Sam", color: "purple", speaker: true, connected: true },
-		],
-	};
+	} = { session: null, players: [] };
 	private storeEpoch = 0;
 	private config = {
 		url: "https://demo.yui.local",
@@ -303,16 +297,33 @@ class DemoBridge {
 		}
 		if (method === "pad.session.start") {
 			this.padState = {
-				session: { code: "KQXM", join_url: "https://yui.example/play/KQXM?t=OT56FOOG" },
+				session: { code: "KQXM", join_url: "https://yui.example/play/KQXM?t=OT56FOOG", lobby_open: false },
 				players: [
-					{ id: "p1", slot: 1, name: "Riccardo", color: "blue", host: true, connected: true },
-					{ id: "p2", slot: 2, name: "Sam", color: "purple", speaker: true, connected: true },
+					{ id: "p1", slot: 1, name: "Riccardo", color: "blue", host: true, speaker: true, connected: true },
+					{ id: "p2", slot: 2, name: "Sam", color: "purple", host: false, connected: true },
+					{ id: "p3", slot: 3, name: "Ada", color: "green", host: false, connected: false },
 				],
 			};
 			this.emitPad();
 			return this.padState as T;
 		}
-		if (method === "pad.players" || method === "pad.lobby" || method === "pad.kick" || method === "pad.host") {
+		if (this.padState.session && method === "pad.lobby") {
+			this.padState = { ...this.padState, session: { ...this.padState.session, lobby_open: Boolean(params.open) } };
+			this.emitPad();
+		}
+		if (method === "pad.kick") {
+			this.padState = { ...this.padState, players: this.padState.players.filter((player) => player.id !== params.player_id) };
+			this.emitPad();
+		}
+		if (method === "pad.host" || method === "pad.speaker") {
+			const role = method === "pad.host" ? "host" : "speaker";
+			this.padState = {
+				...this.padState,
+				players: this.padState.players.map((player) => ({ ...player, [role]: player.id === params.player_id })),
+			};
+			this.emitPad();
+		}
+		if (method.startsWith("pad.") && method !== "pad.sensitive" && method !== "pad.volume") {
 			return this.padState as T;
 		}
 		if (method === "pad.sensitive") return { active: Boolean(params.active) } as T;

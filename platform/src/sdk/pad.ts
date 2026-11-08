@@ -30,7 +30,8 @@ export type PadHome = { player_id: string; via: "button" | "system" };
 
 /** The kiosk's play session as the overlay sees it; `session` is null when none is open. */
 export type PadState = {
-	session: { code: string; join_url: string } | null;
+	/** `lobby_open`: anyone with the code can join; otherwise phones must scan the current QR. */
+	session: { code: string; join_url: string; lobby_open?: boolean } | null;
 	players: PadPlayer[];
 };
 
@@ -56,6 +57,14 @@ export const pad = {
 	 * `padAction`. Never rejects.
 	 */
 	run: (kind: "start" | "end") => runPadAction(kind),
+	/** Let anyone with the code join (open) or require the QR (closed). */
+	setLobby: (open: boolean) => playerAction("pad.lobby", { open }),
+	/** Remove a phone from the session. */
+	kick: (playerId: string) => playerAction("pad.kick", { player_id: playerId }),
+	/** Give the host role (the remote and the Home sheet) to another phone. */
+	makeHost: (playerId: string) => playerAction("pad.host", { player_id: playerId }),
+	/** Play the kiosk's sound on this phone. */
+	makeSpeaker: (playerId: string) => playerAction("pad.speaker", { player_id: playerId }),
 	/** True while the PIN screen or Settings is open. The controller drops phone pointer and text input meanwhile (D9). */
 	setSensitive: (active: boolean) =>
 		bridge.send("pad.sensitive", { active }).then(() => undefined).catch(() => undefined),
@@ -126,6 +135,21 @@ function runPadAction(kind: "start" | "end"): Promise<PadState | null> {
 			inFlight = null;
 		});
 	return inFlight;
+}
+
+/** Session admin calls: resolve to the new state, or null with the error in `padAction`. */
+function playerAction(method: string, params: Record<string, unknown>): Promise<PadState | null> {
+	return bridge
+		.send<PadState | null>(method, params)
+		.then((state) => {
+			padAction.update((current) => ({ ...current, error: "" }));
+			return normalize(state);
+		})
+		.catch((err: unknown) => {
+			const message = err instanceof Error && err.message ? err.message : "That didn't work";
+			padAction.update((current) => ({ ...current, error: message }));
+			return null;
+		});
 }
 
 function normalize(state: PadState | null | undefined): PadState {

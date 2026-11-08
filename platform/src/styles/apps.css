@@ -305,33 +305,6 @@
 	white-space: nowrap;
 }
 
-.play-phones {
-	display: inline-flex;
-	align-items: center;
-	gap: 8px;
-	height: 44px;
-	padding: 0 14px;
-	border: 0;
-	border-radius: 12px;
-	color: #ffffff;
-	background: var(--yui-blue);
-	box-shadow: 0 var(--yui-lip) 0 var(--yui-blue-lip);
-	font: inherit;
-	font-size: 14px;
-	font-weight: 700;
-	cursor: pointer;
-}
-
-.play-phones:disabled {
-	opacity: 0.6;
-	cursor: default;
-}
-
-.play-phones-error {
-	color: var(--yui-danger, #d84a4a);
-	font-size: 13px;
-}
-
 .category-chips {
 	display: flex;
 	gap: 6px;
