@@ -55,13 +55,13 @@ type Route struct {
 }
 
 // Profile is the input map for one provider. The hub applies it after the
-// provider's Handle* method returns. Invalid routes are ignored at apply
-// time; call Validate to see them.
+// provider's Handle* method returns. Invalid routes are ignored when input
+// is delivered; call Validate to see them.
 type Profile struct {
 	Routes []Route
 }
 
-// Validate reports routes Apply would ignore.
+// Validate reports routes the hub ignores when it delivers input.
 func (p Profile) Validate() error {
 	var errs []error
 	for i, r := range p.Routes {
