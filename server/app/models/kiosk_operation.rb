@@ -13,6 +13,7 @@ class KioskOperation < ApplicationRecord
     plugin-settings
     plugin-secrets
     plugin-storage
+    shell
   ].freeze
   MAX_PAYLOAD_BYTES = 256.kilobytes
   MAX_REPLACE_COLLECTION_PAYLOAD_BYTES = 2.megabytes

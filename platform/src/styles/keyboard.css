@@ -4,12 +4,7 @@
 	z-index: 2147483647;
 	pointer-events: none;
 	font:
-		16px / 1.25 "YuiAvenirNext",
-		"Avenir Next",
-		"Segoe UI",
-		Helvetica,
-		Arial,
-		sans-serif;
+		16px / 1.25 var(--yui-font);
 }
 
 .onscreen-keyboard {
@@ -17,13 +12,13 @@
 	display: flex;
 	flex-direction: column;
 	padding: 12px;
-	border: 1px solid #dbe3ed;
-	border-radius: 14px;
+	border: 1px solid var(--yui-line);
+	border-radius: var(--yui-radius-card);
 	pointer-events: auto;
-	color: #111925;
-	background: #f7f9fc;
+	color: var(--yui-ink);
+	background: var(--yui-backdrop);
 	box-shadow:
-		0 24px 72px rgba(0, 0, 0, 0.28),
+		var(--yui-shadow-overlay),
 		0 1px 0 rgba(255, 255, 255, 0.88) inset;
 	animation: keyboard-in 180ms ease both;
 	overflow: hidden;
@@ -34,7 +29,7 @@
 	grid-template-columns: auto minmax(0, 1fr) auto;
 	gap: 10px;
 	align-items: center;
-	min-height: 38px;
+	min-height: 44px;
 	margin-bottom: 10px;
 }
 
@@ -43,20 +38,20 @@
 	gap: 4px;
 	align-items: center;
 	padding: 4px;
-	border: 1px solid #d6e0ec;
-	border-radius: 10px;
-	background: #edf2f7;
+	border: 1px solid var(--yui-line);
+	border-radius: var(--yui-radius-badge);
+	background: var(--yui-track);
 }
 
 .keyboard-tool-button {
 	display: inline-grid;
 	place-items: center;
-	width: 34px;
-	height: 30px;
+	width: 44px;
+	height: 44px;
 	padding: 0;
 	border: 0;
 	border-radius: 7px;
-	color: #526176;
+	color: var(--yui-muted);
 	background: transparent;
 	cursor: pointer;
 }
@@ -71,12 +66,12 @@
 	display: inline-grid;
 	place-items: center;
 	width: 128px;
-	height: 30px;
+	height: 44px;
 	padding: 0;
 	border: 0;
 	border-radius: 999px;
-	color: #7a8797;
-	background: #e8eef5;
+	color: var(--yui-muted);
+	background: var(--yui-track);
 	cursor: grab;
 }
 
@@ -121,8 +116,8 @@
 	padding: 0 8px;
 	border: 0px;
 	border-radius: 8px;
-	color: #172334;
-	background: #ffffff;
+	color: var(--yui-ink-2);
+	background: var(--yui-surface);
 	font-size: 22px;
 	font-weight: 500;
 	line-height: 1;
@@ -140,9 +135,9 @@
 
 .keyboard-key.active,
 .keyboard-key:active {
-	border-color: #2f76dc;
-	color: #ffffff;
-	background: #2f76dc;
+	border-color: var(--yui-blue);
+	color: var(--yui-surface);
+	background: var(--yui-blue);
 	box-shadow: none;
 }
 
@@ -156,8 +151,8 @@
 	height: 50px;
 	border: 0px;
 	border-radius: 8px;
-	color: #172334;
-	background: #ffffff;
+	color: var(--yui-ink-2);
+	background: var(--yui-surface);
 	font: inherit;
 	font-weight: 700;
 	cursor: pointer;
@@ -192,8 +187,8 @@
 .keyboard-spacebar:active,
 .keyboard-nav-key:active,
 	.keyboard-tool-button:active {
-	border-color: #9eb4cc;
-	background: #dce5ef;
+	border-color: var(--yui-line-strong);
+	background: var(--yui-line);
 	box-shadow: none;
 }
 
@@ -201,14 +196,14 @@
 	position: absolute;
 	right: 6px;
 	bottom: 6px;
-	width: 22px;
-	height: 22px;
+	width: 44px;
+	height: 44px;
 	padding: 0;
 	border: 0;
 	border-radius: 6px;
 	background:
-		linear-gradient(135deg, transparent 0 48%, #9aabbf 49% 54%, transparent 55%),
-		linear-gradient(135deg, transparent 0 66%, #9aabbf 67% 72%, transparent 73%);
+		linear-gradient(135deg, transparent 0 48%, var(--yui-muted) 49% 54%, transparent 55%),
+		linear-gradient(135deg, transparent 0 66%, var(--yui-muted) 67% 72%, transparent 73%);
 	cursor: nwse-resize;
 	opacity: 0.78;
 }
@@ -231,7 +226,7 @@
 @media (max-width: 720px) {
 	.onscreen-keyboard {
 		padding: 10px;
-		border-radius: 12px;
+		border-radius: var(--yui-radius-control);
 	}
 
 	.keyboard-header {
@@ -277,9 +272,14 @@
 	}
 
 	.keyboard-footer {
-		grid-template-columns: 72px 48px 42px minmax(0, 1fr) 42px 48px 48px;
+		grid-template-columns: 72px 48px 48px minmax(0, 1fr) 48px 48px 48px;
 		gap: 8px;
 		padding: 8px 82px 0 0;
+	}
+
+	.keyboard-footer button {
+		min-width: 44px;
+		min-height: 44px;
 	}
 
 	.keyboard-mode-key,

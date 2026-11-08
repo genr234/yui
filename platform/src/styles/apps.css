@@ -522,7 +522,7 @@
 
 .app-route-controls {
 	display: grid;
-	grid-template-columns: 42px minmax(0, 1fr) 42px 42px;
+	grid-template-columns: 44px minmax(0, 1fr) 44px 44px;
 	gap: 10px;
 	align-items: center;
 }
@@ -530,8 +530,8 @@
 .icon-button {
 	display: inline-grid;
 	place-items: center;
-	width: 42px;
-	height: 42px;
+	width: 44px;
+	height: 44px;
 	padding: 0;
 	border: 1px solid var(--yui-line);
 	border-bottom-width: var(--yui-lip);
@@ -542,9 +542,9 @@
 }
 
 .icon-button.compact {
-	width: 34px;
-	height: 34px;
-	border-radius: 8px;
+	width: 44px;
+	height: 44px;
+	border-radius: var(--yui-radius-badge);
 }
 
 .plugin-toggle-row {

@@ -310,20 +310,42 @@ func accountViewPtr(account *config.AccountConfig) *accountView {
 	return &view
 }
 
+// accountSwitchBoundary runs inside publishAccountConfig while storeMu is
+// held, after the new account config is published and the previous database
+// is dropped. Tests interleave a read there. The hook must not call Store,
+// withStore, or switchConfig, because those lock storeMu again.
+var accountSwitchBoundary func(*Registry)
+
 func (r *Registry) switchConfig(cfg config.Config) error {
+	// Stop and start plugins outside storeMu. They take the plugin mutex and
+	// then Store, so holding storeMu across them deadlocks.
 	if r.plugins != nil {
 		r.plugins.Stop()
 	}
-	if err := r.resetStore(); err != nil {
+	if err := r.publishAccountConfig(cfg); err != nil {
 		return err
 	}
-	r.cfgMu.Lock()
-	r.cfg = cfg
-	r.cfgMu.Unlock()
 	if r.plugins != nil && r.pluginCtx != nil {
 		r.plugins.Start(r.pluginCtx)
 	}
 	return nil
+}
+
+// publishAccountConfig installs cfg and the store epoch together. storeMu
+// stays held from the epoch bump until the new account is the one a reopened
+// database would serve.
+func (r *Registry) publishAccountConfig(cfg config.Config) error {
+	r.storeMu.Lock()
+	defer r.storeMu.Unlock()
+
+	closeErr := r.resetStoreLocked()
+	r.cfgMu.Lock()
+	r.cfg = cfg
+	r.cfgMu.Unlock()
+	if accountSwitchBoundary != nil {
+		accountSwitchBoundary(r)
+	}
+	return closeErr
 }
 
 func normalizeServerURL(value string) (string, error) {
