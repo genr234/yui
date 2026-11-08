@@ -23,6 +23,11 @@ class PlayController < ActionController::Base
     with: -> { render json: { error: "rate_limited" }, status: :too_many_requests }
 
   before_action :verify_same_origin_json!, only: :join
+
+  # /sim shows pads in same-origin iframes; everywhere else the pad stays unframeable.
+  content_security_policy(only: :show, if: :sim_request?) do |policy|
+    policy.frame_ancestors :self
+  end
   before_action :set_play_session
 
   def show
@@ -110,15 +115,24 @@ class PlayController < ActionController::Base
 
   # The cookie's player, only if it belongs to this session.
   def cookie_player(include_kicked: false)
-    player = Player.from_cookie(cookies.signed[PLAYER_COOKIE])
+    player = Player.from_cookie(cookies.signed[player_cookie_name])
     return unless player && player.play_session_id == @play_session.id
     return if player.kicked? && !include_kicked
 
     player
   end
 
+  # `yui_player`, or a per-pad cookie for /sim iframes (development and test only, see PadSim).
+  def player_cookie_name
+    PadSim.cookie_name(params[:sim])
+  end
+
+  def sim_request?
+    PadSim.slot(params[:sim]).present?
+  end
+
   def write_player_cookie(player, token)
-    cookies.signed[PLAYER_COOKIE] = {
+    cookies.signed[player_cookie_name] = {
       value: Player.cookie_value(player, token),
       expires: COOKIE_LIFETIME.from_now,
       httponly: true,

@@ -50,6 +50,8 @@ Rails.application.routes.draw do
     post "join", action: :join, as: :play_join
     get "ice", action: :ice, as: :play_ice
   end
+  # Pad simulator: four pads in iframes (development and test only, never production).
+  get "sim", to: "pad_sim#show", as: :pad_sim if Rails.env.local?
 
   # Define your application routes per the DSL in https://guides.rubyonrails.org/routing.html
 

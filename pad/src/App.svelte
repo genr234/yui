@@ -1,23 +1,26 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import type { Player } from '@yui/protocol'
-  import { ApiError, codeFromPath, friendlyError, getInfo, join, qrTokenFromQuery, type SessionInfo } from './api'
+  import type { Node, Player } from '@yui/protocol'
+  import { ApiError, codeFromPath, friendlyError, getInfo, join, qrTokenFromQuery, simSlotFromQuery, type SessionInfo } from './api'
   import { COLOR_NAMES, colorHex } from './colors'
-  import LayoutView from './layout/LayoutView.svelte'
-  import { demoTree } from './layout/demo'
-  import { keepAwake } from './platform/wakelock'
-  import { requestMotionPermission, type MotionPermission } from './platform/motion'
+  import Pad from './Pad.svelte'
+  import { demoGamepad, demoRemote, demoShell, demoTree } from './layout/demo'
+  import { unlockAudio } from './platform/sound'
 
-  type Screen = 'loading' | 'not_found' | 'join' | 'joined' | 'error'
+  type Screen = 'loading' | 'not_found' | 'join' | 'joined' | 'error' | 'kicked' | 'ended' | 'closed'
 
-  const demo = import.meta.env.DEV && new URLSearchParams(location.search).get('demo') === 'layout'
+  const demoName = import.meta.env.DEV ? new URLSearchParams(location.search).get('demo') : null
+  const demos: Record<string, Node> = { layout: demoTree, gamepad: demoGamepad, remote: demoRemote, shell: demoShell }
+  const demo: Node | null = (demoName && demos[demoName]) || null
   const code = codeFromPath()
   const qrToken = qrTokenFromQuery()
+  const simSlot = simSlotFromQuery()
 
   let screen: Screen = 'loading'
   let info: SessionInfo | null = null
   let player: Player | null = null
   let name = (() => {
+    if (simSlot) return `Sim ${simSlot}`
     try {
       return localStorage.getItem('yui_pad_name') ?? ''
     } catch {
@@ -27,7 +30,6 @@
   let color = ''
   let busy = false
   let error = ''
-  let motion: MotionPermission | null = null
   let log: string[] = []
 
   $: taken = new Set(info?.colors_taken ?? [])
@@ -39,11 +41,12 @@
       screen = 'not_found'
       return
     }
+    screen = 'loading'
     try {
       info = await getInfo(code)
       player = info.player
       screen = player ? 'joined' : 'join'
-      if (player) void keepAwake()
+      if (!player && simSlot) await submit()
     } catch (e) {
       screen = e instanceof ApiError && e.status === 404 ? 'not_found' : 'error'
     }
@@ -53,29 +56,29 @@
     if (!code || !canJoin) return
     busy = true
     error = ''
+    unlockAudio()
     try {
       const res = await join(code, name.trim(), color, qrToken)
       player = res.player
-      try {
-        localStorage.setItem('yui_pad_name', name.trim())
-      } catch {
-        /* storage unavailable */
+      if (!simSlot) {
+        try {
+          localStorage.setItem('yui_pad_name', name.trim())
+        } catch {
+          /* storage unavailable */
+        }
       }
       screen = 'joined'
-      void keepAwake()
-      // Join is a tap, so this is a valid moment for the iOS motion prompt.
-      motion = await requestMotionPermission()
     } catch (e) {
       error = friendlyError(e)
-      if (e instanceof ApiError && e.code === 'validation') await load().catch(() => {})
-      if (screen !== 'join' && !player) screen = 'join'
+      if (e instanceof ApiError && e.code === 'kicked') screen = 'kicked'
+      else if (e instanceof ApiError && e.status === 404) screen = 'not_found'
+      else {
+        if (e instanceof ApiError && e.code === 'validation') await load().catch(() => {})
+        if (!player) screen = 'join'
+      }
     } finally {
       busy = false
     }
-  }
-
-  function onDemoEvent(e: { control: string; kind: string }) {
-    log = [`${e.kind} ${e.control}`, ...log].slice(0, 5)
   }
 
   onMount(() => {
@@ -83,76 +86,89 @@
   })
 </script>
 
-<main class="shell">
-  {#if demo}
-    <section class="demo">
-      <LayoutView node={demoTree} onEvent={onDemoEvent} />
-      <pre class="log">{log.join('\n') || 'no events yet'}</pre>
-    </section>
-  {:else if screen === 'loading'}
-    <section class="center">
-      <div class="spinner" aria-label="Loading"></div>
-    </section>
-  {:else if screen === 'not_found'}
-    <section class="center">
-      <div class="emoji" aria-hidden="true">?</div>
-      <h1>Session not found</h1>
-      <p class="muted">This session has ended or the link is wrong. Scan the QR code on the kiosk again.</p>
-    </section>
-  {:else if screen === 'error'}
-    <section class="center">
-      <h1>Can't reach the kiosk</h1>
-      <p class="muted">Check your connection and try again.</p>
-      <button class="primary" on:click={load}>Retry</button>
-    </section>
-  {:else if screen === 'join'}
-    <form class="join" on:submit|preventDefault={submit}>
-      <h1>Join {info?.kiosk_name ?? 'the game'}</h1>
-      <p class="muted">Pick a name and a colour.</p>
+{#if demo}
+  <div class="demo">
+    <Pad
+      code="DEMO"
+      player={{ id: '0', slot: 1, name: 'Demo', color: 'blue', host: true, connected: true }}
+      demoTree={demo}
+      onDemoEvent={(line) => (log = [line, ...log].slice(0, 4))}
+    />
+    <pre class="log">{log.join('\n') || 'no events yet'}</pre>
+  </div>
+{:else if screen === 'joined' && player && code}
+  <Pad {code} {player} kioskName={info?.kiosk_name ?? ''} onEnd={(s) => (screen = s)} />
+{:else}
+  <main class="shell">
+    {#if screen === 'loading'}
+      <section class="center">
+        <div class="spinner" aria-label="Loading"></div>
+      </section>
+    {:else if screen === 'not_found' || screen === 'ended'}
+      <section class="center">
+        <div class="glyph" aria-hidden="true">{screen === 'ended' ? '✓' : '?'}</div>
+        <h1>{screen === 'ended' ? 'Thanks for playing' : 'Session not found'}</h1>
+        <p class="muted">
+          {screen === 'ended'
+            ? 'The kiosk ended this session.'
+            : 'This session has ended or the link is wrong. Scan the QR code on the kiosk again.'}
+        </p>
+      </section>
+    {:else if screen === 'kicked'}
+      <section class="center">
+        <div class="glyph" aria-hidden="true">✕</div>
+        <h1>You were removed</h1>
+        <p class="muted">The host removed you from this session. Ask them to let you back in, then scan the QR code again.</p>
+      </section>
+    {:else if screen === 'closed'}
+      <section class="center">
+        <h1>Disconnected</h1>
+        <p class="muted">The kiosk closed the connection.</p>
+        <button class="primary" on:click={load}>Try again</button>
+      </section>
+    {:else if screen === 'error'}
+      <section class="center">
+        <h1>Can't reach the kiosk</h1>
+        <p class="muted">Check your connection and try again.</p>
+        <button class="primary" on:click={load}>Retry</button>
+      </section>
+    {:else if screen === 'join'}
+      <form class="join" on:submit|preventDefault={submit}>
+        <p class="eyebrow">Yui Pad</p>
+        <h1>Join {info?.kiosk_name ?? 'the game'}</h1>
+        <p class="muted">Pick a name and a colour.</p>
 
-      <label class="field">
-        <span>Your name</span>
-        <input bind:value={name} maxlength="20" autocomplete="nickname" autocapitalize="words" placeholder="Player" />
-      </label>
+        <label class="field">
+          <span>Your name</span>
+          <input bind:value={name} maxlength="20" autocomplete="nickname" autocapitalize="words" placeholder="Player" />
+        </label>
 
-      <div class="field">
-        <span>Colour</span>
-        <div class="chips" role="radiogroup" aria-label="Colour">
-          {#each COLOR_NAMES as c}
-            <button
-              type="button"
-              role="radio"
-              aria-checked={color === c}
-              aria-label={c}
-              class="chip"
-              class:selected={color === c}
-              disabled={taken.has(c)}
-              style="--chip:{colorHex(c)}"
-              on:click={() => (color = c)}
-            ></button>
-          {/each}
+        <div class="field">
+          <span>Colour</span>
+          <div class="chips" role="radiogroup" aria-label="Colour">
+            {#each COLOR_NAMES as c}
+              <button
+                type="button"
+                role="radio"
+                aria-checked={color === c}
+                aria-label={c}
+                class="chip"
+                class:selected={color === c}
+                disabled={taken.has(c)}
+                style="--chip:{colorHex(c)}"
+                on:click={() => (color = c)}
+              ></button>
+            {/each}
+          </div>
         </div>
-      </div>
 
-      {#if error}<p class="err" role="alert">{error}</p>{/if}
+        {#if error}<p class="err" role="alert">{error}</p>{/if}
 
-      <button class="primary" type="submit" disabled={!canJoin}>{busy ? 'Joining…' : 'Join'}</button>
-    </form>
-  {:else if screen === 'joined' && player}
-    <section class="center joined">
-      {#if player.slot}
-        <div class="badge" style="--chip:{colorHex(player.color)}">P{player.slot}</div>
-      {:else}
-        <div class="badge spectator" style="--chip:{colorHex(player.color)}">Spectator</div>
-      {/if}
-      <h1>{player.name}</h1>
-      <p class="muted">{player.host ? "You're the host. " : ''}Waiting for the kiosk…</p>
-      {#if motion === 'denied'}
-        <p class="err">Motion access was denied. Motion games will not work.</p>
-      {/if}
-    </section>
-  {/if}
-</main>
+        <button class="primary" type="submit" disabled={!canJoin}>{busy ? 'Joining…' : 'Join'}</button>
+      </form>
+    {/if}
+  </main>
+{/if}
 
 <style>
   .shell {
@@ -180,18 +196,24 @@
   .join {
     justify-content: center;
   }
-  .demo {
-    justify-content: flex-start;
+  .eyebrow {
+    margin: 0;
+    color: var(--yui-blue-soft);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-size: 0.8rem;
   }
-  .emoji {
-    font-size: 4rem;
+  .glyph {
+    font-size: 3rem;
     font-weight: 800;
     width: 96px;
     height: 96px;
     display: grid;
     place-items: center;
-    border-radius: 32px;
-    background: var(--surface-2);
+    border-radius: var(--yui-radius-shell);
+    background: var(--yui-chrome-fill);
+    box-shadow: 0 0 0 1px var(--line) inset;
   }
   .field {
     display: flex;
@@ -206,10 +228,10 @@
   }
   .chip {
     aspect-ratio: 1;
-    border: 4px solid transparent;
-    border-radius: 22px;
+    border: 3px solid transparent;
+    border-radius: var(--yui-radius-hero);
     background: var(--chip);
-    box-shadow: 0 5px 0 rgba(0, 0, 0, 0.35);
+    box-shadow: 0 var(--yui-lip) 0 rgba(0, 0, 0, 0.35);
     padding: 0;
   }
   .chip.selected {
@@ -223,42 +245,35 @@
   .err {
     margin: 0;
     padding: 10px 14px;
-    border-radius: 14px;
-    background: rgba(255, 84, 112, 0.16);
-    color: #ff9fb0;
+    border-radius: var(--yui-radius-card);
+    background: rgba(216, 74, 74, 0.16);
+    color: #ff9a9a;
     font-weight: 600;
   }
-  .badge {
-    min-width: 200px;
-    padding: 28px 36px;
-    border-radius: 48px;
-    background: var(--chip);
-    color: #0f1020;
-    font-size: 5rem;
-    font-weight: 900;
-    line-height: 1;
-    box-shadow: 0 10px 0 rgba(0, 0, 0, 0.35);
-  }
-  .badge.spectator {
-    font-size: 2.2rem;
-  }
-  .joined h1 {
-    margin: 8px 0 0;
+  .demo {
+    position: relative;
   }
   .log {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    z-index: 30;
     margin: 0;
-    min-height: 5.5em;
-    padding: 10px 14px;
-    border-radius: 14px;
-    background: var(--surface);
+    padding: 8px 12px;
+    border-radius: var(--yui-radius-control);
+    background: rgba(0, 0, 0, 0.7);
     color: var(--muted);
-    font-size: 0.85rem;
+    font-size: 0.7rem;
+    pointer-events: none;
+    white-space: pre-wrap;
+    word-break: break-all;
   }
   .spinner {
     width: 48px;
     height: 48px;
     border-radius: 50%;
-    border: 6px solid var(--surface-2);
+    border: 6px solid var(--yui-chrome-fill);
     border-top-color: var(--accent);
     animation: spin 0.8s linear infinite;
   }

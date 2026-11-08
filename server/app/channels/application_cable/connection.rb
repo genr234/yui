@@ -29,7 +29,8 @@ module ApplicationCable
     end
 
     def find_verified_player
-      player = Player.from_cookie(cookies.signed[PlayController::PLAYER_COOKIE])
+      # /cable?sim=N reads that simulated pad's cookie (development and test only).
+      player = Player.from_cookie(cookies.signed[PadSim.cookie_name(request.params[:sim])])
       player if player&.playable?
     end
   end

@@ -5,9 +5,9 @@
   "start_url": "/pad/",
   "scope": "/",
   "display": "standalone",
-  "orientation": "portrait",
-  "background_color": "#0f1020",
-  "theme_color": "#0f1020",
+  "orientation": "any",
+  "background_color": "#0d1825",
+  "theme_color": "#0d1825",
   "icons": [
     { "src": "/pad/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
   ]

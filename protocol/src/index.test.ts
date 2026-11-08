@@ -61,3 +61,11 @@ describe("control fixtures", () => {
     });
   }
 });
+
+describe("system sensitive", () => {
+  // Not a shared fixture yet: the Go mirror adds "sensitive" separately.
+  test("kiosk can flag a sensitive surface", () => {
+    const m = parseControl('{"t":"system","action":"sensitive","value":true}');
+    expect(m).toEqual({ t: "system", action: "sensitive", value: true });
+  });
+});

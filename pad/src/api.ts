@@ -1,4 +1,4 @@
-import type { Player } from '@yui/protocol'
+import type { IceConfig, Player } from '@yui/protocol'
 
 export interface SessionInfo {
   code: string
@@ -24,6 +24,23 @@ export function qrTokenFromQuery(search = location.search): string | null {
   return new URLSearchParams(search).get('t')
 }
 
+/**
+ * `?sim=1..4`: this pad runs inside the /sim page (development and test only).
+ * Every request carries the same `sim` parameter so Rails keeps a separate
+ * player cookie per simulated phone; motion comes from the mouse.
+ */
+export function simSlotFromQuery(search = typeof location === 'undefined' ? '' : location.search): number | null {
+  const v = new URLSearchParams(search).get('sim')
+  return v && /^[1-4]$/.test(v) ? Number(v) : null
+}
+
+const sim = simSlotFromQuery()
+export const simQuery = sim ? `?sim=${sim}` : ''
+
+export function cableUrl(loc: { protocol: string; host: string } = location): string {
+  return `${loc.protocol === 'https:' ? 'wss:' : 'ws:'}//${loc.host}/cable${simQuery}`
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     credentials: 'same-origin',
@@ -43,13 +60,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T
 }
 
-export const getInfo = (code: string) => request<SessionInfo>(`/play/${encodeURIComponent(code)}/info`)
+export const getInfo = (code: string) => request<SessionInfo>(`/play/${encodeURIComponent(code)}/info${simQuery}`)
 
 export const join = (code: string, name: string, color: string, qr_token: string | null) =>
-  request<{ player: Player; session: { id: string; code: string } }>(`/play/${encodeURIComponent(code)}/join`, {
+  request<{ player: Player; session: { id: string; code: string } }>(`/play/${encodeURIComponent(code)}/join${simQuery}`, {
     method: 'POST',
     body: JSON.stringify({ name, color, ...(qr_token ? { qr_token } : {}) }),
   })
+
+export const getIce = (code: string) => request<IceConfig>(`/play/${encodeURIComponent(code)}/ice${simQuery}`)
 
 export function friendlyError(e: unknown): string {
   const code = e instanceof ApiError ? e.code : 'error'
