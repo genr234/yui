@@ -16,3 +16,6 @@ production:
   cleanup_stale_asset_uploads:
     class: CleanupStaleUploadsJob
     schedule: every day at 4am
+  end_abandoned_play_sessions:
+    class: EndAbandonedPlaySessionsJob
+    schedule: every minute

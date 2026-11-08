@@ -84,6 +84,12 @@ class Player < ApplicationRecord
     updated.positive?
   end
 
+  # Closes this player's cable connection(s) after a kick or session end. A
+  # reconnect is rejected, since the player is no longer playable.
+  def disconnect_later
+    DisconnectPlayerJob.set(wait: DisconnectPlayerJob::DELAY).perform_later(self)
+  end
+
   def as_player_json
     {
       id: id.to_s,

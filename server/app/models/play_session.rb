@@ -5,11 +5,19 @@ class PlaySession < ApplicationRecord
   QR_WINDOW = 30 # seconds
   QR_TOKEN_LENGTH = 8
   BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".freeze
+  # A session ends on its own once its kiosk (Kiosk#last_seen_at) has been silent this long.
+  KIOSK_TIMEOUT = 10.minutes
 
   belongs_to :kiosk
   has_many :players, dependent: :destroy
 
   scope :active, -> { where(ended_at: nil) }
+  # Active sessions started before the cutoff whose kiosk hasn't been seen since.
+  scope :abandoned, ->(now = Time.current) {
+    cutoff = now - KIOSK_TIMEOUT
+    active.joins(:kiosk).where(created_at: ...cutoff)
+      .where("kiosks.last_seen_at IS NULL OR kiosks.last_seen_at < ?", cutoff)
+  }
 
   before_validation :assign_qr_key, on: :create
 
@@ -100,6 +108,7 @@ class PlaySession < ApplicationRecord
     update!(ended_at: Time.current)
     players.active.find_each do |player|
       PlaySessionChannel.broadcast_to(player, { type: "session_ended" })
+      player.disconnect_later
     end
   end
 
@@ -113,6 +122,7 @@ class PlaySession < ApplicationRecord
       assign_new_host! if was_host
     end
     PlaySessionChannel.broadcast_to(player, { type: "kicked" })
+    player.disconnect_later
   end
 
   def transfer_host!(player)

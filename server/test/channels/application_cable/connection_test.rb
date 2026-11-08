@@ -2,6 +2,8 @@ require "test_helper"
 
 class ApplicationCable::ConnectionTest < ActionCable::Connection::TestCase
   include PlaySessionTestHelper
+  include ActionCable::TestHelper
+  include ActiveJob::TestHelper
 
   test "identifies a kiosk by bearer token" do
     kiosk = create_kiosk(token: "kiosk-token")
@@ -83,6 +85,19 @@ class ApplicationCable::ConnectionTest < ActionCable::Connection::TestCase
     player, token = join_player(other_session)
     other_session.end!
     cookies.signed[:yui_player] = Player.cookie_value(player, token)
+    assert_reject_connection { connect }
+  end
+
+  test "a kick closes the player's open connection, which can't come back" do
+    play_session = start_session
+    player, token = join_player(play_session)
+    cookies.signed[:yui_player] = Player.cookie_value(player, token)
+    connect
+
+    internal_channel = "action_cable/#{connection.connection_identifier}"
+    assert_broadcast_on(internal_channel, { type: "disconnect", reconnect: false }) do
+      perform_enqueued_jobs { play_session.kick!(player) }
+    end
     assert_reject_connection { connect }
   end
 
