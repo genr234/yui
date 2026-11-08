@@ -118,11 +118,39 @@ class PlaySession < ApplicationRecord
 
     transaction do
       was_host = player.host?
-      player.update!(kicked_at: Time.current, host: false, connected: false, connection_nonce: nil)
+      was_speaker = player.speaker?
+      player.update!(kicked_at: Time.current, host: false, speaker: false, connected: false, connection_nonce: nil)
       assign_new_host! if was_host
+      give_speaker_to_host! if was_speaker
     end
     PlaySessionChannel.broadcast_to(player, { type: "kicked" })
     player.disconnect_later
+  end
+
+  # Moves the speaker role (the one phone that plays the kiosk's sound).
+  # Exactly one active player holds it; the kiosk reroutes the audio track.
+  def transfer_speaker!(player)
+    raise ArgumentError, "player is not in this session" unless player.play_session_id == id
+    raise ArgumentError, "player was kicked" if player.kicked?
+    return if player.speaker?
+
+    previous = nil
+    transaction do
+      previous = players.active.find_by(speaker: true)
+      previous&.update!(speaker: false)
+      player.update!(speaker: true)
+    end
+    previous&.broadcast_updated
+    player.broadcast_updated
+  end
+
+  # The speaker's phone went away (cable unsubscribed): the host becomes the
+  # speaker. A host who was the speaker keeps the role until it comes back.
+  def speaker_left!(player)
+    return unless player.speaker? && !player.host?
+
+    host = players.active.where.not(id: player.id).find_by(host: true)
+    transfer_speaker!(host) if host
   end
 
   def transfer_host!(player)
@@ -149,6 +177,15 @@ class PlaySession < ApplicationRecord
 
     new_host.update!(host: true)
     new_host.broadcast_updated
+  end
+
+  # After the speaker was kicked: the (possibly new) host takes the role.
+  def give_speaker_to_host!
+    host = players.active.find_by(host: true)
+    return unless host && !players.active.exists?(speaker: true)
+
+    host.update!(speaker: true)
+    host.broadcast_updated
   end
 
   def free_slot

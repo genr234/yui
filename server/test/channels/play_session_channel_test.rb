@@ -54,6 +54,18 @@ class PlaySessionChannelTest < ActionCable::Channel::TestCase
     assert_not @player.reload.connected
   end
 
+  test "when the speaker's phone leaves, the host becomes the speaker" do
+    other, = join_player(@play_session, name: "Other")
+    @play_session.transfer_speaker!(other)
+    stub_connection current_kiosk: nil, current_player: other
+    subscribe
+
+    # player_left, then player_updated for the old speaker and the host.
+    assert_broadcasts(kiosk_stream, 3) { unsubscribe }
+    assert @player.reload.speaker?
+    assert_not other.reload.speaker?
+  end
+
   test "kicked players and players of ended sessions are rejected" do
     kicked, = join_player(@play_session, name: "Kicked")
     @play_session.kick!(kicked)

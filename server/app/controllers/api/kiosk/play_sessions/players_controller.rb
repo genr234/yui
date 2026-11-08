@@ -14,6 +14,11 @@ module Api
           head :no_content
         end
 
+        def speaker
+          @play_session.transfer_speaker!(@player)
+          head :no_content
+        end
+
         private
 
         def set_player
