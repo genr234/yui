@@ -1,3 +1,6 @@
+import type { LibraryTitle, LibraryTitleInput } from "../library";
+import type { YuiLaunchItem } from "./launch-intent";
+
 export const SIMPLE_APP_SCHEMA = "yui.simple-js.v0" as const;
 
 export type YuiPermission =
@@ -8,6 +11,11 @@ export type YuiPermission =
 	| "notifications"
 	| "network.fetch"
 	| "fullscreen"
+	| "native"
+	| "library"
+	| "virtual-pads"
+	| "controllers"
+	| "audio.speaker"
 	| string;
 
 export type YuiChildren =
@@ -71,6 +79,10 @@ export type YuiContext = {
 	notifications: YuiNotificationApi;
 	network: YuiNetworkApi;
 	fullscreen: YuiFullscreenApi;
+	native: YuiNativeApi;
+	library: YuiLibraryApi;
+	/** What the shell opened this app for, e.g. a library title from Jump back in. */
+	launch: { item: YuiLaunchItem | null };
 	log: Console;
 	state<T extends object>(initial: T): T;
 	toast(message: string, options?: { kind?: string; durationMs?: number }): Promise<void>;
@@ -122,6 +134,55 @@ export type YuiFullscreenApi = {
 	exit(): Promise<void>;
 	toggle(): Promise<void>;
 	isActive(): boolean;
+};
+
+export type YuiNativeConfigFile = {
+	/** Relative to {{dataDir}}, forward slashes. */
+	path: string;
+	/** Template: {{asset:<id>}}, {{dataDir}}, {{virtualPad:<n>}}. */
+	content: string;
+};
+
+export type YuiNativeSpec = {
+	/** Id of a `runtime` asset (.zip or .7z). */
+	runtime: string;
+	/** Path of the program inside the runtime, e.g. "bin/program.exe". */
+	executable: string;
+	/** Templated like config files. */
+	args?: string[];
+	files?: YuiNativeConfigFile[];
+	virtualPads?: number[];
+	audio?: "none" | "speaker";
+};
+
+export type YuiNativeStatus = {
+	/** "busy" means another app's session is active. */
+	state: "idle" | "preparing" | "running" | "stopping" | "exited" | "crashed" | "failed" | "busy";
+	session_id?: string;
+	app_id?: string;
+	runtime?: string;
+	audio?: string;
+	virtual_pads?: number[];
+	started_at?: string;
+	ended_at?: string;
+	exit_code?: number;
+	error?: string;
+};
+
+export type YuiNativeEvent = "status" | "started" | "exited" | "crashed";
+
+export type YuiNativeApi = {
+	launch(spec: YuiNativeSpec): Promise<YuiNativeStatus>;
+	stop(options?: { force?: boolean }): Promise<YuiNativeStatus>;
+	status(): Promise<YuiNativeStatus>;
+	on(event: YuiNativeEvent, handler: (status: YuiNativeStatus) => void): () => void;
+};
+
+export type YuiLibraryApi = {
+	publish(titles: LibraryTitleInput[], options?: { replace?: boolean }): Promise<LibraryTitle[]>;
+	played(id: string, options?: { progress?: number; resume?: unknown }): Promise<LibraryTitle>;
+	list(): Promise<LibraryTitle[]>;
+	remove(ids: string[]): Promise<void>;
 };
 
 export type YuiDevApp = {

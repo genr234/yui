@@ -56,6 +56,7 @@ func (r *Registry) AssetSyncer() *assets.Syncer {
 		DataDir: filepath.Join(r.snapshotConfig().ConfigDir, "assets"),
 		Remote:  remote,
 		Store:   r.Store,
+		InUse:   r.nativeAssetInUse,
 		// Progress can change many times a second; coalesce into at most one
 		// "assets.changed" per assetChangeDebounce, carrying the latest status.
 		// The emit runs on its own goroutine, so it never holds syncer locks.

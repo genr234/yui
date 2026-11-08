@@ -1,5 +1,14 @@
 import { createUiApi } from "./ui";
-import type { YuiContext, YuiPermission, YuiSimpleApp } from "./types";
+import type {
+	YuiContext,
+	YuiNativeEvent,
+	YuiNativeSpec,
+	YuiNativeStatus,
+	YuiPermission,
+	YuiSimpleApp,
+} from "./types";
+import type { LibraryTitle } from "../library";
+import { getLaunchItem } from "./launch-intent";
 import { isPermissionDeclared, isPermissionGranted, requestAppPermission } from "./permissions";
 import { bridge } from "../bridge";
 import {
@@ -103,6 +112,38 @@ async function fetchThroughBridge(url: string, options?: RequestInit) {
 		headers: responseHeadersFromBridge(result.headers),
 	});
 }
+
+type NativeStatusWire = Omit<YuiNativeStatus, "state"> & { state: string };
+
+const activeNativeStates = new Set(["preparing", "running", "stopping"]);
+
+/** An app sees its own session in full; another app's only as "busy". */
+export function nativeStatusFor(appId: string, status: NativeStatusWire | null | undefined): YuiNativeStatus {
+	if (!status || typeof status.state !== "string") return { state: "idle" };
+	if (status.app_id && status.app_id !== appId) {
+		return { state: activeNativeStates.has(status.state) ? "busy" : "idle" };
+	}
+	return status as YuiNativeStatus;
+}
+
+export function nativeSpecToWire(appId: string, spec: YuiNativeSpec) {
+	return {
+		app_id: appId,
+		runtime: spec.runtime,
+		executable: spec.executable,
+		args: spec.args ?? [],
+		files: (spec.files ?? []).map((file) => ({ path: file.path, content: file.content })),
+		virtual_pads: spec.virtualPads ?? [],
+		audio: spec.audio ?? "none",
+	};
+}
+
+const nativeEventStates: Record<YuiNativeEvent, string | null> = {
+	status: null,
+	started: "running",
+	exited: "exited",
+	crashed: "crashed",
+};
 
 export function createYuiContext(app: YuiSimpleApp, onRender: () => void): YuiContext {
 	const disposables = new Set<() => void>();
@@ -235,6 +276,75 @@ export function createYuiContext(app: YuiSimpleApp, onRender: () => void): YuiCo
 				requireGrantedPermission("fullscreen");
 				return isShellFullscreen();
 			},
+		},
+		native: {
+			async launch(spec) {
+				await ensurePermission("native");
+				const status = await bridge.send<NativeStatusWire>("native.launch", nativeSpecToWire(app.id, spec));
+				return nativeStatusFor(app.id, status);
+			},
+			async stop(options) {
+				await ensurePermission("native");
+				const status = await bridge.send<NativeStatusWire>("native.stop", {
+					app_id: app.id,
+					force: Boolean(options?.force),
+				});
+				return nativeStatusFor(app.id, status);
+			},
+			async status() {
+				await ensurePermission("native");
+				return nativeStatusFor(app.id, await bridge.send<NativeStatusWire>("native.status"));
+			},
+			on(event, handler) {
+				requireGrantedPermission("native");
+				const wanted = nativeEventStates[event];
+				let last = "";
+				const off = bridge.on<NativeStatusWire>("native.status", (data) => {
+					if (!data || data.app_id !== app.id) return;
+					const key = `${data.session_id}:${data.state}`;
+					if (wanted === null) {
+						handler(nativeStatusFor(app.id, data));
+					} else if (data.state === wanted && key !== last) {
+						last = key;
+						handler(nativeStatusFor(app.id, data));
+					}
+				});
+				disposables.add(off);
+				return () => {
+					disposables.delete(off);
+					off();
+				};
+			},
+		},
+		library: {
+			async publish(titles, options) {
+				await ensurePermission("library");
+				return bridge.send<LibraryTitle[]>("library.publish", {
+					app_id: app.id,
+					titles,
+					replace: Boolean(options?.replace),
+				});
+			},
+			async played(id, options) {
+				await ensurePermission("library");
+				return bridge.send<LibraryTitle>("library.played", {
+					app_id: app.id,
+					id,
+					progress: options?.progress,
+					resume: options?.resume,
+				});
+			},
+			async list() {
+				await ensurePermission("library");
+				return (await bridge.send<LibraryTitle[] | null>("library.list", { app_id: app.id })) ?? [];
+			},
+			async remove(ids) {
+				await ensurePermission("library");
+				await bridge.send("library.remove", { app_id: app.id, ids });
+			},
+		},
+		launch: {
+			item: getLaunchItem(app.id),
 		},
 		log: console,
 		state: (initial) => createState(initial, scheduleRender),

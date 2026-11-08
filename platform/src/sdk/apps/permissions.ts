@@ -47,7 +47,45 @@ const permissionCopy: Record<string, { label: string; description: string }> = {
 		label: "Fullscreen",
 		description: "Fill the Yui surface.",
 	},
+	native: {
+		label: "Run programs",
+		description:
+			"Start programs from the kiosk's runtime files and hand them the screen. Only an admin can allow this.",
+	},
+	library: {
+		label: "Library",
+		description: "Add titles to Jump back in and remember where you left off.",
+	},
+	"virtual-pads": {
+		label: "Virtual controllers",
+		description: "Let programs this app starts read the players' phones as game controllers.",
+	},
+	controllers: {
+		label: "Phone controllers",
+		description: "See who joined from their phone, show them controls, and receive their input.",
+	},
+	"audio.speaker": {
+		label: "Phone speaker",
+		description: "Play this app's sound, or a program it started, on a player's phone.",
+	},
 };
+
+const assetKindCopy: Record<string, string> = {
+	game: "games",
+	runtime: "runtimes",
+	media: "media",
+	other: "files",
+};
+
+/**
+ * Permissions an app can only get from an admin: granted in Settings or when
+ * installing from a store, never from the prompt an app raises while it runs.
+ */
+const adminOnlyPermissions = new Set<YuiPermission>(["native"]);
+
+export function isAdminOnlyPermission(permission: YuiPermission) {
+	return adminOnlyPermissions.has(permission);
+}
 
 function readState(): PermissionState {
 	try {
@@ -106,6 +144,15 @@ export function describePermission(permission: YuiPermission) {
 		};
 	}
 
+	if (permission.startsWith("assets:")) {
+		const kind = permission.slice("assets:".length);
+		const noun = assetKindCopy[kind] ?? `${kind} files`;
+		return {
+			label: `Asset library: ${noun}`,
+			description: `See the ${noun} synced to this kiosk. Never their location on disk.`,
+		};
+	}
+
 	return (
 		permissionCopy[permission] ?? {
 			label: permission,
@@ -151,10 +198,14 @@ export function requestAppPermission(app: YuiSimpleApp, permission: YuiPermissio
 	if (hasPermissionDecision(app.id, permission)) {
 		return Promise.resolve(false);
 	}
+	if (isAdminOnlyPermission(permission)) {
+		// Not recorded as a decision: an admin can still grant it in Settings.
+		return Promise.resolve(false);
+	}
 
 	return new Promise((resolve) => {
 		const pending = declaredPermissions(app).filter(
-			(item) => !hasPermissionDecision(app.id, item),
+			(item) => !hasPermissionDecision(app.id, item) && !isAdminOnlyPermission(item),
 		);
 		window.dispatchEvent(
 			new CustomEvent<PermissionRequest>("yui:permission-request", {

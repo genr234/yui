@@ -9,6 +9,15 @@ const allowedPermissions = new Set<YuiPermission>([
 	"notifications",
 	"network.fetch",
 	"fullscreen",
+	"native",
+	"library",
+	"virtual-pads",
+	"controllers",
+	"audio.speaker",
+	"assets:game",
+	"assets:runtime",
+	"assets:media",
+	"assets:other",
 ]);
 
 function isValidPermission(permission: unknown) {

@@ -13,6 +13,7 @@ import (
 
 	"kiosk/controller/internal/assets"
 	"kiosk/controller/internal/config"
+	"kiosk/controller/internal/native"
 	"kiosk/controller/internal/pad/router"
 	"kiosk/controller/internal/pad/session"
 	"kiosk/controller/internal/store"
@@ -76,6 +77,10 @@ type Registry struct {
 	// account that opened it.
 	cmdMu     sync.Mutex
 	cmdCancel context.CancelFunc
+	// nativeMu guards the native session manager handle. The manager has its
+	// own locks; do not hold nativeMu while calling into it.
+	nativeMu  sync.Mutex
+	nativeMgr *native.Manager
 }
 
 // errStoreScopeChanged means the active account store moved to a new epoch
@@ -137,6 +142,8 @@ func NewRegistry(cfg config.Config) *Registry {
 	r.Register(UpdateCommands()...)
 	r.Register(EmbedBlockerCommands()...)
 	r.Register(PadCommands()...)
+	r.Register(NativeCommands()...)
+	r.Register(LibraryCommands()...)
 	return r
 }
 
@@ -251,6 +258,7 @@ func (r *Registry) ensureStoreLocked() error {
 }
 
 func (r *Registry) Close() error {
+	r.closeNative()
 	if r.plugins != nil {
 		r.plugins.Stop()
 	}
