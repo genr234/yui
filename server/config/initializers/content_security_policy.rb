@@ -18,7 +18,12 @@ Rails.application.configure do
     policy.style_src   :self
   end
 
-  config.content_security_policy_nonce_generator = ->(request) { request.session.id.to_s }
+  # Fresh random nonce per request. Deriving it from the session id leaves it
+  # empty ('nonce-') on pages served before a session exists, such as /setup,
+  # which blocks the importmap scripts. Rails memoizes the nonce per request,
+  # so the header, csp_meta_tag and javascript_importmap_tags all agree, and
+  # Turbo ignores nonces when it diffs <head> scripts between visits.
+  config.content_security_policy_nonce_generator = ->(_request) { SecureRandom.base64(16) }
   config.content_security_policy_nonce_directives = %w[script-src style-src]
   config.content_security_policy_nonce_auto = true
 end
