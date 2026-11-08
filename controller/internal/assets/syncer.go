@@ -102,9 +102,11 @@ type Config struct {
 	RetryDelay     time.Duration // pause between in-process resume attempts (default 2 s)
 	MaxAttempts    int           // in-process attempts per reconcile (default 3)
 
-	// InUse reports that a native session still has this asset open. Those
-	// files are kept for OrphanGrace (default 2 minutes) after they leave the
-	// manifest. Nil means nothing is in use, so leftovers are removed immediately.
+	// InUse reports that a native session still has this asset open. While it
+	// returns true the file is not deleted. After it returns false the file
+	// stays until OrphanGrace (default 2 minutes) from the reconcile that first
+	// saw it in use. Nil means nothing is in use (plan 05 has not wired the
+	// native session registry yet), so leftovers are removed immediately.
 	InUse       func(id string) bool
 	OrphanGrace time.Duration
 }
@@ -117,9 +119,11 @@ type failure struct {
 type Syncer struct {
 	cfg Config
 
-	reconMu sync.Mutex // serialises reconciles
+	reconMu sync.Mutex // serialises reconciles; Quiesce holds it across an account switch
 
 	mu            sync.Mutex
+	generation    uint64
+	cancel        context.CancelFunc
 	reasons       map[string]struct{}
 	wake          chan struct{}
 	reconciling   bool
@@ -205,6 +209,31 @@ func (s *Syncer) TriggerReconcile() {
 	case s.trigger <- struct{}{}:
 	default:
 	}
+}
+
+// Quiesce cancels the in-flight reconcile and holds the reconcile lock until
+// Resume. Call Resume after the new account config and database are published
+// so a reconcile that already read the previous account cannot write or delete
+// on the new one. A reconcile that has not read yet waits here and then runs
+// against the published account.
+func (s *Syncer) Quiesce() {
+	s.mu.Lock()
+	s.generation++
+	cancel := s.cancel
+	s.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	s.reconMu.Lock()
+	s.mu.Lock()
+	s.orphans = map[string]time.Time{}
+	s.failures = map[string]failure{}
+	s.mu.Unlock()
+}
+
+// Resume lets reconciles run again after Quiesce.
+func (s *Syncer) Resume() {
+	s.reconMu.Unlock()
 }
 
 // SetPaused adds or removes a pause reason. Downloads stop between chunks
@@ -395,17 +424,29 @@ func (s *Syncer) Reconcile(ctx context.Context, force bool) error {
 	defer s.reconMu.Unlock()
 
 	s.mu.Lock()
+	gen := s.generation
+	recCtx, cancel := context.WithCancel(ctx)
+	s.cancel = cancel
 	s.reconciling = true
 	s.mu.Unlock()
 	defer func() {
+		cancel()
+		// reconMu is still held, so this reconcile is the only writer of cancel.
 		s.mu.Lock()
+		s.cancel = nil
 		s.reconciling = false
 		s.current = nil
 		s.mu.Unlock()
 	}()
 
-	manifest, err := s.cfg.Remote.Manifest(ctx)
+	manifest, err := s.cfg.Remote.Manifest(recCtx)
 	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if recCtx.Err() != nil || s.superseded(gen) {
+			return nil
+		}
 		s.mu.Lock()
 		if errors.Is(err, ErrNoAccount) {
 			s.lastErr = ""
@@ -417,6 +458,9 @@ func (s *Syncer) Reconcile(ctx context.Context, force bool) error {
 			return nil
 		}
 		return err // never delete anything without a manifest
+	}
+	if s.superseded(gen) || recCtx.Err() != nil {
+		return nil
 	}
 
 	recs, err := s.records()
@@ -442,6 +486,9 @@ func (s *Syncer) Reconcile(ctx context.Context, force bool) error {
 	// below also removes leftovers that are not in this account's bolt DB
 	// (the asset directory is shared across accounts).
 	for id, l := range recs {
+		if s.superseded(gen) || recCtx.Err() != nil {
+			return nil
+		}
 		if _, ok := wanted[id]; ok {
 			continue
 		}
@@ -456,6 +503,9 @@ func (s *Syncer) Reconcile(ctx context.Context, force bool) error {
 		delete(s.failures, id)
 		s.mu.Unlock()
 		changed = true
+	}
+	if s.superseded(gen) || recCtx.Err() != nil {
+		return nil
 	}
 	if s.sweepUnwanted(wanted) {
 		changed = true
@@ -496,12 +546,15 @@ func (s *Syncer) Reconcile(ctx context.Context, force bool) error {
 		if prev, ok := recs[it.ID]; ok && prev.SHA256 == it.SHA256 {
 			rec.BytesDone = prev.BytesDone
 		}
-		s.setState(ctx, &rec, StateQueued, "")
+		s.setState(recCtx, &rec, StateQueued, "")
 	}
 
 	for _, it := range pending {
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+		if s.superseded(gen) || recCtx.Err() != nil {
+			return nil
 		}
 		s.mu.Lock()
 		f := s.failures[it.ID]
@@ -509,7 +562,7 @@ func (s *Syncer) Reconcile(ctx context.Context, force bool) error {
 		if !force && !f.next.IsZero() && s.cfg.Now().Before(f.next) {
 			continue
 		}
-		s.downloadOne(ctx, it)
+		s.downloadOne(recCtx, it)
 	}
 
 	s.mu.Lock()
@@ -535,24 +588,32 @@ func (s *Syncer) forgetWantedOrphans(wanted map[string]ManifestItem) {
 	}
 }
 
-// keepOrphan is true while an in-use asset is inside its grace window.
+func (s *Syncer) superseded(gen uint64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.generation != gen
+}
+
+// keepOrphan reports whether an unwanted file stays on disk. While InUse
+// reports the file open, grace never expires. Once it is not open, it stays
+// only until OrphanGrace after the reconcile that first saw it in use. A nil
+// InUse hook means nothing is open. The stamp is left in place after the
+// window closes so a second check in the same reconcile does not restart it.
 func (s *Syncer) keepOrphan(id string) bool {
-	if s.cfg.InUse == nil || !s.cfg.InUse(id) {
-		s.mu.Lock()
-		delete(s.orphans, id)
-		s.mu.Unlock()
-		return false
-	}
+	inUse := s.cfg.InUse != nil && s.cfg.InUse(id)
 	now := s.cfg.Now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	first, ok := s.orphans[id]
-	if !ok {
-		s.orphans[id] = now
+	if inUse {
+		if _, ok := s.orphans[id]; !ok {
+			s.orphans[id] = now
+		}
 		return true
 	}
-	// Keep the timestamp after the window closes so a second call in the same
-	// reconcile (bolt record, then disk sweep) does not start a new grace.
+	first, ok := s.orphans[id]
+	if !ok {
+		return false
+	}
 	return now.Sub(first) < s.cfg.OrphanGrace
 }
 

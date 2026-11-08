@@ -188,31 +188,26 @@ func (r *Registry) markAccountNeedsPairing(accountID, reason string) error {
 	if accountID == "" {
 		return nil
 	}
-	r.cfgMu.Lock()
-	cfg := r.cfg
-	cfg.Accounts = append([]config.AccountConfig(nil), r.cfg.Accounts...)
-	r.cfgMu.Unlock()
-	changed := false
-	for i := range cfg.Accounts {
-		if cfg.Accounts[i].ID != accountID {
-			continue
+	_, err := r.mutateConfig(func(cfg *config.Config) error {
+		for i := range cfg.Accounts {
+			if cfg.Accounts[i].ID != accountID {
+				continue
+			}
+			if cfg.Accounts[i].DeviceToken != "" || cfg.Accounts[i].KioskID != "" {
+				cfg.Accounts[i].DeviceToken = ""
+				cfg.Accounts[i].KioskID = ""
+				return nil
+			}
+			return errConfigUnchanged
 		}
-		if cfg.Accounts[i].DeviceToken != "" || cfg.Accounts[i].KioskID != "" {
-			cfg.Accounts[i].DeviceToken = ""
-			cfg.Accounts[i].KioskID = ""
-			changed = true
-		}
-		break
-	}
-	if !changed {
+		return errConfigUnchanged
+	})
+	if errors.Is(err, errConfigUnchanged) {
 		return nil
 	}
-	if err := config.Save(cfg); err != nil {
+	if err != nil {
 		return err
 	}
-	r.cfgMu.Lock()
-	r.cfg = cfg
-	r.cfgMu.Unlock()
 	r.setSyncState(false, reason)
 	return nil
 }
@@ -384,19 +379,16 @@ func (r *Registry) recordReplaceCollection(collection string) error {
 }
 
 func (r *Registry) appendOperation(collection, id, action string, payload json.RawMessage) error {
-	r.cfgMu.Lock()
-	if r.cfg.DeviceUID == "" {
-		cfg := r.cfg
-		cfg.Accounts = append([]config.AccountConfig(nil), r.cfg.Accounts...)
-		cfg.DeviceUID = newDeviceUID()
-		r.cfgMu.Unlock()
-		if err := config.Save(cfg); err != nil {
+	if r.snapshotConfig().DeviceUID == "" {
+		if _, err := r.mutateConfig(func(cfg *config.Config) error {
+			if cfg.DeviceUID == "" {
+				cfg.DeviceUID = newDeviceUID()
+			}
+			return nil
+		}); err != nil {
 			return err
 		}
-		r.cfgMu.Lock()
-		r.cfg.DeviceUID = cfg.DeviceUID
 	}
-	r.cfgMu.Unlock()
 	db, err := r.Store()
 	if err != nil {
 		return err
@@ -626,15 +618,11 @@ func collectionAffectsPlugins(collection string) bool {
 }
 
 func (r *Registry) saveAccount(account config.AccountConfig) error {
-	cfg := r.snapshotConfig()
-	cfg.Accounts = upsertAccount(cfg.Accounts, account)
-	if err := config.Save(cfg); err != nil {
-		return err
-	}
-	r.cfgMu.Lock()
-	r.cfg = cfg
-	r.cfgMu.Unlock()
-	return nil
+	_, err := r.mutateConfig(func(cfg *config.Config) error {
+		cfg.Accounts = upsertAccount(cfg.Accounts, account)
+		return nil
+	})
+	return err
 }
 
 func (r *Registry) accountRequest(method, path string, account config.AccountConfig, body io.Reader) (*http.Request, error) {
@@ -755,8 +743,9 @@ func accountCableURL(serverURL string) (string, error) {
 }
 
 // accountCableHeader authenticates the kiosk and sets Origin to the server's
-// own origin. Rails allows that origin (same host) and also allows a bearer
-// handshake with no Origin; sending one keeps the check meaningful for browsers.
+// own origin. Production Rails rejects a foreign Origin for every connection.
+// A missing Origin is accepted only after this bearer token authenticates a
+// kiosk. Sending the server Origin is what makes the same-origin check pass.
 func accountCableHeader(serverURL, token string) (http.Header, error) {
 	_, origin, err := accountCableEndpoint(serverURL)
 	if err != nil {

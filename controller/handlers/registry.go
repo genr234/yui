@@ -21,26 +21,33 @@ type Command interface {
 }
 
 type Registry struct {
-	cfgMu      sync.RWMutex
-	cfg        config.Config
-	processMu  sync.Mutex
-	processes  map[int]*exec.Cmd
-	commands   map[string]Command
-	storeMu    sync.Mutex
-	store      *store.DB
-	migrated   bool
-	storeEpoch uint64
-	plugins    *PluginManager
-	authMu     sync.Mutex
-	authState  AuthState
-	authToken  string
-	pluginCtx  context.Context
-	syncMu     sync.Mutex
-	syncState  accountSyncState
-	assetsMu   sync.Mutex
-	assetSync  *assets.Syncer
-	emitMu     sync.RWMutex
-	emitter    Emitter
+	// configMu serializes read-modify-save-publish of cfg. Never acquire it
+	// while storeMu, cfgMu, or the asset reconcile lock is held.
+	configMu sync.Mutex
+	// switchMu serializes account transitions, including the wait for an
+	// in-flight reconcile to leave the old account.
+	switchMu      sync.Mutex
+	cfgMu         sync.RWMutex
+	cfg           config.Config
+	processMu     sync.Mutex
+	processes     map[int]*exec.Cmd
+	commands      map[string]Command
+	storeMu       sync.Mutex
+	store         *store.DB
+	migrated      bool
+	storeEpoch    uint64
+	plugins       *PluginManager
+	authMu        sync.Mutex
+	authState     AuthState
+	authToken     string
+	pluginCtx     context.Context
+	syncMu        sync.Mutex
+	syncState     accountSyncState
+	assetsMu      sync.Mutex
+	assetSync     *assets.Syncer
+	assetEndpoint *assetEndpointCache
+	emitMu        sync.RWMutex
+	emitter       Emitter
 }
 
 func NewRegistry(cfg config.Config) *Registry {
@@ -177,7 +184,7 @@ func (r *Registry) resetStoreLocked() error {
 }
 
 func (r *Registry) migrateLegacyStorage() error {
-	legacyPath := filepath.Join(r.cfg.ConfigDir, "storage.json")
+	legacyPath := filepath.Join(r.snapshotConfig().ConfigDir, "storage.json")
 	data, err := os.ReadFile(legacyPath)
 	if err != nil {
 		if os.IsNotExist(err) {

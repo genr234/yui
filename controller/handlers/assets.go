@@ -33,23 +33,15 @@ func (r *Registry) AssetSyncer() *assets.Syncer {
 	if r.assetSync != nil {
 		return r.assetSync
 	}
-	var (
-		epMu    sync.Mutex
-		epAt    time.Time
-		epURL   string
-		epToken string
-		epOK    bool
-	)
+	if r.assetEndpoint == nil {
+		r.assetEndpoint = &assetEndpointCache{}
+	}
+	endpointCache := r.assetEndpoint
 	endpoint := func() (string, string, bool) {
-		epMu.Lock()
-		defer epMu.Unlock()
-		if time.Since(epAt) > assetEndpointTTL {
+		return endpointCache.current(func() (string, string, bool) {
 			cfg, account, ok := r.refreshedAccount()
-			epURL, epToken = cfg.ServerURL, account.DeviceToken
-			epOK = ok && epURL != "" && epToken != ""
-			epAt = time.Now()
-		}
-		return epURL, epToken, epOK
+			return cfg.ServerURL, account.DeviceToken, ok && cfg.ServerURL != "" && account.DeviceToken != ""
+		})
 	}
 	var (
 		changeMu    sync.Mutex
@@ -61,7 +53,7 @@ func (r *Registry) AssetSyncer() *assets.Syncer {
 		Transfer: &http.Client{},
 	}
 	r.assetSync = assets.NewSyncer(assets.Config{
-		DataDir: filepath.Join(r.cfg.ConfigDir, "assets"),
+		DataDir: filepath.Join(r.snapshotConfig().ConfigDir, "assets"),
 		Remote:  remote,
 		Store:   r.Store,
 		// Progress can change many times a second; coalesce into at most one
@@ -82,6 +74,57 @@ func (r *Registry) AssetSyncer() *assets.Syncer {
 		},
 	})
 	return r.assetSync
+}
+
+func (r *Registry) assetSyncerIfStarted() *assets.Syncer {
+	r.assetsMu.Lock()
+	defer r.assetsMu.Unlock()
+	return r.assetSync
+}
+
+func (r *Registry) invalidateAssetEndpoint() {
+	r.assetsMu.Lock()
+	endpoint := r.assetEndpoint
+	r.assetsMu.Unlock()
+	if endpoint != nil {
+		endpoint.invalidate()
+	}
+}
+
+func (r *Registry) triggerAssetReconcile() {
+	if syncer := r.assetSyncerIfStarted(); syncer != nil {
+		syncer.TriggerReconcile()
+	}
+}
+
+// assetEndpointCache remembers the active account's asset credentials. Account
+// transitions drop it so a reconcile cannot keep using the previous token for
+// assetEndpointTTL after the switch.
+type assetEndpointCache struct {
+	mu    sync.Mutex
+	at    time.Time
+	url   string
+	token string
+	ok    bool
+}
+
+func (c *assetEndpointCache) current(load func() (string, string, bool)) (string, string, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.at.IsZero() || time.Since(c.at) > assetEndpointTTL {
+		c.url, c.token, c.ok = load()
+		c.at = time.Now()
+	}
+	return c.url, c.token, c.ok
+}
+
+func (c *assetEndpointCache) invalidate() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.at = time.Time{}
+	c.url = ""
+	c.token = ""
+	c.ok = false
 }
 
 // StartAssetSync runs the asset syncer until ctx ends. Called from StartAccountSync.

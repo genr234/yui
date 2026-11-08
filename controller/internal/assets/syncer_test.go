@@ -688,8 +688,16 @@ func TestInUseOrphanSurvivesGracePeriod(t *testing.T) {
 	if err := h.s.Reconcile(context.Background(), true); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatal("in-use file should stay while the native session still has it open")
+	}
+
+	h.s.cfg.InUse = func(string) bool { return false }
+	if err := h.s.Reconcile(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatal("in-use file should be deleted after the grace period")
+		t.Fatal("file should be deleted once it is unused and the grace has elapsed")
 	}
 }
 
