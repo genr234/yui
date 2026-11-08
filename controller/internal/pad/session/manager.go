@@ -75,6 +75,8 @@ type Manager struct {
 	nextWatch int
 	sensitive bool
 	onControl func(playerID string, msg any)
+	onInput   func(playerID string, state protocol.InputState)
+	onPlayer  func(ev PlayerEvent)
 	cable     *cable
 }
 
@@ -132,9 +134,13 @@ func (m *Manager) Run(ctx context.Context) error {
 		m.record = nil
 		m.token = ""
 		m.joinURL = ""
+		left := sortedPlayers(m.players)
 		m.players = map[string]*playerState{}
 		m.mu.Unlock()
 		m.closePeers()
+		for _, p := range left {
+			m.notifyPlayer(PlayerLeft, p)
+		}
 		m.emit()
 	}()
 
@@ -237,6 +243,29 @@ func (m *Manager) SetControlHandler(fn func(playerID string, msg any)) {
 	m.mu.Lock()
 	m.onControl = fn
 	m.mu.Unlock()
+}
+
+// SetInputHandler receives every accepted input frame (stale seq values are
+// already dropped), after LatestInput has been updated. It runs on the
+// peer's data-channel goroutine without the manager lock. nil turns it off.
+func (m *Manager) SetInputHandler(fn func(playerID string, state protocol.InputState)) {
+	m.mu.Lock()
+	m.onInput = fn
+	m.mu.Unlock()
+}
+
+// SetPlayerHandler receives player lifecycle events (see PlayerEvent). It
+// runs without the manager lock. nil turns it off.
+func (m *Manager) SetPlayerHandler(fn func(ev PlayerEvent)) {
+	m.mu.Lock()
+	m.onPlayer = fn
+	m.mu.Unlock()
+}
+
+// SendControl sends one §3 control object to a player over the control
+// channel, or over signaling while that player's ICE has failed.
+func (m *Manager) SendControl(playerID string, msg any) error {
+	return m.sendControl(playerID, msg)
 }
 
 // Snapshot copies the roster and the current join URL.
@@ -444,9 +473,18 @@ func (m *Manager) resync(ctx context.Context, sessionID string) error {
 			delete(m.pings, id)
 		}
 	}
+	present := sortedPlayers(m.players)
 	m.mu.Unlock()
 	for _, id := range gone {
 		m.closePeer(id)
+		m.notifyPlayer(PlayerLeft, protocol.Player{ID: id})
+	}
+	for _, p := range present {
+		if p.Connected {
+			m.notifyPlayer(PlayerUpdated, p)
+		} else {
+			m.notifyPlayer(PlayerLeft, p)
+		}
 	}
 	m.emit()
 	return nil
@@ -488,6 +526,7 @@ func (m *Manager) applyPlayer(p protocol.Player, event string) {
 	switch event {
 	case "player_left":
 		m.closePeer(p.ID)
+		m.notifyPlayer(PlayerLeft, p)
 	case "player_joined":
 		m.negotiate(p)
 	case "player_updated":
@@ -495,6 +534,11 @@ func (m *Manager) applyPlayer(p protocol.Player, event string) {
 			m.negotiateIfIdle(p)
 		}
 		_ = m.pushPlayer(p, wasFallback)
+		if p.Connected {
+			m.notifyPlayer(PlayerUpdated, p)
+		} else {
+			m.notifyPlayer(PlayerLeft, p)
+		}
 	}
 }
 
@@ -683,24 +727,35 @@ func (m *Manager) applyInput(playerID string, raw []byte) {
 		return
 	}
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	st := m.players[playerID]
 	if st == nil {
+		m.mu.Unlock()
 		return
 	}
 	if st.hasInput && !protocol.SeqNewer(state.Seq, st.input.Seq) {
+		m.mu.Unlock()
 		return
 	}
 	st.input = state
 	st.hasInput = true
+	fn := m.onInput
+	m.mu.Unlock()
+	if fn != nil {
+		fn(playerID, state)
+	}
 }
 
 func (m *Manager) removePlayer(playerID string) {
 	m.closePeer(playerID)
 	m.mu.Lock()
+	player := protocol.Player{ID: playerID}
+	if st := m.players[playerID]; st != nil {
+		player = st.Player
+	}
 	delete(m.players, playerID)
 	delete(m.pings, playerID)
 	m.mu.Unlock()
+	m.notifyPlayer(PlayerLeft, player)
 	m.emit()
 }
 
@@ -894,6 +949,15 @@ func (m *Manager) sendPing(playerID string) {
 	ping := protocol.Ping{T: "ping", ID: next, TS: sent.UnixMilli()}
 	if err := m.sendControl(playerID, ping); err != nil {
 		log.Printf("pad session: ping %s: %v", playerID, err)
+	}
+}
+
+func (m *Manager) notifyPlayer(kind PlayerEventKind, p protocol.Player) {
+	m.mu.Lock()
+	fn := m.onPlayer
+	m.mu.Unlock()
+	if fn != nil {
+		fn(PlayerEvent{Kind: kind, Player: p})
 	}
 }
 
