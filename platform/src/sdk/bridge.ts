@@ -10,18 +10,89 @@ type Response<T> = {
 	error?: string;
 };
 
+type EventFrame = {
+	event: string;
+	data?: unknown;
+	id?: undefined;
+};
+
+export type BridgeEventListener<T = unknown> = (data: T) => void;
+
 type Pending<T> = {
 	resolve: (value: T) => void;
 	reject: (reason?: unknown) => void;
 };
 
 const defaultBridgeURL = "ws://127.0.0.1:7071/ws";
+const reconnectInitialMs = 500;
+const reconnectMaxMs = 10_000;
 
 export class Bridge {
 	private socket?: WebSocket;
 	private pending = new Map<string, Pending<unknown>>();
 	private opened?: Promise<void>;
 	private authToken = "";
+	private listeners = new Map<string, Set<BridgeEventListener<any>>>();
+	private reconnectDelay = reconnectInitialMs;
+	private reconnectTimer?: number;
+
+	/**
+	 * Subscribe to a pushed event frame `{ event, data }` from the controller.
+	 * Listeners survive reconnects; while any listener exists the socket is
+	 * kept connected. Returns an unsubscribe function.
+	 */
+	on<T = unknown>(event: string, fn: BridgeEventListener<T>): () => void {
+		let set = this.listeners.get(event);
+		if (!set) {
+			set = new Set();
+			this.listeners.set(event, set);
+		}
+		set.add(fn);
+		this.ensureLive();
+
+		return () => {
+			const current = this.listeners.get(event);
+			if (!current) return;
+			current.delete(fn);
+			if (current.size === 0) this.listeners.delete(event);
+			if (!this.hasListeners() && this.reconnectTimer !== undefined) {
+				window.clearTimeout(this.reconnectTimer);
+				this.reconnectTimer = undefined;
+			}
+		};
+	}
+
+	private hasListeners(): boolean {
+		return this.listeners.size > 0;
+	}
+
+	private ensureLive() {
+		if (this.opened || this.reconnectTimer !== undefined) return;
+		// Failures surface as a close, which schedules the next attempt.
+		this.connect().catch(() => {});
+	}
+
+	private scheduleReconnect() {
+		if (!this.hasListeners() || this.reconnectTimer !== undefined) return;
+		const delay = this.reconnectDelay;
+		this.reconnectDelay = Math.min(this.reconnectDelay * 2, reconnectMaxMs);
+		this.reconnectTimer = window.setTimeout(() => {
+			this.reconnectTimer = undefined;
+			if (this.hasListeners()) this.ensureLive();
+		}, delay);
+	}
+
+	private emit(frame: EventFrame) {
+		const set = this.listeners.get(frame.event);
+		if (!set) return;
+		for (const fn of [...set]) {
+			try {
+				fn(frame.data);
+			} catch (error) {
+				console.error(`Bridge listener for ${frame.event} failed`, error);
+			}
+		}
+	}
 
 	send<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
 		return this.connect().then(
@@ -52,18 +123,28 @@ export class Bridge {
 			const socket = new WebSocket(url);
 			this.socket = socket;
 
-			socket.onopen = () => resolve();
+			socket.onopen = () => {
+				this.reconnectDelay = reconnectInitialMs;
+				resolve();
+			};
 			socket.onerror = () => reject(new Error(`Bridge unavailable at ${url}`));
 			socket.onclose = () => {
+				if (this.socket !== socket) return;
 				this.opened = undefined;
 				this.socket = undefined;
 				for (const pending of this.pending.values()) {
 					pending.reject(new Error("Bridge closed"));
 				}
 				this.pending.clear();
+				this.scheduleReconnect();
 			};
 			socket.onmessage = (event) => {
-				const response = JSON.parse(event.data) as Response<unknown>;
+				const frame = JSON.parse(event.data) as Response<unknown> | EventFrame;
+				if ("event" in frame && typeof frame.event === "string" && frame.id == null) {
+					this.emit(frame as EventFrame);
+					return;
+				}
+				const response = frame as Response<unknown>;
 				const pending = this.pending.get(response.id);
 				if (!pending) return;
 				this.pending.delete(response.id);
@@ -167,6 +248,10 @@ class DemoBridge {
 		if (method in responses) return responses[method] as T;
 
 		return undefined as T;
+	}
+
+	on<T = unknown>(_event: string, _fn: BridgeEventListener<T>): () => void {
+		return () => {};
 	}
 
 	setAuthToken(_token: string) {}

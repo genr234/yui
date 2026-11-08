@@ -1,16 +1,30 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
+
+	"kiosk/controller/internal/probe"
 )
 
 func StatusCommands() []Command {
 	return []Command{
 		StatusGetCommand{},
 		DiagnosticsGetCommand{},
+		SystemProbeCommand{},
 	}
+}
+
+// SystemProbeCommand reports the kiosk's hardware (Windows build, audio
+// endpoints, GPUs) for the audio strategy decision.
+type SystemProbeCommand struct{}
+
+func (SystemProbeCommand) Name() string { return "system.probe" }
+
+func (SystemProbeCommand) Handle(_ *Registry, _ json.RawMessage) (any, error) {
+	return probe.Collect(context.Background()), nil
 }
 
 type StatusGetCommand struct{}

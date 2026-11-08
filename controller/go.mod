@@ -8,4 +8,4 @@ require (
 	go.starlark.net v0.0.0-20241226192728-8dfa5b98479f
 )
 
-require golang.org/x/sys v0.29.0 // indirect
+require golang.org/x/sys v0.29.0
