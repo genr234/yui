@@ -245,6 +245,30 @@ class DemoBridge {
 				current: { id: "demo-asset", bytes_done: 620, byte_size: 1000 },
 			},
 			"store.keys": [],
+			// Titles the demo apps would publish through ctx.library.
+			"library.recent": [
+				{
+					app_id: "dev.genr.subway-surfers",
+					id: "daily-challenge",
+					title: "Daily challenge",
+					players: 1,
+					progress: 0.62,
+					resume: { run: "daily" },
+					published_at: new Date(Date.now() - 2 * 86_400_000).toISOString(),
+					played_at: new Date(Date.now() - 25 * 60_000).toISOString(),
+				},
+				{
+					app_id: "dev.genr.fruit-ninja",
+					id: "zen",
+					title: "Zen mode",
+					players: 2,
+					progress: 0.3,
+					resume: { mode: "zen" },
+					published_at: new Date(Date.now() - 2 * 86_400_000).toISOString(),
+					played_at: new Date(Date.now() - 3 * 3_600_000).toISOString(),
+				},
+			],
+			"native.status": { state: "idle" },
 			"storage.get": null,
 			"fs.list": [],
 		};

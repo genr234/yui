@@ -22,6 +22,9 @@
     normalizeAppCategory,
   } from "../apps";
   import { openedAgo, loadRecentApps, recordRecentApp, type RecentApp } from "../recent-apps";
+  import { selectJumpBackIn, type JumpEntry } from "../jump-back-in";
+  import { loadLibraryRecent, onLibraryChanged, type RecentLibraryTitle } from "../sdk/library";
+  import { setLaunchItem } from "../sdk/apps/launch-intent";
   import { pad, padAction, type PadState } from "../sdk/pad";
   import type { YuiDevApp } from "../sdk/apps";
   import type { SidebarThemeSettings } from "../types";
@@ -31,6 +34,8 @@
 
   let recents: RecentApp[] = [];
   let recentLoad = 0;
+  let libraryTitles: RecentLibraryTitle[] = [];
+  let libraryLoad = 0;
   let padState: PadState = { session: null, players: [] };
   let filter = "";
   let now = Date.now();
@@ -65,18 +70,22 @@
       closeApp();
       void refreshApps();
       void refreshRecents();
+      void refreshLibrary();
     };
     window.addEventListener("yui:apps-changed", onAppsChanged);
     window.addEventListener("yui:account-changed", onAccountChanged);
 
     void refreshApps();
     void refreshRecents();
+    void refreshLibrary();
+    const offLibrary = onLibraryChanged(() => void refreshLibrary());
     void pad.state().then((state) => (padState = state));
     const offPad = pad.onState((state) => (padState = state));
     const clock = window.setInterval(() => (now = Date.now()), 60000);
 
     return () => {
       offPad();
+      offLibrary();
       window.clearInterval(clock);
       window.clearTimeout(refreshTimer);
       window.removeEventListener("yui:shell-fullscreen", offFullscreen);
@@ -95,17 +104,15 @@
   $: categoryNames = groupAppsByCategory(apps).map((category) => category.name);
   $: if (filter && !categoryNames.includes(filter)) filter = "";
   $: visibleApps = filter ? apps.filter((app) => categoryOf(app) === filter) : apps;
-  $: recentOpened = recents
-    .map((entry) => ({ app: findApp(apps, entry.id), openedAt: entry.openedAt }))
-    .filter((entry): entry is { app: YuiDevApp; openedAt: number } => Boolean(entry.app));
-  $: heroRecent = recentOpened[0] ?? null;
-  $: hero = heroRecent?.app ?? apps.find(isGame) ?? apps[0] ?? null;
-  $: resumeRow = [
-    ...recentOpened.slice(1),
-    ...apps
-      .filter((app) => app.id !== hero?.id && !recentOpened.some((entry) => entry.app.id === app.id))
-      .map((app) => ({ app, openedAt: 0 })),
-  ].slice(0, 3);
+  // Jump back in: library titles first, recently opened apps as the fallback.
+  $: jump = selectJumpBackIn({
+    apps,
+    titles: libraryTitles,
+    recents,
+    starter: apps.find(isGame) ?? apps[0] ?? null,
+  });
+  $: hero = jump.hero;
+  $: resumeRow = jump.row;
 
   async function togglePhonePlay() {
     const next = await pad.run(padState.session ? "end" : "start");
@@ -129,13 +136,34 @@
     if (requested) launch(requested);
   }
 
+  async function refreshLibrary() {
+    const ticket = ++libraryLoad;
+    const titles = await loadLibraryRecent();
+    if (ticket === libraryLoad) libraryTitles = titles;
+  }
+
+  function entryDetail(entry: JumpEntry<YuiDevApp>, now: number) {
+    if (entry.title) {
+      return `${entry.app.name} · ${entry.at ? `played ${openedAgo(entry.at, now)}` : "not played yet"}`;
+    }
+    return `${categoryOf(entry.app)} · ${entry.at ? `opened ${openedAgo(entry.at, now)}` : "not opened yet"}`;
+  }
+
+  function openEntry(entry: JumpEntry<YuiDevApp>) {
+    launch(
+      entry.app,
+      entry.title ? { id: entry.title.id, title: entry.title.title, resume: entry.title.resume ?? null } : null,
+    );
+  }
+
   async function refreshRecents() {
     const ticket = ++recentLoad;
     const items = await loadRecentApps();
     if (ticket === recentLoad) recents = items;
   }
 
-  async function launch(app: YuiDevApp) {
+  async function launch(app: YuiDevApp, item: { id: string; title: string; resume: unknown } | null = null) {
+    setLaunchItem(app.id, item);
     now = Date.now();
     launchedId = app.id;
     reloadKey += 1;
@@ -245,25 +273,36 @@
           <span></span><span></span><span></span>
         </div>
         <span class="jump-cartridge">
-          {#if isGame(hero)}
-            <Cartridge app={hero} size="hero" />
+          {#if hero.art}
+            <img class="jump-art" src={hero.art} alt="" />
+          {:else if isGame(hero.app)}
+            <Cartridge app={hero.app} size="hero" />
           {:else}
-            <span class="jump-icon"><AppIcon app={hero} size={84} /></span>
+            <span class="jump-icon"><AppIcon app={hero.app} size={84} /></span>
           {/if}
         </span>
         <div class="jump-copy">
           <div class="jump-heading">
-            <span class="jump-eyebrow">{heroRecent ? "JUMP BACK IN" : "START HERE"}</span>
+            <span class="jump-eyebrow">{hero.title || hero.at ? "JUMP BACK IN" : "START HERE"}</span>
             <h1>{hero.name}</h1>
-            <p>
-              {categoryOf(hero)}
-              {#if heroRecent}· opened {openedAgo(heroRecent.openedAt, now)}{/if}
-            </p>
+            <p>{entryDetail(hero, now)}</p>
+            {#if hero.progress !== null}
+              <div
+                class="jump-progress"
+                role="progressbar"
+                aria-label="Progress"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow={Math.round(hero.progress * 100)}
+              >
+                <span style={`width: ${hero.progress * 100}%`}></span>
+              </div>
+            {/if}
           </div>
           <div class="jump-actions">
-            <button class="jump-resume" on:click={() => hero && launch(hero)}>
+            <button class="jump-resume" on:click={() => hero && openEntry(hero)}>
               <PlayIcon size={18} strokeWidth={0} fill="currentColor" />
-              {heroRecent ? "Resume" : "Open"}
+              {hero.title || hero.at ? "Resume" : "Open"}
             </button>
             {#if padState.session}
               <div class="join-chip">
@@ -281,14 +320,18 @@
 
     {#if resumeRow.length > 0}
       <section class="resume-row" aria-label="More from your apps">
-        {#each resumeRow as item (item.app.id)}
-          <button class="resume-card" on:click={() => launch(item.app)}>
-            <span class="resume-badge"><AppIcon app={item.app} size={30} /></span>
+        {#each resumeRow as item (item.key)}
+          <button class="resume-card" on:click={() => openEntry(item)}>
+            <span class="resume-badge">
+              {#if item.art}
+                <img class="resume-art" src={item.art} alt="" />
+              {:else}
+                <AppIcon app={item.app} size={30} />
+              {/if}
+            </span>
             <span class="resume-text">
-              <strong>{item.app.name}</strong>
-              <span>
-                {categoryOf(item.app)} · {item.openedAt ? `opened ${openedAgo(item.openedAt, now)}` : "not opened yet"}
-              </span>
+              <strong>{item.name}</strong>
+              <span>{entryDetail(item, now)}</span>
             </span>
           </button>
         {/each}

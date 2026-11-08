@@ -5,6 +5,13 @@
     type YuiChildren,
     type YuiDevApp,
   } from "../../sdk/apps";
+  import { getLaunchItem } from "../../sdk/apps/launch-intent";
+  import {
+    handleSandboxApiCall,
+    notASandboxApi,
+    sandboxApiSource,
+    type SandboxApi,
+  } from "../../sdk/apps/sandbox-apis";
   import YuiNodeView from "./YuiNodeView.svelte";
 
   export let devApp: YuiDevApp;
@@ -25,7 +32,8 @@
           | "fullscreen"
           | "open"
           | "toast"
-          | "log";
+          | "log"
+          | SandboxApi;
         method: string;
         args: unknown[];
       };
@@ -219,8 +227,10 @@ function timeout(ms, message) {
   });
 }
 
+${sandboxApiSource}
+
 function contextFor(app) {
-  return {
+  return yuiExtendContext({
     app: { id: app.id, name: app.name, version: app.version },
     env: { runtimeVersion: appInfo.runtimeVersion, platform: "web", mode: "dev", theme: "system" },
     ui: createUiApi(),
@@ -284,7 +294,7 @@ function contextFor(app) {
       disposables.clear();
       eventHandlers.clear();
     }
-  };
+  });
 }
 
 async function mount(source) {
@@ -435,6 +445,12 @@ post({ type: "ready" });
   function sendMountToSandbox() {
     if (!loading || !sandboxReady || mountSent) return;
     mountSent = true;
+    sendToSandbox({
+      type: "push",
+      api: "launch",
+      event: "item",
+      data: getLaunchItem(devApp.id),
+    });
     sendToSandbox({ type: "mount", source: devApp.source });
   }
 
@@ -522,7 +538,16 @@ post({ type: "ready" });
           first as string,
           second as { kind?: string; durationMs?: number } | undefined,
         );
-      default:
+      default: {
+        const extended = await handleSandboxApiCall(
+          ctx,
+          message.api,
+          message.method,
+          message.args,
+          (api, event, data) =>
+            sendToSandbox({ type: "push", api, event, data }),
+        );
+        if (extended !== notASandboxApi) return extended;
         if (message.api === "log") {
           console[message.method as "debug" | "info" | "warn" | "error"]?.(
             `[${devApp.id}]`,
@@ -533,6 +558,7 @@ post({ type: "ready" });
         throw new Error(
           `unsupported app api call: ${message.api}.${message.method}`,
         );
+      }
     }
   }
 
