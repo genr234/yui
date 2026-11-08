@@ -71,7 +71,10 @@
     grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
   }
   .grid.square {
-    width: min(100%, 260px);
+    height: min(100%, 260px);
+    min-height: 150px;
+    width: auto;
+    max-width: 100%;
     aspect-ratio: 1;
     margin: auto;
     grid-template-rows: repeat(3, minmax(0, 1fr));

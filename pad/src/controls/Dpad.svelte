@@ -67,8 +67,10 @@
 <style>
   .dpad {
     position: relative;
-    width: min(100%, 200px);
-    max-height: 100%;
+    height: min(100%, 210px);
+    min-height: 120px;
+    width: auto;
+    max-width: 100%;
     aspect-ratio: 1;
     align-self: center;
     margin: 0 auto;

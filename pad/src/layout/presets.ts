@@ -104,14 +104,15 @@ function stick(o: Opts): Node {
 const small = { shape: 'pill', size: 'small' }
 
 function gamepad(o: Opts, ctx: PresetContext): Node {
-  const shouldersL = row([btn(o, 'L2', small), btn(o, 'L1', small)], { gap: 8 })
-  const shouldersR = row([btn(o, 'R1', small), btn(o, 'R2', small)], { gap: 8 })
-  const menu = row([btn(o, 'Select', small), btn(o, 'Start', small)], { gap: 8 })
+  // flex grows along the parent: wide in the portrait top row, never tall in landscape columns.
+  const grow = ctx.landscape ? {} : { flex: 1 }
+  const shouldersL = row([btn(o, 'L2', small), btn(o, 'L1', small)], { gap: 8, ...grow })
+  const shouldersR = row([btn(o, 'R1', small), btn(o, 'R2', small)], { gap: 8, ...grow })
   if (ctx.landscape) {
     return row(
       [
         column([shouldersL, row([stick(o), dpad(o)], { flex: 1, gap: 12 })], { flex: 3, gap: 10 }),
-        column([spacer(), menu, spacer()], { flex: 1 }),
+        column([spacer(), btn(o, 'Select', small), btn(o, 'Start', small), spacer()], { flex: 1, gap: 10 }),
         column([shouldersR, row([face(o)], { flex: 1 })], { flex: 2, gap: 10 }),
       ],
       { flex: 1, gap: 16 },
@@ -119,11 +120,15 @@ function gamepad(o: Opts, ctx: PresetContext): Node {
   }
   return column(
     [
-      row([shouldersL, spacer(0.4), shouldersR], { gap: 8 }),
-      menu,
-      spacer(0.5),
+      row([shouldersL, shouldersR], { gap: 20 }),
       row([stick(o), face(o)], { flex: 1, gap: 12 }),
-      row([dpad(o), spacer()], { flex: 1, gap: 12 }),
+      row(
+        [
+          dpad(o),
+          column([spacer(), btn(o, 'Select', small), btn(o, 'Start', small), spacer()], { flex: 1, gap: 10 }),
+        ],
+        { flex: 1, gap: 12 },
+      ),
     ],
     { flex: 1, gap: 12 },
   )

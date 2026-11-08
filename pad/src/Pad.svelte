@@ -178,7 +178,12 @@
   $: shown = tree ? expandTree(tree, { landscape, motionReady }) : null
   $: info = scanTree(shown)
   $: needsGate = wantsMotion(tree) && $motionView.status === 'needs-permission'
-  $: motion.setWanted(info.motion, info.pointer)
+  // Outside the reactive flush: setWanted updates motionView, which the
+  // statements above read, and a store change mid-flush would not re-run them.
+  $: wantMotion(info.motion, info.pointer)
+  function wantMotion(on: boolean, pointer: boolean) {
+    queueMicrotask(() => motion.setWanted(on, pointer))
+  }
   $: loop.setStreaming(info.motion)
 
   async function allowMotion() {
@@ -284,6 +289,7 @@
         <h1>Motion controls</h1>
         <p class="muted">This game uses your phone's motion. Allow it to play.</p>
         <button class="primary" on:click={allowMotion}>Allow motion</button>
+        <button class="secondary" on:click={() => motion.setPermission(false)}>Play without motion</button>
       </section>
     {:else if shown}
       <div class="layout">

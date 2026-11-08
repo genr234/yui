@@ -128,6 +128,9 @@
   .pb.pill {
     border-radius: 999px;
   }
+  :global(.column) > .pb.small {
+    flex: 0 0 auto;
+  }
   .pb.small {
     min-height: 44px;
     font-size: 0.95rem;

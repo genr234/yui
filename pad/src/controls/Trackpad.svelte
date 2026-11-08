@@ -67,7 +67,7 @@
   .pad {
     position: relative;
     flex: 1;
-    min-height: 160px;
+    min-height: 110px;
     border-radius: var(--yui-radius-shell);
     background: var(--yui-chrome-fill);
     box-shadow: 0 0 0 1px var(--line) inset;
