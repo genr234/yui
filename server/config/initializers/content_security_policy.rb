@@ -15,7 +15,11 @@ Rails.application.configure do
     policy.img_src     :self, :https, :data
     policy.object_src  :none
     policy.script_src  :self
+    # Nonce on style-src blocks inline <style> blocks. Pad layouts still set
+    # style attributes (gap, flex, columns, player color). Those are covered
+    # by style-src-attr, not by the style-src nonce.
     policy.style_src   :self
+    policy.style_src_attr :unsafe_inline
   end
 
   # Fresh random nonce per request. Deriving it from the session id leaves it

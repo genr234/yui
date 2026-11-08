@@ -37,6 +37,9 @@ const (
 	DefaultReserve        = uint64(5) << 30
 	DefaultReportInterval = 5 * time.Second
 	DefaultInterval       = 15 * time.Minute
+	// DefaultOrphanGrace is how long a file a native session still has open
+	// survives after it disappears from the account manifest.
+	DefaultOrphanGrace = 2 * time.Minute
 
 	chunkSize = 256 << 10
 )
@@ -98,6 +101,12 @@ type Config struct {
 	Interval       time.Duration // default 15 min
 	RetryDelay     time.Duration // pause between in-process resume attempts (default 2 s)
 	MaxAttempts    int           // in-process attempts per reconcile (default 3)
+
+	// InUse reports that a native session still has this asset open. Those
+	// files are kept for OrphanGrace (default 2 minutes) after they leave the
+	// manifest. Nil means nothing is in use, so leftovers are removed immediately.
+	InUse       func(id string) bool
+	OrphanGrace time.Duration
 }
 
 type failure struct {
@@ -118,6 +127,7 @@ type Syncer struct {
 	lastErr       string
 	current       *Current
 	failures      map[string]failure
+	orphans       map[string]time.Time // id -> first reconcile that saw it in use but unwanted
 
 	trigger chan struct{}
 	forced  bool
@@ -145,11 +155,15 @@ func NewSyncer(cfg Config) *Syncer {
 	if cfg.MaxAttempts == 0 {
 		cfg.MaxAttempts = 3
 	}
+	if cfg.OrphanGrace == 0 {
+		cfg.OrphanGrace = DefaultOrphanGrace
+	}
 	return &Syncer{
 		cfg:      cfg,
 		reasons:  map[string]struct{}{},
 		wake:     make(chan struct{}),
 		failures: map[string]failure{},
+		orphans:  map[string]time.Time{},
 		trigger:  make(chan struct{}, 1),
 	}
 }
@@ -422,9 +436,16 @@ func (s *Syncer) Reconcile(ctx context.Context, force bool) error {
 	}
 
 	changed := false
-	// Delete what is no longer wanted.
+	s.forgetWantedOrphans(wanted)
+	// Delete records that are no longer wanted. Files a native session still
+	// has open stay on disk until the orphan grace passes; the disk sweep
+	// below also removes leftovers that are not in this account's bolt DB
+	// (the asset directory is shared across accounts).
 	for id, l := range recs {
 		if _, ok := wanted[id]; ok {
+			continue
+		}
+		if s.keepOrphan(id) {
 			continue
 		}
 		s.removeFiles(l)
@@ -434,6 +455,9 @@ func (s *Syncer) Reconcile(ctx context.Context, force bool) error {
 		s.mu.Lock()
 		delete(s.failures, id)
 		s.mu.Unlock()
+		changed = true
+	}
+	if s.sweepUnwanted(wanted) {
 		changed = true
 	}
 
@@ -499,6 +523,117 @@ func (s *Syncer) setErr(err error) {
 	s.mu.Lock()
 	s.lastErr = err.Error()
 	s.mu.Unlock()
+}
+
+func (s *Syncer) forgetWantedOrphans(wanted map[string]ManifestItem) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id := range s.orphans {
+		if _, ok := wanted[id]; ok {
+			delete(s.orphans, id)
+		}
+	}
+}
+
+// keepOrphan is true while an in-use asset is inside its grace window.
+func (s *Syncer) keepOrphan(id string) bool {
+	if s.cfg.InUse == nil || !s.cfg.InUse(id) {
+		s.mu.Lock()
+		delete(s.orphans, id)
+		s.mu.Unlock()
+		return false
+	}
+	now := s.cfg.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	first, ok := s.orphans[id]
+	if !ok {
+		s.orphans[id] = now
+		return true
+	}
+	// Keep the timestamp after the window closes so a second call in the same
+	// reconcile (bolt record, then disk sweep) does not start a new grace.
+	return now.Sub(first) < s.cfg.OrphanGrace
+}
+
+// sweepUnwanted removes asset directories and partials whose id is not in the
+// manifest. Returns whether anything was removed.
+func (s *Syncer) sweepUnwanted(wanted map[string]ManifestItem) bool {
+	entries, err := os.ReadDir(s.cfg.DataDir)
+	if err != nil {
+		return false
+	}
+	removed := false
+	for _, ent := range entries {
+		name := ent.Name()
+		if name == ".partial" {
+			if s.sweepPartial(wanted) {
+				removed = true
+			}
+			continue
+		}
+		if !ent.IsDir() || !safeName.MatchString(name) {
+			continue
+		}
+		kindDir := filepath.Join(s.cfg.DataDir, name)
+		ids, err := os.ReadDir(kindDir)
+		if err != nil {
+			continue
+		}
+		left := 0
+		for _, idEnt := range ids {
+			id := idEnt.Name()
+			if !idEnt.IsDir() || !safeName.MatchString(id) {
+				left++
+				continue
+			}
+			if _, ok := wanted[id]; ok {
+				left++
+				continue
+			}
+			if s.keepOrphan(id) {
+				left++
+				continue
+			}
+			path := filepath.Join(kindDir, id)
+			if err := os.RemoveAll(path); err != nil {
+				log.Printf("assets: remove orphan %s: %v", path, err)
+				left++
+				continue
+			}
+			log.Printf("assets: removed %s/%s (not in manifest)", name, id)
+			removed = true
+		}
+		if left == 0 {
+			_ = os.Remove(kindDir)
+		}
+	}
+	return removed
+}
+
+func (s *Syncer) sweepPartial(wanted map[string]ManifestItem) bool {
+	dir := filepath.Join(s.cfg.DataDir, ".partial")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	removed := false
+	for _, ent := range entries {
+		id := ent.Name()
+		if !safeName.MatchString(id) {
+			continue
+		}
+		if _, ok := wanted[id]; ok || s.keepOrphan(id) {
+			continue
+		}
+		path := filepath.Join(dir, id)
+		if err := os.RemoveAll(path); err != nil {
+			log.Printf("assets: remove partial %s: %v", path, err)
+			continue
+		}
+		removed = true
+	}
+	return removed
 }
 
 func (s *Syncer) removeFiles(l Local) {

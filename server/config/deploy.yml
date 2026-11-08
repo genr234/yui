@@ -53,10 +53,18 @@ env:
     # When you start using multiple servers, you should split out job processing to a dedicated machine.
     SOLID_QUEUE_IN_PUMA: true
 
+    # One multi-GB range download holds a Puma thread for the whole body
+    # (FileRangeBody is streamed by Puma; Thruster must not take it over).
+    # 8 threads leaves room for the control room and a couple of kiosks.
+    # database.yml sizes the SQLite pool from the same variable.
+    RAILS_MAX_THREADS: 8
+
     # Thruster's 30 s defaults cut off 50 MB tus chunks on slow uplinks and multi-GB
-    # kiosk downloads (the write timeout covers the whole response).
+    # kiosk downloads (the write timeout covers the whole response). Idle covers a
+    # connection that pauses mid-body, for example while a play session pauses sync.
     HTTP_READ_TIMEOUT: 900
     HTTP_WRITE_TIMEOUT: 86400
+    HTTP_IDLE_TIMEOUT: 900
 
     # Set number of processes dedicated to Solid Queue (default: 1)
     # JOB_CONCURRENCY: 3

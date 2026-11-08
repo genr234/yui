@@ -44,9 +44,8 @@ func (r *Registry) AssetSyncer() *assets.Syncer {
 		epMu.Lock()
 		defer epMu.Unlock()
 		if time.Since(epAt) > assetEndpointTTL {
-			r.reloadAccountConfig()
-			account, ok := r.activeAccount()
-			epURL, epToken = r.cfg.ServerURL, account.DeviceToken
+			cfg, account, ok := r.refreshedAccount()
+			epURL, epToken = cfg.ServerURL, account.DeviceToken
 			epOK = ok && epURL != "" && epToken != ""
 			epAt = time.Now()
 		}

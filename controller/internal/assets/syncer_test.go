@@ -605,3 +605,113 @@ func TestRunAndTrigger(t *testing.T) {
 		t.Fatal("OnChange never called")
 	}
 }
+
+func TestAccountSwitchRemovesFilesMissingFromManifest(t *testing.T) {
+	oldAsset := fakeAsset{ID: "old1", Kind: "game", Title: "Old", Filename: "old.rvz", Data: data(4000, 1)}
+	srv := newFakeServer(t, oldAsset)
+	h := newHarness(t, srv)
+	if err := h.s.Reconcile(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	oldPath, ok := h.s.LocalPath("old1")
+	if !ok {
+		t.Fatal("expected old asset on disk")
+	}
+	// A previous account's files can sit on disk with no bolt record in the new store.
+	stray := filepath.Join(h.dir, "media", "stray9", "left.bin")
+	if err := os.MkdirAll(filepath.Dir(stray), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stray, []byte("stale"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	partial := filepath.Join(h.dir, ".partial", "part9")
+	if err := os.MkdirAll(filepath.Dir(partial), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(partial, []byte("partial"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	db2, err := store.Open(filepath.Join(t.TempDir(), "store.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db2.Close() })
+	h.s.cfg.Store = func() (*store.DB, error) { return db2, nil }
+	srv.remove("old1")
+	srv.set(fakeAsset{ID: "new1", Kind: "media", Title: "New", Filename: "new.bin", Data: data(3000, 3)})
+
+	if err := h.s.Reconcile(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
+		t.Fatal("old account file should be deleted")
+	}
+	if _, err := os.Stat(stray); !os.IsNotExist(err) {
+		t.Fatal("stray file should be deleted")
+	}
+	if _, err := os.Stat(partial); !os.IsNotExist(err) {
+		t.Fatal("orphan partial should be deleted")
+	}
+	if _, ok := h.s.LocalPath("new1"); !ok {
+		t.Fatal("new account asset should download")
+	}
+}
+
+func TestInUseOrphanSurvivesGracePeriod(t *testing.T) {
+	a := fakeAsset{ID: "game1", Kind: "game", Title: "G", Filename: "g.rvz", Data: data(3000, 1)}
+	srv := newFakeServer(t, a)
+	h := newHarness(t, srv)
+	if err := h.s.Reconcile(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	path, ok := h.s.LocalPath("game1")
+	if !ok {
+		t.Fatal("expected download")
+	}
+
+	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	h.s.cfg.Now = func() time.Time { return now }
+	h.s.cfg.OrphanGrace = 2 * time.Minute
+	h.s.cfg.InUse = func(id string) bool { return id == "game1" }
+	srv.remove("game1")
+
+	if err := h.s.Reconcile(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatal("in-use file should survive the first reconcile")
+	}
+
+	now = now.Add(2 * time.Minute)
+	if err := h.s.Reconcile(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("in-use file should be deleted after the grace period")
+	}
+}
+
+func TestSweepKeepsWantedPartial(t *testing.T) {
+	dir := t.TempDir()
+	s := NewSyncer(Config{DataDir: dir, Remote: &HTTPRemote{Endpoint: func() (string, string, bool) { return "", "", false }}})
+	keep := filepath.Join(dir, ".partial", "keep1")
+	drop := filepath.Join(dir, ".partial", "drop1")
+	if err := os.MkdirAll(filepath.Dir(keep), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keep, []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(drop, []byte("drop"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s.sweepUnwanted(map[string]ManifestItem{"keep1": {ID: "keep1"}})
+	if _, err := os.Stat(keep); err != nil {
+		t.Fatal("wanted partial should stay")
+	}
+	if _, err := os.Stat(drop); !os.IsNotExist(err) {
+		t.Fatal("unwanted partial should be deleted")
+	}
+}

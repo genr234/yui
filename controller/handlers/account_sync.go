@@ -112,9 +112,8 @@ func (r *Registry) accountCommandLoop(ctx context.Context) {
 }
 
 func (r *Registry) SyncNow() error {
-	r.reloadAccountConfig()
-	account, ok := r.activeAccount()
-	if !ok || r.cfg.ServerURL == "" || account.DeviceToken == "" {
+	cfg, account, ok := r.refreshedAccount()
+	if !ok || cfg.ServerURL == "" || account.DeviceToken == "" {
 		return nil
 	}
 	r.setSyncState(true, "")
@@ -146,9 +145,8 @@ func (r *Registry) SyncNow() error {
 }
 
 func (r *Registry) refreshActiveAccount() error {
-	r.reloadAccountConfig()
-	account, ok := r.activeAccount()
-	if !ok || r.cfg.ServerURL == "" || account.DeviceToken == "" {
+	cfg, account, ok := r.refreshedAccount()
+	if !ok || cfg.ServerURL == "" || account.DeviceToken == "" {
 		return nil
 	}
 	if err := r.pullOperations(account); err != nil {
@@ -163,7 +161,8 @@ func (r *Registry) refreshActiveAccount() error {
 }
 
 func (r *Registry) activeAccount() (config.AccountConfig, bool) {
-	account, ok := findAccount(r.cfg.Accounts, r.cfg.ActiveAccountID)
+	cfg := r.snapshotConfig()
+	account, ok := findAccount(cfg.Accounts, cfg.ActiveAccountID)
 	if !ok {
 		return config.AccountConfig{}, false
 	}
@@ -188,7 +187,10 @@ func (r *Registry) markAccountNeedsPairing(accountID, reason string) error {
 	if accountID == "" {
 		return nil
 	}
+	r.cfgMu.Lock()
 	cfg := r.cfg
+	cfg.Accounts = append([]config.AccountConfig(nil), r.cfg.Accounts...)
+	r.cfgMu.Unlock()
 	changed := false
 	for i := range cfg.Accounts {
 		if cfg.Accounts[i].ID != accountID {
@@ -207,13 +209,16 @@ func (r *Registry) markAccountNeedsPairing(accountID, reason string) error {
 	if err := config.Save(cfg); err != nil {
 		return err
 	}
+	r.cfgMu.Lock()
 	r.cfg = cfg
+	r.cfgMu.Unlock()
 	r.setSyncState(false, reason)
 	return nil
 }
 
 func (r *Registry) recordMutation(method string, params json.RawMessage, result any) {
-	if r.cfg.ActiveAccountID == "" || r.cfg.ServerURL == "" {
+	cfg := r.snapshotConfig()
+	if cfg.ActiveAccountID == "" || cfg.ServerURL == "" {
 		return
 	}
 	if err := r.recordMutationErr(method, params, result); err != nil {
@@ -378,14 +383,19 @@ func (r *Registry) recordReplaceCollection(collection string) error {
 }
 
 func (r *Registry) appendOperation(collection, id, action string, payload json.RawMessage) error {
+	r.cfgMu.Lock()
 	if r.cfg.DeviceUID == "" {
 		cfg := r.cfg
+		cfg.Accounts = append([]config.AccountConfig(nil), r.cfg.Accounts...)
 		cfg.DeviceUID = newDeviceUID()
+		r.cfgMu.Unlock()
 		if err := config.Save(cfg); err != nil {
 			return err
 		}
-		r.cfg = cfg
+		r.cfgMu.Lock()
+		r.cfg.DeviceUID = cfg.DeviceUID
 	}
+	r.cfgMu.Unlock()
 	db, err := r.Store()
 	if err != nil {
 		return err
@@ -416,13 +426,14 @@ func (r *Registry) appendOperation(collection, id, action string, payload json.R
 }
 
 func (r *Registry) syncMeta(db *store.DB) (syncMeta, error) {
-	meta := syncMeta{ClientID: r.cfg.DeviceUID, NextSeq: 1}
+	deviceUID := r.snapshotConfig().DeviceUID
+	meta := syncMeta{ClientID: deviceUID, NextSeq: 1}
 	_, err := db.Collection(syncMetaCollection).Decode(syncMetaStateID, &meta)
 	if err != nil {
 		return meta, err
 	}
 	if meta.ClientID == "" {
-		meta.ClientID = r.cfg.DeviceUID
+		meta.ClientID = deviceUID
 	}
 	if meta.ClientID == "" {
 		meta.ClientID = newDeviceUID()
@@ -614,17 +625,19 @@ func collectionAffectsPlugins(collection string) bool {
 }
 
 func (r *Registry) saveAccount(account config.AccountConfig) error {
-	cfg := r.cfg
+	cfg := r.snapshotConfig()
 	cfg.Accounts = upsertAccount(cfg.Accounts, account)
 	if err := config.Save(cfg); err != nil {
 		return err
 	}
+	r.cfgMu.Lock()
 	r.cfg = cfg
+	r.cfgMu.Unlock()
 	return nil
 }
 
 func (r *Registry) accountRequest(method, path string, account config.AccountConfig, body io.Reader) (*http.Request, error) {
-	req, err := http.NewRequest(method, strings.TrimRight(r.cfg.ServerURL, "/")+path, body)
+	req, err := http.NewRequest(method, strings.TrimRight(r.snapshotConfig().ServerURL, "/")+path, body)
 	if err != nil {
 		return nil, err
 	}
@@ -661,9 +674,8 @@ func remoteCommandAllowed(method string) bool {
 }
 
 func (r *Registry) streamRemoteCommands(ctx context.Context) error {
-	r.reloadAccountConfig()
-	account, ok := r.activeAccount()
-	if !ok || r.cfg.ServerURL == "" || account.DeviceToken == "" {
+	cfg, account, ok := r.refreshedAccount()
+	if !ok || cfg.ServerURL == "" || account.DeviceToken == "" {
 		select {
 		case <-ctx.Done():
 			return nil
@@ -672,12 +684,14 @@ func (r *Registry) streamRemoteCommands(ctx context.Context) error {
 		}
 	}
 
-	wsURL, err := accountCableURL(r.cfg.ServerURL)
+	wsURL, err := accountCableURL(cfg.ServerURL)
 	if err != nil {
 		return err
 	}
-	header := http.Header{}
-	header.Set("Authorization", "Bearer "+account.DeviceToken)
+	header, err := accountCableHeader(cfg.ServerURL, account.DeviceToken)
+	if err != nil {
+		return err
+	}
 	conn, _, err := websocket.DefaultDialer.DialContext(ctx, wsURL, header)
 	if err != nil {
 		return err
@@ -732,26 +746,56 @@ func (r *Registry) streamRemoteCommands(ctx context.Context) error {
 }
 
 func accountCableURL(serverURL string) (string, error) {
-	parsed, err := url.Parse(strings.TrimRight(serverURL, "/") + "/cable")
+	parsed, _, err := accountCableEndpoint(serverURL)
 	if err != nil {
 		return "", err
-	}
-	switch parsed.Scheme {
-	case "http":
-		parsed.Scheme = "ws"
-	case "https":
-		parsed.Scheme = "wss"
-	case "ws", "wss":
-	default:
-		return "", fmt.Errorf("unsupported server URL scheme %q", parsed.Scheme)
 	}
 	return parsed.String(), nil
 }
 
+// accountCableHeader authenticates the kiosk and sets Origin to the server's
+// own origin. Rails allows that origin (same host) and also allows a bearer
+// handshake with no Origin; sending one keeps the check meaningful for browsers.
+func accountCableHeader(serverURL, token string) (http.Header, error) {
+	_, origin, err := accountCableEndpoint(serverURL)
+	if err != nil {
+		return nil, err
+	}
+	header := http.Header{}
+	header.Set("Authorization", "Bearer "+token)
+	header.Set("Origin", origin)
+	return header, nil
+}
+
+func accountCableEndpoint(serverURL string) (*url.URL, string, error) {
+	parsed, err := url.Parse(strings.TrimRight(serverURL, "/") + "/cable")
+	if err != nil {
+		return nil, "", err
+	}
+	originScheme := ""
+	switch parsed.Scheme {
+	case "http":
+		originScheme = "http"
+		parsed.Scheme = "ws"
+	case "https":
+		originScheme = "https"
+		parsed.Scheme = "wss"
+	case "ws":
+		originScheme = "http"
+	case "wss":
+		originScheme = "https"
+	default:
+		return nil, "", fmt.Errorf("unsupported server URL scheme %q", parsed.Scheme)
+	}
+	if parsed.Host == "" {
+		return nil, "", fmt.Errorf("server URL is missing a host")
+	}
+	return parsed, originScheme + "://" + parsed.Host, nil
+}
+
 func (r *Registry) handleRemoteCommandMessage(data json.RawMessage) error {
-	r.reloadAccountConfig()
-	account, ok := r.activeAccount()
-	if !ok || r.cfg.ServerURL == "" || account.DeviceToken == "" {
+	cfg, account, ok := r.refreshedAccount()
+	if !ok || cfg.ServerURL == "" || account.DeviceToken == "" {
 		return nil
 	}
 	var command struct {

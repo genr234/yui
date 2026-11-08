@@ -13,5 +13,9 @@ export default defineConfig({
   build: {
     outDir: '../server/public/pad',
     emptyOutDir: true,
+    // The modulepreload polyfill is an inline script. /play is served with a
+    // nonce script-src and no 'unsafe-inline', so that polyfill would not run.
+    // The pad's browsers support <link rel="modulepreload"> natively.
+    modulePreload: { polyfill: false },
   },
 })

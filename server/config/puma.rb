@@ -24,7 +24,13 @@
 #
 # Any libraries that use a connection pool or another resource pool should
 # be configured to provide at least as many connections as the number of
-# threads. This includes Active Record's `pool` parameter in `database.yml`.
+# threads. This includes Active Record's `pool` parameter in `database.yml`,
+# which reads RAILS_MAX_THREADS with the same meaning as this setting.
+#
+# Asset downloads stream through a Puma thread for the whole response (see
+# Api::Kiosk::AssetsController). config/deploy.yml sets RAILS_MAX_THREADS=8
+# so a multi-GB transfer does not consume the entire pool. The default below
+# stays 3 for local development.
 threads_count = ENV.fetch("RAILS_MAX_THREADS", 3)
 threads threads_count, threads_count
 

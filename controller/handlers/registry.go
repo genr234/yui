@@ -21,6 +21,7 @@ type Command interface {
 }
 
 type Registry struct {
+	cfgMu     sync.RWMutex
 	cfg       config.Config
 	processMu sync.Mutex
 	processes map[int]*exec.Cmd

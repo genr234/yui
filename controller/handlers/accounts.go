@@ -93,7 +93,7 @@ func (AccountConnectCommand) Handle(r *Registry, params json.RawMessage) (any, e
 		return nil, err
 	}
 
-	cfg := r.cfg
+	cfg := r.snapshotConfig()
 	if cfg.DeviceUID == "" {
 		cfg.DeviceUID = newDeviceUID()
 	}
@@ -139,7 +139,7 @@ func (AccountSwitchCommand) Handle(r *Registry, params json.RawMessage) (any, er
 		return nil, err
 	}
 
-	cfg := r.cfg
+	cfg := r.snapshotConfig()
 	if req.AccountID != "" {
 		if _, ok := findAccount(cfg.Accounts, req.AccountID); !ok {
 			return nil, fmt.Errorf("account %q is not cached on this kiosk", req.AccountID)
@@ -160,7 +160,7 @@ type AccountDisconnectCommand struct{}
 func (AccountDisconnectCommand) Name() string { return "accounts.disconnect" }
 
 func (AccountDisconnectCommand) Handle(r *Registry, _ json.RawMessage) (any, error) {
-	cfg := r.cfg
+	cfg := r.snapshotConfig()
 	cfg.ServerURL = ""
 	cfg.ActiveAccountID = ""
 	cfg.Accounts = nil
@@ -178,10 +178,11 @@ type AccountImportAnonymousCommand struct{}
 func (AccountImportAnonymousCommand) Name() string { return "accounts.importAnonymous" }
 
 func (AccountImportAnonymousCommand) Handle(r *Registry, _ json.RawMessage) (any, error) {
-	if r.cfg.ActiveAccountID == "" {
+	cfg := r.snapshotConfig()
+	if cfg.ActiveAccountID == "" {
 		return nil, fmt.Errorf("connect or switch to an account before importing anonymous data")
 	}
-	anonymous, err := store.Open(r.cfg.StorePath)
+	anonymous, err := store.Open(cfg.StorePath)
 	if err != nil {
 		return nil, err
 	}
@@ -226,10 +227,11 @@ func (AccountSyncNowCommand) Handle(r *Registry, _ json.RawMessage) (any, error)
 }
 
 func (r *Registry) activeStorePath() string {
-	if r.cfg.ActiveAccountID == "" {
-		return r.cfg.StorePath
+	cfg := r.snapshotConfig()
+	if cfg.ActiveAccountID == "" {
+		return cfg.StorePath
 	}
-	return filepath.Join(r.cfg.ConfigDir, accountStoreDir, accountPathID(r.cfg.ActiveAccountID), accountStoreName)
+	return filepath.Join(cfg.ConfigDir, accountStoreDir, accountPathID(cfg.ActiveAccountID), accountStoreName)
 }
 
 func (r *Registry) accountStatus() accountStatus {
@@ -238,32 +240,58 @@ func (r *Registry) accountStatus() accountStatus {
 	syncState := r.syncState
 	r.syncMu.Unlock()
 
-	active, _ := findAccount(r.cfg.Accounts, r.cfg.ActiveAccountID)
+	cfg := r.snapshotConfig()
+	active, _ := findAccount(cfg.Accounts, cfg.ActiveAccountID)
 	return accountStatus{
-		ServerURL:     r.cfg.ServerURL,
-		Connected:     r.cfg.ServerURL != "" && r.cfg.ActiveAccountID != "" && active != nil && active.DeviceToken != "",
-		NeedsPairing:  r.cfg.ServerURL != "" && r.cfg.ActiveAccountID != "" && (active == nil || active.DeviceToken == ""),
+		ServerURL:     cfg.ServerURL,
+		Connected:     cfg.ServerURL != "" && cfg.ActiveAccountID != "" && active != nil && active.DeviceToken != "",
+		NeedsPairing:  cfg.ServerURL != "" && cfg.ActiveAccountID != "" && (active == nil || active.DeviceToken == ""),
 		ActiveAccount: accountViewPtr(active),
-		Accounts:      accountViews(r.cfg.Accounts),
-		Anonymous:     r.cfg.ActiveAccountID == "",
+		Accounts:      accountViews(cfg.Accounts),
+		Anonymous:     cfg.ActiveAccountID == "",
 		Syncing:       syncState.Syncing,
 		LastSyncAt:    syncState.LastSyncAt,
 		LastSyncError: syncState.LastSyncError,
 	}
 }
 
+// reloadAccountConfig re-reads the account fields from disk. Callers overlap
+// (sync loop, command socket, asset endpoint, status), so the write is serialized
+// with snapshotConfig.
 func (r *Registry) reloadAccountConfig() {
 	cfg, err := config.Load()
 	if err != nil {
 		return
 	}
+	r.cfgMu.Lock()
+	defer r.cfgMu.Unlock()
 	if cfg.ConfigPath != "" && r.cfg.ConfigPath != "" && cfg.ConfigPath != r.cfg.ConfigPath {
 		return
 	}
 	r.cfg.ServerURL = cfg.ServerURL
 	r.cfg.DeviceUID = cfg.DeviceUID
 	r.cfg.ActiveAccountID = cfg.ActiveAccountID
-	r.cfg.Accounts = cfg.Accounts
+	r.cfg.Accounts = append([]config.AccountConfig(nil), cfg.Accounts...)
+}
+
+// snapshotConfig is a stable copy of the registry config. The Accounts slice
+// is copied so a caller can edit it without racing a reload.
+func (r *Registry) snapshotConfig() config.Config {
+	r.cfgMu.RLock()
+	defer r.cfgMu.RUnlock()
+	cfg := r.cfg
+	cfg.Accounts = append([]config.AccountConfig(nil), r.cfg.Accounts...)
+	return cfg
+}
+
+func (r *Registry) refreshedAccount() (config.Config, config.AccountConfig, bool) {
+	r.reloadAccountConfig()
+	cfg := r.snapshotConfig()
+	account, ok := findAccount(cfg.Accounts, cfg.ActiveAccountID)
+	if !ok {
+		return cfg, config.AccountConfig{}, false
+	}
+	return cfg, *account, true
 }
 
 func accountViews(accounts []config.AccountConfig) []accountView {
@@ -289,7 +317,9 @@ func (r *Registry) switchConfig(cfg config.Config) error {
 	if err := r.resetStore(); err != nil {
 		return err
 	}
+	r.cfgMu.Lock()
 	r.cfg = cfg
+	r.cfgMu.Unlock()
 	if r.plugins != nil && r.pluginCtx != nil {
 		r.plugins.Start(r.pluginCtx)
 	}
