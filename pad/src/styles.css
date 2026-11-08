@@ -1,0 +1,77 @@
+:root {
+  --bg: #0f1020;
+  --surface: #181a33;
+  --surface-2: #252850;
+  --fg: #f3f4ff;
+  --muted: #9ea3cf;
+  --accent: #6c8cff;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  margin: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: ui-rounded, 'SF Pro Rounded', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  overscroll-behavior: none;
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.75rem;
+  line-height: 1.15;
+}
+
+.muted {
+  margin: 0;
+  color: var(--muted);
+}
+
+input {
+  width: 100%;
+  padding: 16px 18px;
+  border: 3px solid var(--surface-2);
+  border-radius: 20px;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-size: 1.1rem; /* >= 16px stops iOS zooming on focus */
+}
+input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+button.primary {
+  min-height: 64px;
+  padding: 14px 24px;
+  border: 0;
+  border-radius: 24px;
+  background: var(--accent);
+  color: #0f1020;
+  font-size: 1.25rem;
+  font-weight: 800;
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.35);
+}
+button.primary:active:not(:disabled) {
+  transform: translateY(5px);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+}
+button.primary:disabled {
+  opacity: 0.4;
+  box-shadow: none;
+}

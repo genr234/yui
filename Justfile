@@ -3,6 +3,8 @@ platform_dir := root_dir + "/platform"
 controller_dir := root_dir + "/controller"
 installer_dir := root_dir + "/installer"
 server_dir := root_dir + "/server"
+pad_dir := root_dir + "/pad"
+protocol_dir := root_dir + "/protocol"
 dist_dir := root_dir + "/dist"
 controller_asset := installer_dir + "/assets/controller.exe"
 commit := `if [ -n "${YUI_COMMIT-}" ]; then printf "%s" "$YUI_COMMIT"; else git rev-parse HEAD 2>/dev/null || echo dev; fi`
@@ -13,6 +15,10 @@ help:
   @echo "  just deps               Install platform dependencies"
   @echo "  just deps-all           Install platform + server dependencies"
   @echo "  just deps-server        Install Rails dependencies"
+  @echo "  just deps-pad           Install protocol + pad (phone app) dependencies"
+  @echo "  just dev-pad            Run the pad Vite dev server (proxies /play, /cable to Rails)"
+  @echo "  just build-pad          Build the pad app into server/public/pad"
+  @echo "  just test-protocol      Run the shared protocol tests"
   @echo "  just dev                Run controller + platform + server dev servers"
   @echo "  just dev-platform       Run the Vite dev server only"
   @echo "  just dev-controller     Run the Go controller only"
@@ -29,12 +35,16 @@ help:
   @echo "  just check              Build-check Go/platform and run Rails CI"
   @echo "  just clean              Remove generated artifacts"
 
-deps: deps-platform
+deps: deps-platform deps-pad
 
-deps-all: deps-platform deps-server
+deps-all: deps-platform deps-pad deps-server
 
 deps-platform:
   cd {{platform_dir}} && bun install
+
+deps-pad:
+  cd {{protocol_dir}} && bun install
+  cd {{pad_dir}} && bun install
 
 deps-server:
   cd {{server_dir}} && bundle install
@@ -44,6 +54,9 @@ dev:
 
 dev-platform:
   cd {{platform_dir}} && bun run dev
+
+dev-pad:
+  cd {{pad_dir}} && bun run dev
 
 dev-controller:
   cd {{controller_dir}} && go run .
@@ -76,7 +89,13 @@ build-platform:
 build-demo:
   cd {{platform_dir}} && bun run build:demo
 
-build-server:
+build-pad:
+  cd {{pad_dir}} && bun run build
+
+test-protocol:
+  cd {{protocol_dir}} && bun test
+
+build-server: build-pad
   docker build --pull -t {{server_image}} {{server_dir}}
 
 build-controller:
@@ -100,6 +119,9 @@ check:
   cd {{controller_dir}} && go build ./...
   cd {{installer_dir}} && go build ./...
   cd {{platform_dir}} && bun run build
+  cd {{protocol_dir}} && bun test
+  cd {{pad_dir}} && bun run build
+  cd {{controller_dir}} && go test ./internal/pad/...
   cd {{server_dir}} && bin/ci
 
 clean:
