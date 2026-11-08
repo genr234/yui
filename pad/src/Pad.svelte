@@ -425,8 +425,26 @@
   .layout > :global(*) {
     flex: 1 1 auto;
   }
+  /* Landscape phones have ~320px of height: a slimmer header and controls. */
+  .landscape header {
+    padding: 4px 12px;
+  }
+  .landscape .home {
+    width: 40px;
+    height: 40px;
+  }
   .landscape .layout {
-    padding: 10px 18px;
+    padding: 8px 18px 10px;
+  }
+  .landscape .layout :global(.pb:not(.round)) {
+    min-height: 50px;
+  }
+  .landscape .layout :global(.live),
+  .landscape .layout :global(.field input) {
+    min-height: 48px;
+  }
+  .landscape .layout :global(.field input) {
+    padding: 10px 14px;
   }
   .gate,
   .waiting {

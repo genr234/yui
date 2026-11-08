@@ -4,14 +4,14 @@
   import { ApiError, codeFromPath, friendlyError, getInfo, join, qrTokenFromQuery, simSlotFromQuery, type SessionInfo } from './api'
   import { COLOR_NAMES, colorHex } from './colors'
   import Pad from './Pad.svelte'
-  import { demoGamepad, demoRemote, demoTree } from './layout/demo'
+  import { demoGamepad, demoRemote, demoShell, demoTree } from './layout/demo'
   import { unlockAudio } from './platform/sound'
 
   type Screen = 'loading' | 'not_found' | 'join' | 'joined' | 'error' | 'kicked' | 'ended' | 'closed'
 
   const demoName = import.meta.env.DEV ? new URLSearchParams(location.search).get('demo') : null
-  const demo: Node | null =
-    demoName === 'layout' ? demoTree : demoName === 'gamepad' ? demoGamepad : demoName === 'remote' ? demoRemote : null
+  const demos: Record<string, Node> = { layout: demoTree, gamepad: demoGamepad, remote: demoRemote, shell: demoShell }
+  const demo: Node | null = (demoName && demos[demoName]) || null
   const code = codeFromPath()
   const qrToken = qrTokenFromQuery()
   const simSlot = simSlotFromQuery()
@@ -106,7 +106,7 @@
       </section>
     {:else if screen === 'not_found' || screen === 'ended'}
       <section class="center">
-        <div class="glyph" aria-hidden="true">✓</div>
+        <div class="glyph" aria-hidden="true">{screen === 'ended' ? '✓' : '?'}</div>
         <h1>{screen === 'ended' ? 'Thanks for playing' : 'Session not found'}</h1>
         <p class="muted">
           {screen === 'ended'

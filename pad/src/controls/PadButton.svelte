@@ -66,7 +66,7 @@
     background: var(--accent);
     color: #fff;
     font: inherit;
-    font-size: 1.3rem;
+    font-size: 1.15rem;
     font-weight: 800;
     letter-spacing: 0.01em;
     box-shadow: 0 var(--yui-lip) 0 var(--accent-lip), 0 8px 18px rgba(0, 0, 0, 0.25);
@@ -80,8 +80,12 @@
     pointer-events: none;
     display: block;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    line-height: 1.1;
+    overflow-wrap: anywhere;
+  }
+  /* In a column a button keeps its height; the trackpad or stick takes the room (a `flex` prop overrides). */
+  :global(.column) > .pb {
+    flex: 0 0 auto;
   }
   .pb.pressed {
     transform: translateY(var(--yui-lip)) scale(0.97);

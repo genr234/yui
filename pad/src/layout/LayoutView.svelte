@@ -23,7 +23,7 @@
 </script>
 
 {#if node.type === 'row' || node.type === 'column' || node.type === 'grid'}
-  <div class="lv {node.type}" class:square={props.square === true} style={boxStyle}>
+  <div class="lv {node.type}" class:square={props.square === true} class:rigid={flex === undefined} style={boxStyle}>
     {#each children as child}
       <svelte:self node={child} />
     {/each}
@@ -58,6 +58,10 @@
     gap: var(--gap);
     min-width: 0;
     min-height: 0;
+  }
+  /* A box without `flex` never shrinks below its content (its controls would overlap). */
+  .lv.rigid {
+    flex-shrink: 0;
   }
   .row {
     flex-direction: row;

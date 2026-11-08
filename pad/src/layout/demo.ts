@@ -52,6 +52,26 @@ export const demoTree: Node = {
 
 export const demoGamepad: Node = { type: 'preset', props: { name: 'gamepad' } }
 
+/** The kiosk's shell remote (controller/internal/pad/shell Remote(true)). */
+export const demoShell: Node = {
+  type: 'column',
+  props: { gap: 12 },
+  children: [
+    { type: 'trackpad', props: { id: 'trackpad', mode: 'relative', label: 'Drag to move, tap to click, two fingers to scroll' } },
+    { type: 'keyboard', props: { id: 'keyboard', mode: 'live', placeholder: 'Type on the screen' } },
+    {
+      type: 'row',
+      props: { gap: 12 },
+      children: [
+        { type: 'button', props: { id: 'back', label: 'Back', variant: 'secondary' } },
+        { type: 'button', props: { id: 'home', label: 'Home', variant: 'secondary' } },
+        { type: 'button', props: { id: 'open_yui', label: 'Open Yui', variant: 'primary' } },
+      ],
+    },
+    { type: 'button', props: { id: 'keyboard_toggle', label: 'Hide keyboard', variant: 'ghost' } },
+  ],
+}
+
 export const demoRemote: Node = {
   type: 'preset',
   props: { name: 'motion-remote', labels: { South: 'A', R2: 'B', West: '1', North: '2', Select: '−', Start: '+' } },

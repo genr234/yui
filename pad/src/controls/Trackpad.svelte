@@ -67,7 +67,7 @@
   .pad {
     position: relative;
     flex: 1;
-    min-height: 110px;
+    min-height: 96px;
     border-radius: var(--yui-radius-shell);
     background: var(--yui-chrome-fill);
     box-shadow: 0 0 0 1px var(--line) inset;
@@ -82,6 +82,8 @@
     box-shadow: 0 0 0 2px var(--player) inset;
   }
   .label {
+    padding: 0 20px;
+    text-align: center;
     color: var(--muted);
     font-weight: 600;
     pointer-events: none;
