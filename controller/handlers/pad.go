@@ -128,13 +128,14 @@ func (padSensitiveCommand) Handle(r *Registry, params json.RawMessage) (any, err
 	r.padMu.Lock()
 	r.padSensitive = body.Active
 	mgr := r.padMgr
-	hub := r.padRouter
+	// Applied under padMu so it orders against padHub publishing the hub.
+	// The router takes only its own locks.
+	if r.padRouter != nil {
+		r.padRouter.SetSensitive(body.Active)
+	}
 	r.padMu.Unlock()
 	if mgr != nil {
 		mgr.SetSensitive(body.Active)
-	}
-	if hub != nil {
-		hub.SetSensitive(body.Active)
 	}
 	return map[string]bool{"active": body.Active}, nil
 }
@@ -323,18 +324,22 @@ func (r *Registry) endPadSession() (session.Snapshot, error) {
 // padHub returns the input hub router, creating it on first use. It lives
 // as long as the controller: providers pushed by apps survive play sessions,
 // and its DSU servers and CDP worker stop with the pad lifecycle context.
+// Callers hold padStartMu, so only one hub is ever built; padMu is not held
+// while the config is read (see the lock order on Registry).
 func (r *Registry) padHub() *router.Router {
 	r.padMu.Lock()
-	defer r.padMu.Unlock()
 	if r.padRouter != nil {
-		return r.padRouter
+		hub := r.padRouter
+		r.padMu.Unlock()
+		return hub
 	}
 	root := r.padRoot
+	playersAddr, systemAddr := r.padDSUAddrs[0], r.padDSUAddrs[1]
+	r.padMu.Unlock()
 	if root == nil {
 		root = context.Background()
 	}
 	cfg := r.snapshotConfig()
-	playersAddr, systemAddr := r.padDSUAddrs[0], r.padDSUAddrs[1]
 	if playersAddr == "" {
 		playersAddr = pads.DefaultPlayersAddr
 	}
@@ -365,8 +370,12 @@ func (r *Registry) padHub() *router.Router {
 		// Only nil providers or adapters fail here, and none are nil.
 		panic(err)
 	}
-	hub.SetSensitive(r.padSensitive)
 	go pointer.Run(root)
+	// Publish and apply D9 under padMu, so a pad.sensitive that lands while
+	// the hub was being built is not lost.
+	r.padMu.Lock()
 	r.padRouter = hub
+	hub.SetSensitive(r.padSensitive)
+	r.padMu.Unlock()
 	return hub
 }
