@@ -170,6 +170,7 @@ export class Bridge {
 
 class DemoBridge {
 	private values = new Map<string, unknown>();
+	private storeEpoch = 0;
 	private config = {
 		url: "https://demo.yui.local",
 		chrome_path: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
@@ -248,11 +249,21 @@ class DemoBridge {
 			this.config = { ...this.config, ...params };
 			return this.config as T;
 		}
-		if (method === "store.get") return (this.values.get(String(params.id)) ?? null) as T;
+		if (method === "store.get") {
+			const document = this.values.get(String(params.id)) as { value?: unknown } | undefined;
+			return {
+				id: params.id,
+				value: document?.value ?? null,
+				store_epoch: this.storeEpoch,
+			} as T;
+		}
 		if (method === "store.put") {
+			if (typeof params.store_epoch === "number" && params.store_epoch !== this.storeEpoch) {
+				throw new Error("store scope changed");
+			}
 			const document = { ...params, updatedAt: new Date().toISOString() };
 			this.values.set(String(params.id), document);
-			return document as T;
+			return { ...document, store_epoch: this.storeEpoch } as T;
 		}
 		if (method === "store.delete") this.values.delete(String(params.id));
 		if (method === "storage.set") this.values.set(String(params.key), params.value);

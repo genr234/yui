@@ -272,9 +272,14 @@
 	}
 
 	.keyboard-footer {
-		grid-template-columns: 72px 48px 42px minmax(0, 1fr) 42px 48px 48px;
+		grid-template-columns: 72px 48px 48px minmax(0, 1fr) 48px 48px 48px;
 		gap: 8px;
 		padding: 8px 82px 0 0;
+	}
+
+	.keyboard-footer button {
+		min-width: 44px;
+		min-height: 44px;
 	}
 
 	.keyboard-mode-key,

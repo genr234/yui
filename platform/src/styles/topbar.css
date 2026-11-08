@@ -3,7 +3,9 @@
 .topbar {
 	container: topbar / inline-size;
 	position: relative;
-	z-index: 1;
+	/* Above Apps `.jump-copy` (3) and `.jump-cartridge` (2). The popover lives
+	   in this stacking context, so a lower value lets the banner paint over it. */
+	z-index: 4;
 	display: flex;
 	align-items: center;
 	justify-content: space-between;

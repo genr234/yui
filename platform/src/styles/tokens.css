@@ -53,6 +53,11 @@
 	--yui-shadow-overlay: 0 24px 72px rgba(0, 0, 0, 0.28);
 	--yui-scrim: rgba(10, 16, 22, 0.32);
 	--yui-shadow-icon: 0 16px 28px rgba(19, 29, 42, 0.13), 0 0 0 2px rgba(220, 225, 232, 0.9) inset;
+	--yui-shadow-knob: 0 1px 3px rgba(17, 25, 37, 0.16);
+	--yui-shadow-knob-raised: 0 2px 6px rgba(17, 25, 37, 0.22);
+	--yui-shadow-gauge: 0 2px 4px rgba(23, 35, 52, 0.14);
+	--yui-shadow-gauge-hub: 0 1px 5px rgba(23, 35, 52, 0.18);
+	--yui-shadow-none: 0 0 0 transparent;
 	/* the gentle "lip" under tappable cards and buttons */
 	--yui-lip: 3px;
 

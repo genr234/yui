@@ -135,8 +135,13 @@
     reloadKey += 1;
     announceLaunched(true);
     const ticket = ++recentLoad;
-    const items = await recordRecentApp(app.id);
-    if (ticket === recentLoad) recents = items;
+    try {
+      const items = await recordRecentApp(app.id);
+      if (ticket === recentLoad) recents = items;
+    } catch {
+      // The read failed, or the account store changed before the write.
+      // Leave the list alone so this launch cannot publish another account's history.
+    }
   }
 
   function closeApp() {

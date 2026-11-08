@@ -116,6 +116,42 @@ class KioskApiTest < ActionDispatch::IntegrationTest
     assert_equal 0, account.kiosk_operations.count
   end
 
+  test "sync push accepts shell recent apps" do
+    account = Account.create!(name: "Lobby")
+    account.kiosks.create!(
+      name: "Front kiosk",
+      device_uid: "device-1",
+      device_token_digest: Kiosk.digest_token("token")
+    )
+
+    post "/api/kiosk/sync/push",
+      params: {
+        operations: [
+          {
+            client_id: "device-1",
+            client_seq: 1,
+            collection: "shell",
+            record_id: "recent-apps",
+            action: "put",
+            payload: [ { "id" => "links", "openedAt" => 10 } ]
+          }
+        ]
+      },
+      headers: { "Authorization" => "Bearer token" },
+      as: :json
+
+    assert_response :success
+    stored = account.account_state_records.find_by!(collection: "shell", record_id: "recent-apps")
+    assert_equal [ { "id" => "links", "openedAt" => 10 } ], stored.value
+
+    get "/api/kiosk/sync/pull?cursor=0", headers: { "Authorization" => "Bearer token" }
+    assert_response :success
+    operation = JSON.parse(response.body).fetch("operations").first
+    assert_equal "shell", operation.fetch("collection")
+    assert_equal "recent-apps", operation.fetch("record_id")
+    assert_equal [ { "id" => "links", "openedAt" => 10 } ], operation.fetch("payload")
+  end
+
   test "sync push rejects unknown collections" do
     account = Account.create!(name: "Lobby")
     account.kiosks.create!(

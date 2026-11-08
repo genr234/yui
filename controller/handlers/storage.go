@@ -101,15 +101,30 @@ func (StoreGetCommand) Handle(r *Registry, params json.RawMessage) (any, error) 
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, err
 	}
-	collection, err := collection(r, p.Collection)
+	if err := validateScopedCollection(p.Collection); err != nil {
+		return nil, err
+	}
+	var decoded map[string]any
+	err := r.withStore(func(db *store.DB, epoch uint64) error {
+		doc, ok, err := db.Collection(p.Collection).Get(p.ID)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			decoded = map[string]any{"id": p.ID, "value": nil, "store_epoch": epoch}
+			return nil
+		}
+		decoded, err = decodeDocument(doc)
+		if err != nil {
+			return err
+		}
+		decoded["store_epoch"] = epoch
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	doc, ok, err := collection.Get(p.ID)
-	if err != nil || !ok {
-		return nil, err
-	}
-	return decodeDocument(doc)
+	return decoded, nil
 }
 
 type StorePutCommand struct{}
@@ -117,22 +132,44 @@ type StorePutCommand struct{}
 func (StorePutCommand) Name() string { return "store.put" }
 
 func (StorePutCommand) Handle(r *Registry, params json.RawMessage) (any, error) {
-	var p valueParams
+	var p struct {
+		Collection string          `json:"collection"`
+		ID         string          `json:"id"`
+		Value      json.RawMessage `json:"value"`
+		// StoreEpoch is the epoch observed by store.get. When set, the write
+		// is refused if the active account store has changed since that read.
+		StoreEpoch *uint64 `json:"store_epoch"`
+	}
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, err
 	}
-	collection, err := collection(r, p.Collection)
+	if err := validateScopedCollection(p.Collection); err != nil {
+		return nil, err
+	}
+	var decoded map[string]any
+	err := r.withStore(func(db *store.DB, epoch uint64) error {
+		if p.StoreEpoch != nil && *p.StoreEpoch != epoch {
+			return fmt.Errorf("store scope changed")
+		}
+		collection := db.Collection(p.Collection)
+		if err := collection.Put(p.ID, p.Value); err != nil {
+			return err
+		}
+		doc, _, err := collection.Get(p.ID)
+		if err != nil {
+			return err
+		}
+		decoded, err = decodeDocument(doc)
+		if err != nil {
+			return err
+		}
+		decoded["store_epoch"] = epoch
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	if err := collection.Put(p.ID, p.Value); err != nil {
-		return nil, err
-	}
-	doc, _, err := collection.Get(p.ID)
-	if err != nil {
-		return nil, err
-	}
-	return decodeDocument(doc)
+	return decoded, nil
 }
 
 type StoreDeleteCommand struct{}
@@ -206,12 +243,19 @@ type valueParams struct {
 	Value      json.RawMessage `json:"value"`
 }
 
-func collection(r *Registry, name string) (store.Collection, error) {
+func validateScopedCollection(name string) error {
 	if name == "" {
-		return store.Collection{}, fmt.Errorf("collection is required")
+		return fmt.Errorf("collection is required")
 	}
 	if _, ok := scopedStoreCollections[name]; !ok {
-		return store.Collection{}, fmt.Errorf("collection %q is not available through store commands", name)
+		return fmt.Errorf("collection %q is not available through store commands", name)
+	}
+	return nil
+}
+
+func collection(r *Registry, name string) (store.Collection, error) {
+	if err := validateScopedCollection(name); err != nil {
+		return store.Collection{}, err
 	}
 	db, err := r.Store()
 	if err != nil {
