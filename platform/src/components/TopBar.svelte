@@ -8,6 +8,7 @@
 	import { assetSync, type AssetSyncStatus } from "../sdk/assets";
 	import { pad, type PadState } from "../sdk/pad";
 	import SessionChip from "./SessionChip.svelte";
+	import { playChime } from "../sdk/chime";
 	import type { Section, SectionItem } from "../types";
 
 	export let sections: SectionItem[] = [];
@@ -83,7 +84,13 @@
 		for (const id of connected) {
 			if (!seenPlayers.has(id)) fresh[id] = true;
 		}
+		const left = [...seenPlayers].some((id) => !connected.includes(id));
 		seenPlayers = new Set(connected);
+		// Nobody hears a chime for the session ending: that is the kiosk's own action.
+		if (state.session) {
+			if (Object.keys(fresh).length > 0) playChime("join");
+			else if (left) playChime("leave");
+		}
 		if (Object.keys(fresh).length === 0) return;
 		arrived = { ...arrived, ...fresh };
 		window.setTimeout(() => {
