@@ -1,6 +1,6 @@
 module kiosk/controller
 
-go 1.22
+go 1.22.0
 
 require (
 	github.com/gorilla/websocket v1.5.3
@@ -11,6 +11,7 @@ require (
 require (
 	github.com/pion/ice/v4 v4.0.10
 	github.com/pion/webrtc/v4 v4.1.6
+	github.com/tetratelabs/wazero v1.9.0
 	golang.org/x/sys v0.30.0
 )
 
