@@ -1,0 +1,14 @@
+{
+  "name": "Yui Pad",
+  "short_name": "Yui Pad",
+  "description": "Phone controller for the Yui kiosk",
+  "start_url": "/pad/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f1020",
+  "theme_color": "#0f1020",
+  "icons": [
+    { "src": "/pad/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

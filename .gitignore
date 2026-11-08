@@ -41,3 +41,6 @@ installer/installer
 !/server/storage/.keep
 /server/storage/*.sqlite3*
 /server/config/master.key
+
+# Yui Pad build output
+server/public/pad/
