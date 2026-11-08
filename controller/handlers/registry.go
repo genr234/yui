@@ -111,8 +111,8 @@ func (r *Registry) Store() (*store.DB, error) {
 }
 
 // withStore runs fn while the active database and its epoch stay paired.
-// Account switches take the same lock, so a read cannot observe one account's
-// document with another account's epoch.
+// Account publication takes the same lock, so a read cannot observe one
+// account's document with another account's epoch.
 func (r *Registry) withStore(fn func(db *store.DB, epoch uint64) error) error {
 	r.storeMu.Lock()
 	defer r.storeMu.Unlock()
@@ -122,6 +122,9 @@ func (r *Registry) withStore(fn func(db *store.DB, epoch uint64) error) error {
 	return fn(r.store, r.storeEpoch)
 }
 
+// ensureStoreLocked opens the active account database. The caller holds
+// storeMu. Migration uses that database directly: calling Store or withStore
+// from here would lock storeMu again and deadlock.
 func (r *Registry) ensureStoreLocked() error {
 	if r.store != nil {
 		return nil
@@ -157,20 +160,19 @@ func (r *Registry) Close() error {
 	return err
 }
 
-func (r *Registry) resetStore() error {
-	r.storeMu.Lock()
-	defer r.storeMu.Unlock()
-
-	// Bump even when nothing is open. The epoch is what in-flight writes
-	// check, and a switch can happen before the first store command.
+// resetStoreLocked drops the open database and bumps the epoch. The caller
+// holds storeMu and must publish the config that selects the next database
+// before releasing it. The epoch still bumps when nothing is open, because a
+// switch can happen before the first store command.
+func (r *Registry) resetStoreLocked() error {
 	r.storeEpoch++
 	r.migrated = false
 	if r.store == nil {
 		return nil
 	}
-	err := r.store.Close()
+	db := r.store
 	r.store = nil
-	return err
+	return db.Close()
 }
 
 func (r *Registry) migrateLegacyStorage() error {

@@ -92,6 +92,34 @@ test("account switch while a record is in flight does not write the old list", a
 	expect(buckets.get(1)).toEqual([{ id: "links", openedAt: 1 }]);
 });
 
+test("queued launch from the previous account is not written after a switch", async () => {
+	let release: () => void = () => {};
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	const store = memoryStore([{ id: "links", openedAt: 1 }]);
+	let reads = 0;
+	const original = store.read.bind(store);
+	store.read = async () => {
+		const snap = await original();
+		reads += 1;
+		if (reads === 1) await gate;
+		return snap;
+	};
+
+	const blocking = recordRecentApp("fruit", 10, store);
+	const queued = recordRecentApp("subway", 11, store);
+	await Promise.resolve();
+	store.switchTo(2, [{ id: "kept", openedAt: 4 }]);
+	release();
+
+	await expect(blocking).rejects.toThrow("store scope changed");
+	await expect(queued).rejects.toThrow("store scope changed");
+	expect(store.writes).toEqual([]);
+	expect(store.buckets.get(1)).toEqual([{ id: "links", openedAt: 1 }]);
+	expect(store.buckets.get(2)).toEqual([{ id: "kept", openedAt: 4 }]);
+});
+
 test("concurrent records keep every launch", async () => {
 	const store = memoryStore([{ id: "links", openedAt: 1 }]);
 	let releaseFirst: () => void = () => {};

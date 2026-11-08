@@ -7,8 +7,11 @@
  * so it follows the active account and survives a browser profile reset.
  *
  * Writes are read-modify-write against a store epoch. A failed read does not
- * write. A put carries the epoch from its read, and the controller rejects it
- * when the account store has already changed — including the gap before
+ * write. The epoch is captured when the launch is requested, not when its
+ * turn on the queue begins, so a launch queued before an account switch does
+ * not read the next account and record itself there. A put carries the epoch
+ * from the read that built its snapshot, and the controller rejects it when
+ * the account store has already changed — including the gap before
  * `yui:account-changed` is dispatched. Records run one at a time so two
  * launches cannot each write a snapshot that drops the other.
  */
@@ -78,8 +81,17 @@ export async function loadRecentApps(store: RecentAppsStore = defaultStore): Pro
 	}
 }
 
-async function commitRecentApp(store: RecentAppsStore, id: string, now: number): Promise<RecentApp[]> {
+async function commitRecentApp(
+	store: RecentAppsStore,
+	id: string,
+	now: number,
+	origin: Promise<RecentAppsSnapshot>,
+): Promise<RecentApp[]> {
+	const started = await origin;
 	const snap = await store.read();
+	if (snap.epoch !== started.epoch) {
+		throw new Error("store scope changed");
+	}
 	const next = [{ id, openedAt: now }, ...parseRecentApps(snap.items).filter((entry) => entry.id !== id)].slice(0, LIMIT);
 	await store.write(next, snap.epoch);
 	return next;
@@ -90,7 +102,10 @@ export function recordRecentApp(
 	now = Date.now(),
 	store: RecentAppsStore = defaultStore,
 ): Promise<RecentApp[]> {
-	return enqueue(() => commitRecentApp(store, id, now));
+	// Start the scope read now. Waiting for the queue first would let a switch
+	// land, then this launch would read and write the new account.
+	const origin = store.read();
+	return enqueue(() => commitRecentApp(store, id, now, origin));
 }
 
 export function openedAgo(openedAt: number, now = Date.now()) {
