@@ -165,7 +165,7 @@ func TestExtractUnknownFormat(t *testing.T) {
 
 func TestRuntimesExtractOnceAndReplaceOnNewAsset(t *testing.T) {
 	tmp := t.TempDir()
-	archive := filepath.Join(tmp, "dolphin.zip")
+	archive := filepath.Join(tmp, "runtime.zip")
 	writeZip(t, archive, runtimeFixture)
 	rts := &Runtimes{Root: filepath.Join(tmp, "runtimes")}
 	asset := AssetInfo{ID: "7", Kind: AssetKindRuntime, Path: archive, Metadata: []byte(`{"runtime":"emu","version":"2509","archive":"zip"}`)}
@@ -222,7 +222,7 @@ func TestSafeRelPath(t *testing.T) {
 		"dir\\c.txt":   filepath.Join("dir", "c.txt"),
 		".":            "",
 		"dir/./d.txt":  filepath.Join("dir", "d.txt"),
-		"Dolphin.exe":  "Dolphin.exe",
+		"Program.exe":  "Program.exe",
 		"User/Config/": filepath.Join("User", "Config"),
 	}
 	for in, want := range ok {
