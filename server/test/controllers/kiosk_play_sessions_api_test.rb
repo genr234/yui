@@ -40,6 +40,25 @@ class KioskPlaySessionsApiTest < ActionDispatch::IntegrationTest
     assert_equal [ "Ann" ], json["players"].map { |player| player["name"] }
   end
 
+  test "shows the active session roster and 404s once it ends" do
+    play_session = start_session(@kiosk)
+    join_player(play_session)
+
+    get "/api/kiosk/play_sessions/#{play_session.id}", headers: @auth, as: :json
+    assert_response :ok
+    assert_equal play_session.id.to_s, json["id"].to_s
+    assert_equal [ "Ann" ], json["players"].map { |player| player["name"] }
+
+    other = create_kiosk(token: "other-token")
+    other_session = start_session(other)
+    get "/api/kiosk/play_sessions/#{other_session.id}", headers: @auth, as: :json
+    assert_response :not_found
+
+    play_session.end!
+    get "/api/kiosk/play_sessions/#{play_session.id}", headers: @auth, as: :json
+    assert_response :not_found
+  end
+
   test "updates lobby_open and ends the session" do
     play_session = start_session(@kiosk)
     player, = join_player(play_session)

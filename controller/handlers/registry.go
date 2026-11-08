@@ -51,7 +51,10 @@ type Registry struct {
 	emitter       Emitter
 	// padMu guards the play-session handle. Do not take config, store, or
 	// asset locks while holding it.
-	padMu        sync.Mutex
+	padMu sync.Mutex
+	// padStartMu serializes pad.session.start so two taps cannot each open
+	// a manager. It is taken before padMu, never while holding it.
+	padStartMu   sync.Mutex
 	padRoot      context.Context
 	padMgr       *session.Manager
 	padCancel    context.CancelFunc

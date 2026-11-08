@@ -101,7 +101,7 @@ func run() error {
 	defer stop()
 
 	platform.Start(ctx, cfg, staticFS)
-	bridge.Start(ctx, cfg)
+	waitBridge := bridge.Start(ctx, cfg)
 	updater.Start(ctx, cfg)
 
 	runner := supervisor.New(cfg, statusWriter)
@@ -110,6 +110,8 @@ func run() error {
 	}
 
 	log.Printf("controller shutting down")
+	stop() // cancel ctx so a play session ends even if the supervisor returned on its own
+	waitBridge()
 	statusWriter.Write(status.State{
 		Event:      "controller_stopped",
 		ChromePath: cfg.ChromePath,

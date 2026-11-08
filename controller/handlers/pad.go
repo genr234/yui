@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"sync"
 	"time"
 
 	"kiosk/controller/internal/pad/protocol"
@@ -163,7 +164,27 @@ func (r *Registry) activePad() (*session.Manager, error) {
 	return mgr, nil
 }
 
+// WaitPadStopped waits up to timeout for a running play session to finish
+// after the lifecycle context is cancelled, so its DELETE reaches Rails
+// before the process exits.
+func (r *Registry) WaitPadStopped(timeout time.Duration) {
+	r.padMu.Lock()
+	done := r.padDone
+	r.padMu.Unlock()
+	if done == nil {
+		return
+	}
+	select {
+	case <-done:
+	case <-time.After(timeout):
+		log.Printf("pad session: still ending after %s", timeout)
+	}
+}
+
 func (r *Registry) startPadSession() (session.Snapshot, error) {
+	r.padStartMu.Lock()
+	defer r.padStartMu.Unlock()
+
 	r.padMu.Lock()
 	if r.padMgr != nil && r.padMgr.Active() {
 		snap := r.padMgr.Snapshot()
@@ -172,7 +193,22 @@ func (r *Registry) startPadSession() (session.Snapshot, error) {
 	}
 	root := r.padRoot
 	sensitive := r.padSensitive
+	prevCancel, prevDone := r.padCancel, r.padDone
 	r.padMu.Unlock()
+
+	// A previous manager that is still running but not active (reconnecting,
+	// or a start that timed out) is stopped and drained first. Its final
+	// unpause must not land after the new session pauses the syncer.
+	if prevCancel != nil {
+		prevCancel()
+		if prevDone != nil {
+			select {
+			case <-prevDone:
+			case <-time.After(8 * time.Second):
+				return session.Snapshot{Players: []protocol.Player{}}, errors.New("previous play session did not stop")
+			}
+		}
+	}
 
 	cfg, account, ok := r.refreshedAccount()
 	if !ok || cfg.ServerURL == "" || account.DeviceToken == "" {
@@ -187,7 +223,17 @@ func (r *Registry) startPadSession() (session.Snapshot, error) {
 		return session.Snapshot{Players: []protocol.Player{}}, err
 	}
 	mgr.SetSensitive(sensitive)
+	// gate orders watcher snapshots against the final unpause. Once the run
+	// goroutine has ended the session, a late snapshot from a goroutine
+	// still inside the manager is dropped instead of pausing sync again.
+	var gate sync.Mutex
+	ended := false
 	mgr.Watch(func(snap session.Snapshot) {
+		gate.Lock()
+		defer gate.Unlock()
+		if ended {
+			return
+		}
 		r.AssetSyncer().SetPaused(playPauseReason, snap.Session != nil)
 		r.Emit("pad.players", snap)
 	})
@@ -200,12 +246,6 @@ func (r *Registry) startPadSession() (session.Snapshot, error) {
 	errCh := make(chan error, 1)
 
 	r.padMu.Lock()
-	if r.padMgr != nil && r.padMgr.Active() {
-		existing := r.padMgr.Snapshot()
-		r.padMu.Unlock()
-		cancel()
-		return existing, nil
-	}
 	r.padMgr = mgr
 	r.padCancel = cancel
 	r.padDone = done
@@ -218,8 +258,11 @@ func (r *Registry) startPadSession() (session.Snapshot, error) {
 		if err != nil && ctx.Err() == nil {
 			log.Printf("pad session: %v", err)
 		}
+		gate.Lock()
+		ended = true
 		r.AssetSyncer().SetPaused(playPauseReason, false)
 		r.Emit("pad.players", mgr.Snapshot())
+		gate.Unlock()
 	}()
 
 	timer := time.NewTimer(20 * time.Second)
@@ -261,6 +304,7 @@ func (r *Registry) endPadSession() (session.Snapshot, error) {
 			return session.Snapshot{Players: []protocol.Player{}}, errors.New("play session did not end")
 		}
 	}
-	r.AssetSyncer().SetPaused(playPauseReason, false)
+	// The run goroutine has already unpaused the syncer. Doing it again here
+	// could undo the pause of a session started in the meantime.
 	return r.padSnapshot(), nil
 }

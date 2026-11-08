@@ -57,9 +57,12 @@ type rpcResponse struct {
 	Error  string `json:"error,omitempty"`
 }
 
-func Start(ctx context.Context, cfg config.Config) {
+// Start runs the bridge until ctx is cancelled. The returned func blocks
+// after cancellation until a running play session has told Rails it ended,
+// for at most padStopBudget.
+func Start(ctx context.Context, cfg config.Config) (waitStopped func()) {
 	if !cfg.PlatformEnabled {
-		return
+		return func() {}
 	}
 
 	r := New(cfg)
@@ -67,7 +70,11 @@ func Start(ctx context.Context, cfg config.Config) {
 	r.commands.StartAccountSync(ctx)
 	r.commands.BindPadLifecycle(ctx)
 	go r.serve(ctx)
+	return func() { r.commands.WaitPadStopped(padStopBudget) }
 }
+
+// padStopBudget covers the session's goodbye signals and its DELETE.
+const padStopBudget = 6 * time.Second
 
 func New(cfg config.Config) *Runtime {
 	r := &Runtime{

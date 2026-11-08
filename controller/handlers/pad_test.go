@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -126,6 +127,58 @@ func TestPadSessionCommands(t *testing.T) {
 
 }
 
+func TestPadSessionStartIsSerialized(t *testing.T) {
+	fake := newPadRails(t)
+	fake.createDelay = 300 * time.Millisecond
+	dir := t.TempDir()
+	cfg := config.Config{
+		ConfigPath:      filepath.Join(dir, "controller.json"),
+		ConfigDir:       dir,
+		StorePath:       filepath.Join(dir, "store.db"),
+		ServerURL:       fake.url,
+		ActiveAccountID: "acct",
+		Accounts: []config.AccountConfig{{
+			ID: "acct", Name: "Lobby", KioskID: "k1", DeviceToken: "device-token",
+		}},
+	}
+	if err := config.Save(cfg); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("YUI_KIOSK_CONFIG", cfg.ConfigPath)
+	registry := NewRegistry(cfg)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	registry.BindPadLifecycle(ctx)
+
+	// Two taps while Create is still in flight: one from the Home action and
+	// one from the Apps page.
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	for i := range errs {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, errs[i] = registry.Dispatch("pad.session.start", nil)
+		}(i)
+	}
+	wg.Wait()
+	for _, err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if fake.creates() != 1 {
+		t.Fatalf("creates = %d, want 1", fake.creates())
+	}
+
+	if _, err := registry.Dispatch("pad.session.end", nil); err != nil {
+		t.Fatal(err)
+	}
+	waitPause(t, registry.AssetSyncer(), false)
+	cancel()
+	registry.WaitPadStopped(2 * time.Second)
+}
+
 func waitPause(t *testing.T, syncer *assets.Syncer, want bool) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
@@ -145,11 +198,12 @@ func waitPause(t *testing.T, syncer *assets.Syncer, want bool) {
 }
 
 type padRails struct {
-	url   string
-	mu    sync.Mutex
-	calls []string
-	n     int
-	srv   *httptest.Server
+	url         string
+	mu          sync.Mutex
+	calls       []string
+	n           int
+	srv         *httptest.Server
+	createDelay time.Duration
 }
 
 func newPadRails(t *testing.T) *padRails {
@@ -199,7 +253,9 @@ func (f *padRails) create(w http.ResponseWriter, r *http.Request) {
 	}
 	f.mu.Lock()
 	f.n++
+	delay := f.createDelay
 	f.mu.Unlock()
+	time.Sleep(delay)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(session.SessionRecord{
@@ -216,9 +272,15 @@ func (f *padRails) member(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodDelete:
 		w.WriteHeader(http.StatusNoContent)
-	case r.Method == http.MethodGet:
+	case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/ice"):
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"ice_servers": []any{}, "ttl": 86400})
+	case r.Method == http.MethodGet:
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(session.SessionRecord{
+			ID: "sess-1", Code: "KQXM", QRKey: "cXIta2V5LWJ5dGVzLWZvci1zaGFyZWQtdmVjdG9yISE=",
+			JoinBaseURL: f.url + "/play/KQXM",
+		})
 	case r.Method == http.MethodPatch:
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(session.SessionRecord{

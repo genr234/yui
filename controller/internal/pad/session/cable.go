@@ -29,8 +29,9 @@ const (
 	signalBye    = "bye"
 	signalHello  = "hello"
 
-	// signalControl is the local ICE-failure fallback. Rails drops it until
-	// the channel allow-list grows this type. See the package doc.
+	// signalControl is the ICE-failure fallback: control messages relayed
+	// over the cable when a player's data channel cannot connect. Rails
+	// forwards it (PlaySessionChannel allows the type). See the package doc.
 	signalControl = "control"
 
 	maxSignalBytes = 64 * 1024

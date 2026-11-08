@@ -35,7 +35,7 @@ Rails.application.routes.draw do
   # Yui Pad play sessions (kiosk API + phone endpoints)
   namespace :api do
     namespace :kiosk do
-      resources :play_sessions, only: [ :create, :update, :destroy ] do
+      resources :play_sessions, only: [ :create, :show, :update, :destroy ] do
         get :ice, on: :member
         scope module: :play_sessions do
           post "players/:player_id/kick", to: "players#kick", as: :kick_player

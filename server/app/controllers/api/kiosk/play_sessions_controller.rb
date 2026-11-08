@@ -1,12 +1,17 @@
 module Api
   module Kiosk
     class PlaySessionsController < BaseController
-      before_action :set_play_session, only: [ :update, :destroy, :ice ]
+      before_action :set_play_session, only: [ :show, :update, :destroy, :ice ]
 
       def create
         touch_current_kiosk!
         play_session, created = PlaySession.find_or_start_for!(current_kiosk)
         render json: play_session.as_kiosk_json(base_url: request.base_url), status: created ? :created : :ok
+      end
+
+      # The current roster, so the kiosk can resync after a signaling outage.
+      def show
+        render json: @play_session.as_kiosk_json(base_url: request.base_url)
       end
 
       def update

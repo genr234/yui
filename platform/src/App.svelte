@@ -562,7 +562,8 @@
       tone: "blue",
       run: () => {
         section = "apps";
-        void pad.start();
+        // Apps shows the busy state and any error from the shared action.
+        void pad.run("start");
       },
     },
     {

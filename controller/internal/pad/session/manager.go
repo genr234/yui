@@ -163,11 +163,17 @@ func (m *Manager) Run(ctx context.Context) error {
 	m.emit()
 
 	runCtx, cancel := context.WithCancel(ctx)
+	// Deferred calls run last-in first-out: delete, cancel the loops, wait
+	// for them, then the reset above. A QR tick that snapshotted the live
+	// session therefore emits before the final, ended snapshot.
+	var loops sync.WaitGroup
+	defer loops.Wait()
 	defer cancel()
 	defer m.deleteIfStopped(ctx, record.ID)
 
-	go m.qrLoop(runCtx)
-	go m.pingLoop(runCtx)
+	loops.Add(2)
+	go func() { defer loops.Done(); m.qrLoop(runCtx) }()
+	go func() { defer loops.Done(); m.pingLoop(runCtx) }()
 
 	for {
 		if ctx.Err() != nil {
@@ -177,7 +183,7 @@ func (m *Manager) Run(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return nil
 		}
-		if errors.Is(err, errSubscriptionRejected) {
+		if errors.Is(err, errSubscriptionRejected) || errors.Is(err, errSessionGone) {
 			return err
 		}
 		log.Printf("pad session: signaling: %v", err)
@@ -393,6 +399,15 @@ func (m *Manager) connectOnce(ctx context.Context, sessionID string) error {
 	if err := conn.subscribe(ctx); err != nil {
 		return err
 	}
+	// Roster events sent while signaling was down are lost, so take the
+	// roster from Rails before offering. Joins and leaves that arrive after
+	// the subscribe are applied on top by onCable.
+	if err := m.resync(ctx, sessionID); err != nil {
+		if errors.Is(err, errSessionGone) {
+			return err
+		}
+		log.Printf("pad session: roster resync: %v", err)
+	}
 	m.offerConnected()
 
 	select {
@@ -402,6 +417,39 @@ func (m *Manager) connectOnce(ctx context.Context, sessionID string) error {
 	case err := <-errCh:
 		return err
 	}
+}
+
+// resync replaces the roster with the server's and closes peers of players
+// who left while signaling was down.
+func (m *Manager) resync(ctx context.Context, sessionID string) error {
+	rec, err := m.api.Get(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	m.mu.Lock()
+	if m.record == nil || m.record.ID != sessionID {
+		m.mu.Unlock()
+		return nil
+	}
+	m.record.LobbyOpen = rec.LobbyOpen
+	before := make([]string, 0, len(m.players))
+	for id := range m.players {
+		before = append(before, id)
+	}
+	m.mergePlayersLocked(rec.Players)
+	var gone []string
+	for _, id := range before {
+		if m.players[id] == nil {
+			gone = append(gone, id)
+			delete(m.pings, id)
+		}
+	}
+	m.mu.Unlock()
+	for _, id := range gone {
+		m.closePeer(id)
+	}
+	m.emit()
+	return nil
 }
 
 func (m *Manager) onCable(msg cableMessage) {
@@ -656,8 +704,11 @@ func (m *Manager) removePlayer(playerID string) {
 	m.emit()
 }
 
+// closePeer also advances the player's negotiation generation, so a
+// negotiate already past its first check drops the peer it is building.
 func (m *Manager) closePeer(playerID string) {
 	m.mu.Lock()
+	m.negGen[playerID]++
 	peer := m.peers[playerID]
 	delete(m.peers, playerID)
 	m.mu.Unlock()

@@ -36,6 +36,7 @@ type fakeRails struct {
 	sigs    []savedSignal
 	reject  bool
 	status  int
+	gone    bool
 }
 
 func newFake(t *testing.T) *fakeRails {
@@ -127,6 +128,16 @@ func (f *fakeRails) member(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodGet && len(r.URL.Path) > 4 && r.URL.Path[len(r.URL.Path)-4:] == "/ice":
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(ICEConfig{IceServers: []ICEServer{}, TTL: 86400})
+	case r.Method == http.MethodGet:
+		f.mu.Lock()
+		sess, gone := f.sess, f.gone
+		f.mu.Unlock()
+		if gone {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(sess)
 	case r.Method == http.MethodPatch:
 		var payload struct {
 			LobbyOpen bool `json:"lobby_open"`

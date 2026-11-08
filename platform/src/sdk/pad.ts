@@ -1,3 +1,4 @@
+import { writable } from "svelte/store";
 import { bridge } from "./bridge";
 
 /** One phone in the current play session (contracts §2 Player, plus speaker). */
@@ -32,12 +33,43 @@ export const pad = {
 			.catch(() => empty),
 	onState: (fn: (state: PadState) => void) =>
 		bridge.on<PadState>("pad.players", (state) => fn(normalize(state))),
-	start: () => bridge.send<PadState | null>("pad.session.start").then((state) => normalize(state)),
-	end: () => bridge.send<PadState | null>("pad.session.end").then((state) => normalize(state)),
+	/**
+	 * Start or end phone play. Only one runs at a time: a second call while one
+	 * is in flight gets the same promise, whichever button it came from.
+	 * Resolves to the new state, or null when it failed; the error is in
+	 * `padAction`. Never rejects.
+	 */
+	run: (kind: "start" | "end") => runPadAction(kind),
 	/** True while the PIN screen or Settings is open. The controller stores it and later drops pointer/text input. */
 	setSensitive: (active: boolean) =>
 		bridge.send("pad.sensitive", { active }).then(() => undefined).catch(() => undefined),
 };
+
+/** The start/end action shared by every play button: busy while one runs, and the last error. */
+export const padAction = writable<{ busy: boolean; error: string }>({ busy: false, error: "" });
+
+let inFlight: Promise<PadState | null> | null = null;
+
+function runPadAction(kind: "start" | "end"): Promise<PadState | null> {
+	if (inFlight) return inFlight;
+	padAction.set({ busy: true, error: "" });
+	const method = kind === "start" ? "pad.session.start" : "pad.session.end";
+	inFlight = bridge
+		.send<PadState | null>(method)
+		.then((state) => {
+			padAction.set({ busy: false, error: "" });
+			return normalize(state);
+		})
+		.catch((err: unknown) => {
+			const message = err instanceof Error && err.message ? err.message : "Could not change phone play";
+			padAction.set({ busy: false, error: message });
+			return null;
+		})
+		.finally(() => {
+			inFlight = null;
+		});
+	return inFlight;
+}
 
 function normalize(state: PadState | null | undefined): PadState {
 	if (!state || typeof state !== "object") return empty;

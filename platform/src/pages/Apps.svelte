@@ -22,7 +22,7 @@
     normalizeAppCategory,
   } from "../apps";
   import { openedAgo, loadRecentApps, recordRecentApp, type RecentApp } from "../recent-apps";
-  import { pad, type PadState } from "../sdk/pad";
+  import { pad, padAction, type PadState } from "../sdk/pad";
   import type { YuiDevApp } from "../sdk/apps";
   import type { SidebarThemeSettings } from "../types";
 
@@ -41,8 +41,6 @@
   let error = "";
   let loading = true;
   let shellFullscreen = false;
-  let playBusy = false;
-  let playError = "";
   let consumedOpenAppNonce = 0;
   let refreshTimer: number | undefined;
   const dispatch = createEventDispatcher<{
@@ -110,15 +108,8 @@
   ].slice(0, 3);
 
   async function togglePhonePlay() {
-    playBusy = true;
-    playError = "";
-    try {
-      padState = padState.session ? await pad.end() : await pad.start();
-    } catch (err) {
-      playError = err instanceof Error ? err.message : "Could not change phone play";
-    } finally {
-      playBusy = false;
-    }
+    const next = await pad.run(padState.session ? "end" : "start");
+    if (next) padState = next;
   }
 
   function categoryOf(app: YuiDevApp) {
@@ -307,11 +298,11 @@
     <section class="all-apps" aria-label="All apps">
       <header class="all-apps-head">
         <h2>All apps</h2>
-        <button class="play-phones" type="button" disabled={playBusy} on:click={togglePhonePlay}>
+        <button class="play-phones" type="button" disabled={$padAction.busy} on:click={togglePhonePlay}>
           <SmartphoneIcon size={18} strokeWidth={2.2} />
           {padState.session ? "End phone play" : "Play on your phones"}
         </button>
-        {#if playError}<span class="play-phones-error">{playError}</span>{/if}
+        {#if $padAction.error}<span class="play-phones-error">{$padAction.error}</span>{/if}
         {#if categoryNames.length > 1}
           <div class="category-chips" role="group" aria-label="Filter by category">
             <button class:active={filter === ""} aria-pressed={filter === ""} on:click={() => (filter = "")}>All</button>

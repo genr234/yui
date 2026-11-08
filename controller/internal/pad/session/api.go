@@ -75,6 +75,29 @@ func (c *apiClient) Create(ctx context.Context) (SessionRecord, bool, error) {
 	return rec, resp.StatusCode == http.StatusCreated, nil
 }
 
+// errSessionGone means Rails no longer has this kiosk's session as active.
+var errSessionGone = errors.New("pad session: session ended on the server")
+
+// Get fetches the session and its roster. An ended session is errSessionGone.
+func (c *apiClient) Get(ctx context.Context, id string) (SessionRecord, error) {
+	resp, err := c.do(ctx, http.MethodGet, "/api/kiosk/play_sessions/"+url.PathEscape(id), nil)
+	if err != nil {
+		return SessionRecord{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return SessionRecord{}, errSessionGone
+	}
+	if resp.StatusCode != http.StatusOK {
+		return SessionRecord{}, httpStatusError(resp)
+	}
+	var rec SessionRecord
+	if err := decodeJSON(resp.Body, &rec); err != nil {
+		return SessionRecord{}, err
+	}
+	return rec, nil
+}
+
 func (c *apiClient) SetLobbyOpen(ctx context.Context, id string, open bool) (SessionRecord, error) {
 	body, _ := json.Marshal(map[string]bool{"lobby_open": open})
 	resp, err := c.do(ctx, http.MethodPatch, "/api/kiosk/play_sessions/"+url.PathEscape(id), body)
