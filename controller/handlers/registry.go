@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -57,6 +58,53 @@ type Registry struct {
 	padCancel    context.CancelFunc
 	padDone      chan struct{}
 	padSensitive bool
+	// mutationMu: a command that records an outbox entry (local or remote)
+	// holds the read side from its write until that entry is recorded. An
+	// account transition holds the write side while it publishes, so the
+	// write and its entry always land in the same account's store.
+	mutationMu sync.RWMutex
+	// cmdMu guards cmdCancel, which closes the command socket of the
+	// account that opened it.
+	cmdMu     sync.Mutex
+	cmdCancel context.CancelFunc
+}
+
+// errStoreScopeChanged means the active account store moved to a new epoch
+// after the caller captured its scope. The write was not made.
+var errStoreScopeChanged = errors.New("store scope changed")
+
+// storeScope is the published config and store epoch read together. Sync,
+// remote commands, and outbox records capture one at the start and write
+// only while the epoch is unchanged.
+type storeScope struct {
+	cfg     config.Config
+	account config.AccountConfig
+	epoch   uint64
+}
+
+// connected reports whether the scope has an account that can talk to the
+// server.
+func (s storeScope) connected() bool {
+	return s.cfg.ServerURL != "" && s.account.ID != "" && s.account.DeviceToken != ""
+}
+
+// currentScope reads the config and epoch under storeMu. Account publication
+// changes both under that lock, so they always belong to the same account.
+func (r *Registry) currentScope() storeScope {
+	r.storeMu.Lock()
+	defer r.storeMu.Unlock()
+	cfg := r.snapshotConfig()
+	scope := storeScope{cfg: cfg, epoch: r.storeEpoch}
+	if account, ok := findAccount(cfg.Accounts, cfg.ActiveAccountID); ok {
+		scope.account = *account
+	}
+	return scope
+}
+
+// refreshedScope reloads the account fields from disk and captures a scope.
+func (r *Registry) refreshedScope() storeScope {
+	r.reloadAccountConfig()
+	return r.currentScope()
 }
 
 func NewRegistry(cfg config.Config) *Registry {
@@ -101,20 +149,34 @@ func (r *Registry) DispatchAuthenticated(method string, params json.RawMessage) 
 	if err := r.Authorize(method, params); err != nil {
 		return nil, err
 	}
+	if !recordsMutation(method) {
+		return r.Dispatch(method, params)
+	}
+	r.mutationMu.RLock()
+	defer r.mutationMu.RUnlock()
+	epoch := r.currentScope().epoch
 	result, err := r.Dispatch(method, params)
 	if err == nil {
-		r.recordMutation(method, params, result)
+		r.recordMutation(epoch, method, params, result)
 	}
 	return result, err
 }
 
 func (r *Registry) DispatchRemote(method string, params json.RawMessage) (any, error) {
+	r.mutationMu.RLock()
+	defer r.mutationMu.RUnlock()
+	return r.dispatchRemoteAt(r.currentScope().epoch, method, params)
+}
+
+// dispatchRemoteAt runs a server command for the store at epoch. The caller
+// holds mutationMu for reading, so the epoch cannot move while it runs.
+func (r *Registry) dispatchRemoteAt(epoch uint64, method string, params json.RawMessage) (any, error) {
 	if !remoteCommandAllowed(method) {
 		return nil, fmt.Errorf("remote command %q is not allowed", method)
 	}
 	result, err := r.Dispatch(method, params)
 	if err == nil {
-		r.recordMutation(method, params, result)
+		r.recordMutation(epoch, method, params, result)
 	}
 	return result, err
 }
@@ -138,6 +200,22 @@ func (r *Registry) withStore(fn func(db *store.DB, epoch uint64) error) error {
 		return err
 	}
 	return fn(r.store, r.storeEpoch)
+}
+
+// withStoreAt runs fn on the active database only while the store epoch
+// still equals epoch. Otherwise it returns errStoreScopeChanged and writes
+// nothing, so a sync or command that started on one account cannot write the
+// next account's database.
+func (r *Registry) withStoreAt(epoch uint64, fn func(db *store.DB) error) error {
+	r.storeMu.Lock()
+	defer r.storeMu.Unlock()
+	if r.storeEpoch != epoch {
+		return errStoreScopeChanged
+	}
+	if err := r.ensureStoreLocked(); err != nil {
+		return err
+	}
+	return fn(r.store)
 }
 
 // ensureStoreLocked opens the active account database. The caller holds

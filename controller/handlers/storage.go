@@ -149,7 +149,7 @@ func (StorePutCommand) Handle(r *Registry, params json.RawMessage) (any, error) 
 	var decoded map[string]any
 	err := r.withStore(func(db *store.DB, epoch uint64) error {
 		if p.StoreEpoch != nil && *p.StoreEpoch != epoch {
-			return fmt.Errorf("store scope changed")
+			return errStoreScopeChanged
 		}
 		collection := db.Collection(p.Collection)
 		if err := collection.Put(p.ID, p.Value); err != nil {
@@ -177,15 +177,25 @@ type StoreDeleteCommand struct{}
 func (StoreDeleteCommand) Name() string { return "store.delete" }
 
 func (StoreDeleteCommand) Handle(r *Registry, params json.RawMessage) (any, error) {
-	var p documentParams
+	var p struct {
+		Collection string `json:"collection"`
+		ID         string `json:"id"`
+		// StoreEpoch is optional, as for store.put. When set, the delete is
+		// refused if the active account store has changed since that read.
+		StoreEpoch *uint64 `json:"store_epoch"`
+	}
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, err
 	}
-	collection, err := collection(r, p.Collection)
-	if err != nil {
+	if err := validateScopedCollection(p.Collection); err != nil {
 		return nil, err
 	}
-	return nil, collection.Delete(p.ID)
+	return nil, r.withStore(func(db *store.DB, epoch uint64) error {
+		if p.StoreEpoch != nil && *p.StoreEpoch != epoch {
+			return errStoreScopeChanged
+		}
+		return db.Collection(p.Collection).Delete(p.ID)
+	})
 }
 
 type StoreListCommand struct{}

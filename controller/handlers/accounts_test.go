@@ -193,22 +193,22 @@ func TestPushOperationsBatchesPendingOperations(t *testing.T) {
 	})
 
 	for i := 0; i < accountSyncBatchSize+1; i++ {
-		if err := registry.appendOperation(defaultStorageCollection, fmt.Sprintf("key-%d", i), "put", mustJSON(t, i)); err != nil {
+		if err := registry.appendOperation(0, defaultStorageCollection, fmt.Sprintf("key-%d", i), "put", mustJSON(t, i)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	pending, err := registry.pendingOperations()
+	pending, err := registry.pendingOperations(0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := registry.pushOperations(cfg.Accounts[0], pending); err != nil {
+	if err := registry.pushOperations(registry.currentScope(), pending); err != nil {
 		t.Fatal(err)
 	}
 
 	if len(batchSizes) != 2 || batchSizes[0] != accountSyncBatchSize || batchSizes[1] != 1 {
 		t.Fatalf("unexpected batch sizes: %+v", batchSizes)
 	}
-	pending, err = registry.pendingOperations()
+	pending, err = registry.pendingOperations(0)
 	if err != nil {
 		t.Fatal(err)
 	}
