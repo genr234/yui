@@ -192,7 +192,9 @@ func (r *Registry) Authorize(method string, params json.RawMessage) error {
 
 func publicAuthMethod(method string) bool {
 	switch method {
-	case "auth.status", "auth.setPin", "auth.verifyPin", "status.get", "diagnostics.get", "config.get", "accounts.status":
+	// pad.sensitive must work on the PIN screen itself (D9): it can only
+	// block remote input, never grant anything.
+	case "auth.status", "auth.setPin", "auth.verifyPin", "status.get", "diagnostics.get", "config.get", "accounts.status", "pad.sensitive":
 		return true
 	default:
 		return false

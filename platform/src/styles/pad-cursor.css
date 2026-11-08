@@ -1,0 +1,74 @@
+/* The phone trackpad cursor (PadCursor.svelte). Drawn above everything and
+ * never hit-testable: clicks are dispatched by the controller over CDP. */
+.pad-cursor-layer {
+	position: fixed;
+	inset: 0;
+	z-index: 2147483647;
+	pointer-events: none;
+	overflow: hidden;
+}
+
+.pad-cursor {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 0;
+	height: 0;
+	opacity: 0;
+	transition: opacity 260ms ease;
+	will-change: transform;
+}
+
+.pad-cursor.shown {
+	opacity: 1;
+	transition-duration: var(--yui-press);
+}
+
+.pad-cursor-arrow {
+	position: absolute;
+	/* The arrow tip (3, 2.5 in the 24-unit box) sits on the point. */
+	top: -3px;
+	left: -3.5px;
+	overflow: visible;
+	filter: drop-shadow(var(--yui-shadow-knob-raised));
+}
+
+.pad-cursor-arrow path {
+	fill: var(--pad-cursor-color, var(--yui-blue));
+	stroke: var(--yui-surface);
+	stroke-width: 1.6;
+	stroke-linejoin: round;
+}
+
+.pad-cursor-ripple {
+	position: absolute;
+	top: -22px;
+	left: -22px;
+	width: 44px;
+	height: 44px;
+	border: 3px solid var(--pad-cursor-color, var(--yui-blue));
+	border-radius: 50%;
+	animation: pad-cursor-ripple 420ms var(--yui-ease-out) both;
+}
+
+@keyframes pad-cursor-ripple {
+	from {
+		opacity: 0.85;
+		transform: scale(0.3);
+	}
+	to {
+		opacity: 0;
+		transform: scale(1);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.pad-cursor,
+	.pad-cursor.shown {
+		transition: none;
+	}
+
+	.pad-cursor-ripple {
+		animation-duration: 1ms;
+	}
+}

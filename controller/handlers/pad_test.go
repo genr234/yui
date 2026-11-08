@@ -40,6 +40,7 @@ func TestPadSessionCommands(t *testing.T) {
 	t.Setenv("YUI_KIOSK_CONFIG", cfg.ConfigPath)
 
 	registry := NewRegistry(cfg)
+	registry.padDSUAddrs = [2]string{"127.0.0.1:0", "127.0.0.1:0"}
 	var events []session.Snapshot
 	var eventMu sync.Mutex
 	registry.SetEmitter(func(event string, data any) {
@@ -82,6 +83,15 @@ func TestPadSessionCommands(t *testing.T) {
 	}
 	if !registry.padMgr.Sensitive() {
 		t.Fatal("sensitive flag was not applied to the session")
+	}
+	if registry.padRouter == nil || !registry.padRouter.Sensitive() {
+		t.Fatal("sensitive flag was not applied to the input hub")
+	}
+	if _, err := registry.Dispatch("pad.sensitive", json.RawMessage(`{"active":false}`)); err != nil {
+		t.Fatal(err)
+	}
+	if registry.padRouter.Sensitive() {
+		t.Fatal("hub kept the sensitive flag")
 	}
 	waitPause(t, registry.AssetSyncer(), true)
 
@@ -146,6 +156,7 @@ func TestPadSessionStartIsSerialized(t *testing.T) {
 	}
 	t.Setenv("YUI_KIOSK_CONFIG", cfg.ConfigPath)
 	registry := NewRegistry(cfg)
+	registry.padDSUAddrs = [2]string{"127.0.0.1:0", "127.0.0.1:0"}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	registry.BindPadLifecycle(ctx)
