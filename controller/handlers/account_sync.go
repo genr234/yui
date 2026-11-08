@@ -79,6 +79,7 @@ type syncMeta struct {
 func (r *Registry) StartAccountSync(ctx context.Context) {
 	go r.accountLoop(ctx)
 	go r.accountCommandLoop(ctx)
+	r.StartAssetSync(ctx)
 }
 
 func (r *Registry) accountLoop(ctx context.Context) {
@@ -651,7 +652,8 @@ func remoteCommandAllowed(method string) bool {
 		"apps.install", "apps.uninstall",
 		"plugins.sources.add", "plugins.sources.remove", "plugins.sources.refresh",
 		"plugins.install", "plugins.uninstall", "plugins.enable", "plugins.disable",
-		"plugins.permissions.update", "plugins.settings.update":
+		"plugins.permissions.update", "plugins.settings.update",
+		"assets.reconcile":
 		return true
 	default:
 		return false

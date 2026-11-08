@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"kiosk/controller/internal/assets"
 	"kiosk/controller/internal/config"
 	"kiosk/controller/internal/store"
 )
@@ -34,6 +35,8 @@ type Registry struct {
 	pluginCtx context.Context
 	syncMu    sync.Mutex
 	syncState accountSyncState
+	assetsMu  sync.Mutex
+	assetSync *assets.Syncer
 }
 
 func NewRegistry(cfg config.Config) *Registry {
@@ -51,6 +54,7 @@ func NewRegistry(cfg config.Config) *Registry {
 	r.Register(ProcessCommands()...)
 	r.Register(NetworkCommands()...)
 	r.Register(AppsCommands()...)
+	r.Register(AssetsCommands()...)
 	r.plugins = NewPluginManager(r)
 	r.Register(PluginCommands()...)
 	r.Register(UpdateCommands()...)
