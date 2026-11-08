@@ -41,15 +41,13 @@ class PadCspTest < ActionDispatch::IntegrationTest
     FileUtils.rm_rf(dir) if dir
   end
 
-  test "pad shell and vite build contain no inline scripts" do
+  # Vite writes public/pad, which is gitignored, and bin/ci does not build it.
+  # The built HTML is covered by pad/src/csp.test.ts, which runs Vite into a
+  # temp directory. This example stays on the committed shell so a clean
+  # checkout can run the Rails suite.
+  test "committed pad shell contains no inline scripts" do
     source = Rails.root.join("../pad/index.html").read
     assert_no_inline_scripts(source)
-
-    built = Rails.root.join("public/pad/index.html")
-    assert built.file?, "run just build-pad before this test"
-    built_html = built.read
-    assert_no_inline_scripts(built_html)
-    assert_includes built_html, 'src="/pad/'
   end
 
   private

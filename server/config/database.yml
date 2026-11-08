@@ -6,7 +6,18 @@
 #
 default: &default
   adapter: sqlite3
-  max_connections: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+  # Puma request threads hold a connection until a streamed body closes
+  # (multi-GB FileRangeBody downloads). Action Cable channel callbacks run
+  # on their own worker pool in the same process (default 4; see
+  # config/initializers/action_cable.rb). Those threads check out their own
+  # connections, so the pool is RAILS_MAX_THREADS + that worker pool.
+  #
+  # Solid Queue's Puma plugin forks a supervisor unless solid_queue_mode is
+  # :async (this app does not set that). Job threads do not share the web
+  # process pool; the child gets its own pools of this same size. Solid Queue
+  # checks the queue database against worker threads + 2 (queue.yml uses 3,
+  # so 5). This size still satisfies that check.
+  max_connections: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 }.to_i + ENV.fetch("ACTION_CABLE_WORKER_POOL_SIZE") { 4 }.to_i %>
   timeout: 5000
 
 development:

@@ -120,6 +120,7 @@ check:
   cd {{installer_dir}} && go build ./...
   cd {{platform_dir}} && bun run build
   cd {{protocol_dir}} && bun test
+  cd {{pad_dir}} && bun test
   cd {{pad_dir}} && bun run build
   cd {{controller_dir}} && go test ./internal/pad/...
   cd {{server_dir}} && bin/ci
