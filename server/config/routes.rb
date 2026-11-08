@@ -32,6 +32,25 @@ Rails.application.routes.draw do
     end
   end
 
+  # Yui Pad play sessions (kiosk API + phone endpoints)
+  namespace :api do
+    namespace :kiosk do
+      resources :play_sessions, only: [ :create, :update, :destroy ] do
+        get :ice, on: :member
+        scope module: :play_sessions do
+          post "players/:player_id/kick", to: "players#kick", as: :kick_player
+          post "players/:player_id/host", to: "players#host", as: :host_player
+        end
+      end
+    end
+  end
+  scope "play/:code", controller: :play, constraints: { code: /[A-Za-z]{4}/ } do
+    get "/", action: :show, as: :play
+    get "info", action: :info, as: :play_info
+    post "join", action: :join, as: :play_join
+    get "ice", action: :ice, as: :play_ice
+  end
+
   # Define your application routes per the DSL in https://guides.rubyonrails.org/routing.html
 
   # Reveal health status on /up that returns 200 if the app boots with no exceptions, otherwise 500.
