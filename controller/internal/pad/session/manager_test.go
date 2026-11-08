@@ -609,3 +609,30 @@ func TestQRPublishUsesClock(t *testing.T) {
 		t.Fatal("token did not rotate")
 	}
 }
+
+func TestLinkHealthInRoster(t *testing.T) {
+	mgr, err := Open(Config{ServerURL: "http://kiosk.example", DeviceToken: "t"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr.players["p1"] = &playerState{Player: playerFixture("p1", 1, true, true)}
+	if got := mgr.Snapshot().Players[0]; got.RTTMillis != nil || got.InputHz != nil {
+		t.Fatalf("unmeasured player reports health: %+v", got)
+	}
+	mgr.mu.Lock()
+	mgr.players["p1"].rateSince = time.Now().Add(-2 * time.Second)
+	mgr.players["p1"].rtt = 23400 * time.Microsecond
+	mgr.players["p1"].hasRTT = true
+	mgr.mu.Unlock()
+	for seq := uint16(1); seq <= 120; seq++ {
+		mgr.applyInput("p1", protocol.EncodeInput(protocol.InputState{Seq: seq}))
+	}
+	mgr.pingAll()
+	got := mgr.Snapshot().Players[0]
+	if got.RTTMillis == nil || *got.RTTMillis != 23 {
+		t.Fatalf("rtt %+v", got.RTTMillis)
+	}
+	if got.InputHz == nil || *got.InputHz < 55 || *got.InputHz > 61 {
+		t.Fatalf("input rate %+v", got.InputHz)
+	}
+}

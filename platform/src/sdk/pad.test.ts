@@ -23,7 +23,7 @@ mock.module("./bridge", () => ({
 
 const listeners = new Map<string, (data: unknown) => void>();
 
-const { pad, padAction, cursorColor, remoteIntent } = await import("./pad");
+const { pad, padAction, cursorColor, remoteIntent, linkQuality } = await import("./pad");
 
 describe("pad events", () => {
 	test("each phone event has its own bridge event name", () => {
@@ -104,5 +104,14 @@ describe("session admin", () => {
 		fail = null;
 		expect(result).toBeNull();
 		expect(get(padAction)).toEqual({ busy: false, error: "player not found" });
+	});
+});
+
+describe("linkQuality", () => {
+	test("buckets the round trip", () => {
+		expect(linkQuality(undefined)).toBeNull();
+		expect(linkQuality(12)).toBe("good");
+		expect(linkQuality(80)).toBe("ok");
+		expect(linkQuality(400)).toBe("slow");
 	});
 });

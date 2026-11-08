@@ -10,7 +10,18 @@ export type PadPlayer = {
 	host: boolean;
 	speaker?: boolean;
 	connected: boolean;
+	/** Last control round trip in ms and accepted input frames per second (absent until measured). */
+	rtt_ms?: number;
+	input_hz?: number;
 };
+
+/** How a phone's link feels: good under 60 ms, ok under 150 ms, slow above. */
+export function linkQuality(rttMs: number | undefined): "good" | "ok" | "slow" | null {
+	if (typeof rttMs !== "number") return null;
+	if (rttMs < 60) return "good";
+	if (rttMs < 150) return "ok";
+	return "slow";
+}
 
 /** `pad.cursor`: the phone trackpad's cursor, in CSS pixels of the page viewport. */
 export type PadCursor = {

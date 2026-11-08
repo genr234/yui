@@ -299,8 +299,8 @@ class DemoBridge {
 			this.padState = {
 				session: { code: "KQXM", join_url: "https://yui.example/play/KQXM?t=OT56FOOG", lobby_open: false },
 				players: [
-					{ id: "p1", slot: 1, name: "Riccardo", color: "blue", host: true, speaker: true, connected: true },
-					{ id: "p2", slot: 2, name: "Sam", color: "purple", host: false, connected: true },
+					{ id: "p1", slot: 1, name: "Riccardo", color: "blue", host: true, speaker: true, connected: true, rtt_ms: 18, input_hz: 60 },
+					{ id: "p2", slot: 2, name: "Sam", color: "purple", host: false, connected: true, rtt_ms: 94, input_hz: 58.5 },
 					{ id: "p3", slot: 3, name: "Ada", color: "green", host: false, connected: false },
 				],
 			};

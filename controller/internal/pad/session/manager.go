@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"sort"
 	"sync"
@@ -42,6 +43,11 @@ type Config struct {
 type Player struct {
 	protocol.Player
 	Speaker bool `json:"speaker"`
+	// Link health for the overlay (pad.players only): the last control
+	// round trip and accepted input frames per second over the last ping
+	// interval. Absent until measured.
+	RTTMillis *int     `json:"rtt_ms,omitempty"`
+	InputHz   *float64 `json:"input_hz,omitempty"`
 }
 
 // SessionView is the bridge session object: code, the current QR URL and
@@ -106,8 +112,14 @@ type playerState struct {
 	hasInput bool
 	rtt      time.Duration
 	hasRTT   bool
-	hello    *protocol.Hello
-	fallback bool
+	// frames counts accepted input frames since rateSince; pingAll turns
+	// them into inputHz.
+	frames    int
+	rateSince time.Time
+	inputHz   float64
+	hasRate   bool
+	hello     *protocol.Hello
+	fallback  bool
 }
 
 type pendingPing struct {
@@ -312,6 +324,16 @@ func (m *Manager) rosterLocked() []Player {
 	out := make([]Player, len(sorted))
 	for i, p := range sorted {
 		out[i] = m.withSpeakerLocked(p)
+		if st := m.players[p.ID]; st != nil {
+			if st.hasRTT {
+				ms := int(st.rtt.Round(time.Millisecond) / time.Millisecond)
+				out[i].RTTMillis = &ms
+			}
+			if st.hasRate {
+				hz := st.inputHz
+				out[i].InputHz = &hz
+			}
+		}
 	}
 	return out
 }
@@ -958,6 +980,7 @@ func (m *Manager) applyInput(playerID string, raw []byte) {
 	}
 	st.input = state
 	st.hasInput = true
+	st.frames++
 	fn := m.onInput
 	m.mu.Unlock()
 	if fn != nil {
@@ -1168,8 +1191,17 @@ func (m *Manager) pingLoop(ctx context.Context) {
 
 func (m *Manager) pingAll() {
 	m.mu.Lock()
+	now := m.now()
 	var ids []string
 	for id, st := range m.players {
+		if !st.rateSince.IsZero() {
+			if elapsed := now.Sub(st.rateSince).Seconds(); elapsed > 0 {
+				st.inputHz = math.Round(float64(st.frames)/elapsed*10) / 10
+				st.hasRate = true
+			}
+		}
+		st.frames = 0
+		st.rateSince = now
 		peer := m.peers[id]
 		ready := peer != nil && peer.controlReady()
 		fallback := st.fallback || (peer != nil && peer.fallback.Load())
@@ -1180,6 +1212,10 @@ func (m *Manager) pingAll() {
 	m.mu.Unlock()
 	for _, id := range ids {
 		m.sendPing(id)
+	}
+	// Refresh the overlay's link health (last round's RTT, this interval's rate).
+	if len(ids) > 0 {
+		m.emit()
 	}
 }
 

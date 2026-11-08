@@ -366,6 +366,22 @@ button.topbar-chip {
 	font-weight: 500;
 }
 
+.session-link {
+	font-variant-numeric: tabular-nums;
+}
+
+.session-link.good {
+	color: var(--yui-green);
+}
+
+.session-link.ok {
+	color: #a86a00;
+}
+
+.session-link.slow {
+	color: var(--yui-red);
+}
+
 .session-player-actions {
 	display: flex;
 	gap: 4px;

@@ -5,7 +5,7 @@
 	import Volume2Icon from "lucide-svelte/icons/volume-2";
 	import XIcon from "lucide-svelte/icons/x";
 	import JoinQr from "./JoinQr.svelte";
-	import { pad, padAction, playerSwatch, type PadPlayer, type PadState } from "../sdk/pad";
+	import { linkQuality, pad, padAction, playerSwatch, type PadPlayer, type PadState } from "../sdk/pad";
 
 	/** Session and roster, owned by the top bar. */
 	export let padState: PadState = { session: null, players: [] };
@@ -176,6 +176,12 @@
 								<strong>{player.name}</strong>
 								<span>
 									{#if !player.connected}Reconnecting…{:else if player.host && player.speaker}Host · sound{:else if player.host}Host{:else if player.speaker}Sound{:else}Playing{/if}
+									{#if player.connected && linkQuality(player.rtt_ms)}
+										<span
+											class={`session-link ${linkQuality(player.rtt_ms)}`}
+											title={`Round trip ${player.rtt_ms} ms${typeof player.input_hz === "number" ? `, ${player.input_hz} inputs/s` : ""}`}
+										>· {player.rtt_ms} ms</span>
+									{/if}
 								</span>
 							</span>
 							<span class="session-player-actions">
