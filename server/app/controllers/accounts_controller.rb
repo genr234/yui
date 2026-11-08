@@ -36,6 +36,7 @@ class AccountsController < ApplicationController
     @pairing_codes = @account.pairing_codes.order(created_at: :desc).limit(10)
     @kiosks = @account.kiosks.order(:name)
     @state_records = @account.account_state_records.order(:collection, :record_id)
+    @assets = @account.assets.includes(:kiosk_assets).order(created_at: :desc)
     @operations = @account.kiosk_operations
       .then { |scope| @account.operations_cleared_at.present? ? scope.where("kiosk_operations.created_at > ?", @account.operations_cleared_at) : scope }
       .order(server_seq: :desc)

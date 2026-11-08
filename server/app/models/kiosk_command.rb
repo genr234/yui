@@ -14,6 +14,7 @@ class KioskCommand < ApplicationRecord
     plugins.disable
     plugins.permissions.update
     plugins.settings.update
+    assets.reconcile
   ].freeze
 
   STATUSES = %w[pending sent succeeded failed].freeze

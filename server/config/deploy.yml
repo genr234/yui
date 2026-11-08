@@ -23,6 +23,14 @@ servers:
 # proxy:
 #   ssl: true
 #   host: app.example.com
+#   # Asset library: tus PATCHes are up to 50 MB and kiosk downloads are multi-GB
+#   # streams. Don't buffer responses (kiosks resume with Range), allow 64 MB request
+#   # bodies, and give slow links time.
+#   response_timeout: 600
+#   buffering:
+#     requests: true
+#     responses: false
+#     max_request_body: 67_108_864
 
 # Where you keep your container images.
 registry:
@@ -44,6 +52,11 @@ env:
     # Run the Solid Queue Supervisor inside the web server's Puma process to do jobs.
     # When you start using multiple servers, you should split out job processing to a dedicated machine.
     SOLID_QUEUE_IN_PUMA: true
+
+    # Thruster's 30 s defaults cut off 50 MB tus chunks on slow uplinks and multi-GB
+    # kiosk downloads (the write timeout covers the whole response).
+    HTTP_READ_TIMEOUT: 900
+    HTTP_WRITE_TIMEOUT: 86400
 
     # Set number of processes dedicated to Solid Queue (default: 1)
     # JOB_CONCURRENCY: 3

@@ -38,6 +38,25 @@ Rails.application.routes.draw do
   # Can be used by load balancers and uptime monitors to verify that the app is live.
   get "up" => "rails/health#show", as: :rails_health_check
 
+  # Asset library (Phase 4): browser list/delete, tus uploads, public covers, kiosk API.
+  resources :accounts, only: [] do
+    resources :assets, only: [ :index, :destroy ]
+    match "uploads", to: "asset_uploads#options", via: :options
+    post "uploads", to: "asset_uploads#create", as: :asset_uploads
+    get "uploads/:id", to: "asset_uploads#show", as: :asset_upload
+    patch "uploads/:id", to: "asset_uploads#update"
+    delete "uploads/:id", to: "asset_uploads#destroy"
+    match "uploads/:id", to: "asset_uploads#options", via: :options
+  end
+  get "covers/:game_id.png", to: "covers#show", as: :cover, format: false, constraints: { game_id: /[A-Z0-9]{6}/ }
+  namespace :api do
+    namespace :kiosk do
+      get "assets", to: "assets#index"
+      get "assets/:id/download", to: "assets#download", as: :asset_download
+      patch "assets/:id/status", to: "assets#update_status", as: :asset_status
+    end
+  end
+
   # Render dynamic PWA files from app/views/pwa/* (remember to link manifest in application.html.erb)
   # get "manifest" => "rails/pwa#manifest", as: :pwa_manifest
   # get "service-worker" => "rails/pwa#service_worker", as: :pwa_service_worker

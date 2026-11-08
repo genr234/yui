@@ -1,0 +1,55 @@
+<%= turbo_frame_tag "asset_library" do %>
+  <div class="asset-library__list" data-asset-library-active="<%= asset_library_active?(assets) %>">
+    <% if assets.any? %>
+      <ul class="plain-list asset-list">
+        <% assets.each do |asset| %>
+          <li id="<%= dom_id(asset) %>" class="asset-row">
+            <span class="asset-cover">
+              <% if asset.cover? %>
+                <%= image_tag cover_path(asset.game_id), alt: "", loading: "lazy" %>
+              <% else %>
+                <span><%= asset_kind_label(asset.kind).first %></span>
+              <% end %>
+            </span>
+            <span class="asset-row__main">
+              <strong><%= asset.title %></strong>
+              <small>
+                <%= asset_kind_label(asset.kind) %>
+                · <%= number_to_human_size(asset.byte_size) %>
+                <% if asset.game_id.present? %>· <code><%= asset.game_id %></code><% end %>
+                <% if asset.metadata["format"].present? && asset.metadata["format"] != "unknown" %>· <%= asset.metadata["format"].upcase %><% end %>
+                <% if asset.kind == "runtime" && asset.metadata["runtime"].present? %>· <%= [ asset.metadata["runtime"], asset.metadata["version"] ].compact_blank.join(" ") %><% end %>
+              </small>
+              <small class="asset-row__file"><%= asset.filename %></small>
+
+              <% if asset.uploading? %>
+                <progress class="asset-progress" value="<%= asset.stored_bytes %>" max="<%= [ asset.byte_size, 1 ].max %>"></progress>
+                <small><%= asset_progress(asset.stored_bytes, asset.byte_size) %> uploaded<% if asset.updated_at < AssetsHelper::LIVE_WINDOW.ago %> · paused, select the same file above to resume<% end %></small>
+              <% elsif asset.failed? %>
+                <small class="asset-row__error"><%= asset.error %></small>
+              <% elsif asset.ready? %>
+                <% if kiosks.any? %>
+                  <span class="asset-sync">
+                    <% kiosks.each do |kiosk| %>
+                      <span class="asset-sync__kiosk asset-sync__kiosk--<%= asset_kiosk_sync_state(asset, kiosk) %>"><%= asset_kiosk_sync_label(asset, kiosk) %></span>
+                    <% end %>
+                  </span>
+                <% else %>
+                  <small>No kiosks to sync to yet.</small>
+                <% end %>
+              <% end %>
+            </span>
+            <span class="asset-row__actions">
+              <span class="quiet-status quiet-status--<%= asset.status == "ready" ? "on" : asset.status %>"><%= asset.status %></span>
+              <%= button_to "Delete", account_asset_path(account, asset), method: :delete,
+                    class: "button button--ghost button--small",
+                    form: { data: { turbo_frame: "_top", turbo_confirm: "Delete #{asset.title}? Kiosks will remove it too." } } %>
+            </span>
+          </li>
+        <% end %>
+      </ul>
+    <% else %>
+      <p class="empty-copy">Uploaded games, runtimes and media will appear here.</p>
+    <% end %>
+  </div>
+<% end %>

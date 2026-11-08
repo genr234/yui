@@ -3,6 +3,9 @@ class Kiosk < ApplicationRecord
   has_many :kiosk_commands, dependent: :destroy
   has_many :kiosk_operations, dependent: :nullify
 
+  # Asset library sync state (Phase 4).
+  has_many :kiosk_assets, dependent: :delete_all
+
   validates :name, :device_uid, :device_token_digest, presence: true
   validates :device_uid, uniqueness: { scope: :account_id }
   validates :device_token_digest, uniqueness: true
