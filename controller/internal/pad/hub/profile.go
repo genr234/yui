@@ -7,9 +7,8 @@ import (
 	"kiosk/controller/internal/pad/protocol"
 )
 
-// Output kinds a profile can name. Event routes use the event's own kind
-// when Route.Kind is empty ("press", "release", "tap", "change", "submit",
-// "swipe").
+// Output kinds a profile can name. Event outputs always carry the event's
+// own kind ("press", "release", "tap", "change", "submit", "swipe").
 const (
 	// KindButton is the level of one button bit. Value is bool.
 	KindButton = "button"
@@ -40,8 +39,9 @@ type Adapter interface {
 // Route maps one control id, one button bit, a text op, or the raw input
 // frame onto an adapter target. Home cannot be routed.
 type Route struct {
-	// Control is a layout control id. Set for event routes and optional on
-	// text routes. Empty for button and state routes.
+	// Control is a layout control id. Set for event routes. Empty for
+	// button, state, and text routes: text ops carry no control id, so a
+	// text route receives text from every keyboard on the layout.
 	Control string
 	// Button is one protocol button bit. Zero except on button routes.
 	Button uint32
@@ -49,8 +49,9 @@ type Route struct {
 	Adapter string
 	// Target is the adapter-specific output name (key, pad control, event).
 	Target string
-	// Kind is KindButton, KindState, KindText, or an event kind. Empty on a
-	// control route means "use the event's kind".
+	// Kind is KindButton, KindState, KindText, or an event kind. On a
+	// control route it filters: only events of that kind match. Empty
+	// matches every kind.
 	Kind string
 }
 
@@ -80,7 +81,7 @@ func (r Route) ok() bool {
 	case r.Kind == KindState:
 		return r.Button == 0 && r.Control == ""
 	case r.Kind == KindText:
-		return r.Button == 0
+		return r.Button == 0 && r.Control == ""
 	case r.Button != 0:
 		return r.Button&(r.Button-1) == 0 && r.Control == ""
 	default:
@@ -102,7 +103,7 @@ func (r Route) validate() error {
 	case r.Kind == KindState:
 		return fmt.Errorf("%w: a state route has no button or control", ErrBadRoute)
 	case r.Kind == KindText:
-		return fmt.Errorf("%w: a text route has no button", ErrBadRoute)
+		return fmt.Errorf("%w: a text route has no button or control", ErrBadRoute)
 	case r.Button != 0:
 		if r.Button&(r.Button-1) != 0 {
 			return fmt.Errorf("%w: a button route is a single bit", ErrBadRoute)
@@ -149,17 +150,13 @@ func (p Profile) outputsForEvent(ev protocol.Event) []Output {
 		if !r.ok() || r.Button != 0 || r.Kind == KindState || r.Kind == KindText {
 			continue
 		}
-		if r.Control != ev.Control {
+		if r.Control != ev.Control || (r.Kind != "" && r.Kind != ev.Kind) {
 			continue
-		}
-		kind := r.Kind
-		if kind == "" {
-			kind = ev.Kind
 		}
 		out = append(out, Output{
 			Adapter: r.Adapter,
 			Target:  r.Target,
-			Kind:    kind,
+			Kind:    ev.Kind,
 			Value:   ev.Value,
 		})
 	}

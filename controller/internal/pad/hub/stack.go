@@ -35,8 +35,15 @@ type Stack struct {
 	layers      [3]Provider
 	adapters    map[string]Adapter
 	home        HomeFunc
+	focus       FocusFunc
 	lastButtons map[string]uint32
 }
+
+// FocusFunc runs after Push or Pop changes the provider at the top of the
+// stack. It runs without the stack lock, after the previous top provider's
+// routes have been sent a neutral frame. Two focus changes that race may
+// notify out of order, so a func that needs the current top calls Top.
+type FocusFunc func(layer Layer, provider Provider)
 
 // New installs shell as the bottom provider. home may be nil.
 func New(shell Provider, home HomeFunc) (*Stack, error) {
@@ -52,8 +59,19 @@ func New(shell Provider, home HomeFunc) (*Stack, error) {
 	return s, nil
 }
 
+// SetFocusFunc sets the func notified when the top provider changes. nil
+// turns notifications off.
+func (s *Stack) SetFocusFunc(fn FocusFunc) {
+	s.mu.Lock()
+	s.focus = fn
+	s.mu.Unlock()
+}
+
 // Push sets the provider for layer, replacing whatever was there.
-// LayerShell may be replaced and may not be cleared.
+// LayerShell may be replaced and may not be cleared. When the top provider
+// changes, every known player gets a neutral frame on the previous top's
+// routes, so a button held through the switch is released on its adapter,
+// and then the focus func runs.
 func (s *Stack) Push(layer Layer, provider Provider) error {
 	if !validLayer(layer) {
 		return ErrBadLayer
@@ -62,9 +80,11 @@ func (s *Stack) Push(layer Layer, provider Provider) error {
 		return ErrNilProvider
 	}
 	s.mu.Lock()
+	oldLayer, old := s.top()
 	s.layers[layer] = provider
+	change := s.focusChange(layer >= oldLayer, old)
 	s.mu.Unlock()
-	return nil
+	return s.finishFocusChange(change)
 }
 
 // Pop removes an app or native provider. The shell layer cannot be popped.
@@ -77,12 +97,76 @@ func (s *Stack) Pop(layer Layer) error {
 		return ErrPopShell
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.layers[layer] == nil {
+		s.mu.Unlock()
 		return ErrLayerEmpty
 	}
+	oldLayer, old := s.top()
 	s.layers[layer] = nil
-	return nil
+	change := s.focusChange(layer == oldLayer, old)
+	s.mu.Unlock()
+	return s.finishFocusChange(change)
+}
+
+// Forget drops a player that left. Buttons the player still held are
+// released on the top provider's routes with a neutral frame, and a later
+// join with the same id starts with no buttons held.
+func (s *Stack) Forget(playerID string) error {
+	if playerID == "" {
+		return ErrEmptyPlayer
+	}
+	s.mu.Lock()
+	_, known := s.lastButtons[playerID]
+	delete(s.lastButtons, playerID)
+	_, provider := s.top()
+	s.mu.Unlock()
+	if !known || provider == nil {
+		return nil
+	}
+	return s.deliver(playerID, provider.Profile().outputsForInput(protocol.InputState{}))
+}
+
+type focusChange struct {
+	changed bool
+	old     Provider
+	players []string
+	notify  FocusFunc
+	layer   Layer
+	top     Provider
+}
+
+// focusChange records what a Push or Pop must do once the lock is released.
+// Callers hold s.mu and have already updated s.layers.
+func (s *Stack) focusChange(changed bool, old Provider) focusChange {
+	if !changed {
+		return focusChange{}
+	}
+	players := make([]string, 0, len(s.lastButtons))
+	for id := range s.lastButtons {
+		players = append(players, id)
+	}
+	sort.Strings(players)
+	layer, top := s.top()
+	return focusChange{changed: true, old: old, players: players, notify: s.focus, layer: layer, top: top}
+}
+
+func (s *Stack) finishFocusChange(c focusChange) error {
+	if !c.changed {
+		return nil
+	}
+	var errs []error
+	if c.old != nil {
+		neutral := c.old.Profile().outputsForInput(protocol.InputState{})
+		for _, id := range c.players {
+			if err := s.deliver(id, neutral); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	}
+	if c.notify != nil {
+		c.notify(c.layer, c.top)
+	}
+	return errors.Join(errs...)
 }
 
 // Top reports the highest occupied layer and its provider.
