@@ -127,8 +127,12 @@ func (AccountConnectCommand) Handle(r *Registry, params json.RawMessage) (any, e
 	}); err != nil {
 		return nil, err
 	}
-	if err := r.applyRemoteOperations(pairing.Operations); err != nil {
-		return nil, err
+	// Another transition may run between the commit and this write; the
+	// pairing ops then belong to an account that is no longer active.
+	if scope := r.currentScope(); scope.account.ID == account.ID {
+		if err := r.applyRemoteOperations(scope.epoch, pairing.Operations); err != nil && !errors.Is(err, errStoreScopeChanged) {
+			return nil, err
+		}
 	}
 	return r.accountStatus(), nil
 }
@@ -191,6 +195,8 @@ func (AccountImportAnonymousCommand) Handle(r *Registry, _ json.RawMessage) (any
 		return nil, err
 	}
 	defer anonymous.Close()
+	// switchMu is held, so the epoch cannot move during the import.
+	epoch := r.currentScope().epoch
 	current, err := r.Store()
 	if err != nil {
 		return nil, err
@@ -211,7 +217,7 @@ func (AccountImportAnonymousCommand) Handle(r *Registry, _ json.RawMessage) (any
 			}
 			imported++
 		}
-		if err := r.recordReplaceCollection(collection); err != nil {
+		if err := r.recordReplaceCollection(epoch, collection); err != nil {
 			return nil, err
 		}
 	}
@@ -354,7 +360,10 @@ var accountSwitchBoundary func(*Registry)
 // asset reconcile is cancelled and held off before the new account's database
 // is opened. A reconcile that has not yet read may then run against the new
 // account; one that already read the previous account does not write after
-// the swap.
+// the swap. Commands that record an outbox entry, local or remote, follow
+// the same rule: the switch waits for a running one, so its write and its
+// entry land in the same store. The command socket opened for the previous
+// account is closed after the publish.
 func (r *Registry) commitAccountSwitch(apply func(*config.Config) error) error {
 	r.switchMu.Lock()
 	defer r.switchMu.Unlock()
@@ -374,6 +383,11 @@ func (r *Registry) commitAccountSwitch(apply func(*config.Config) error) error {
 		defer syncer.Resume()
 	}
 	r.invalidateAssetEndpoint()
+
+	// Wait for a recording command (local or remote) to finish its write and
+	// outbox entry, and hold new ones off until the next account is published.
+	r.mutationMu.Lock()
+	defer r.mutationMu.Unlock()
 
 	// Plugins take their own mutex and then Store. Stopping them while
 	// storeMu or configMu is held deadlocks.
@@ -402,6 +416,9 @@ func (r *Registry) commitAccountSwitch(apply func(*config.Config) error) error {
 	}
 	err := r.publishAccountConfig(cfg)
 	r.configMu.Unlock()
+	// The command socket was opened with the previous account's token. Close
+	// it; the command loop reconnects for the published account.
+	r.cancelCommandStream()
 	restartPlugins()
 	if err != nil {
 		return err

@@ -90,11 +90,21 @@ func (PlatformReimportCommand) Handle(r *Registry, _ json.RawMessage) (any, erro
 	if err != nil {
 		return publicConfig(r.snapshotConfig()), err
 	}
-	published, err := r.mutateConfig(func(dst *config.Config) error {
+	if err := r.replaceConfig(cfg); err != nil {
+		return publicConfig(r.snapshotConfig()), err
+	}
+	return publicConfig(r.snapshotConfig()), nil
+}
+
+// replaceConfig installs a whole imported config. It can change the active
+// account, the accounts, the server, and the store paths, so it goes through
+// the account transition: store epoch bump, store reset, asset quiesce, and
+// command socket close, like connect, switch, and disconnect.
+func (r *Registry) replaceConfig(cfg config.Config) error {
+	return r.commitAccountSwitch(func(dst *config.Config) error {
 		*dst = copyConfig(cfg)
 		return nil
 	})
-	return publicConfig(published), err
 }
 
 type PlatformSelectChromeCommand struct{}

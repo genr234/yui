@@ -92,13 +92,23 @@ func (h *HTTPRemote) Manifest(ctx context.Context) ([]ManifestItem, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, httpError("manifest", resp)
 	}
+	// Assets is a pointer so a body without the key, or with "assets": null,
+	// is told apart from an explicit empty list. Only "assets": [] means the
+	// account has no assets; anything else is a manifest error, and the
+	// caller then deletes nothing.
 	var payload struct {
-		Assets []ManifestItem `json:"assets"`
+		Assets *[]ManifestItem `json:"assets"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 32<<20)).Decode(&payload); err != nil {
 		return nil, fmt.Errorf("decode manifest: %w", err)
 	}
-	return payload.Assets, nil
+	if payload.Assets == nil {
+		return nil, errors.New("manifest: response has no assets list")
+	}
+	if *payload.Assets == nil {
+		return []ManifestItem{}, nil
+	}
+	return *payload.Assets, nil
 }
 
 func (h *HTTPRemote) Download(ctx context.Context, id string, offset int64) (io.ReadCloser, int64, string, error) {

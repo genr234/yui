@@ -32,6 +32,10 @@ var accountHTTPClient = &http.Client{Timeout: 20 * time.Second}
 
 var errAccountUnauthorized = errors.New("account authorization expired; reconnect this account")
 
+// errCommandStreamSwitched ends a command socket whose account is no longer
+// active. The loop reconnects at once for the next account.
+var errCommandStreamSwitched = errors.New("account changed; reconnecting command stream")
+
 var syncCollections = []string{
 	defaultStorageCollection,
 	appSourcesCollection,
@@ -100,7 +104,11 @@ func (r *Registry) accountLoop(ctx context.Context) {
 
 func (r *Registry) accountCommandLoop(ctx context.Context) {
 	for {
-		if err := r.streamRemoteCommands(ctx); err != nil && ctx.Err() == nil {
+		err := r.streamRemoteCommands(ctx)
+		if errors.Is(err, errCommandStreamSwitched) && ctx.Err() == nil {
+			continue
+		}
+		if err != nil && ctx.Err() == nil {
 			log.Printf("account command websocket failed: %v", err)
 		}
 
@@ -112,31 +120,26 @@ func (r *Registry) accountCommandLoop(ctx context.Context) {
 	}
 }
 
+// SyncNow pushes and pulls for the account active when it starts. Every
+// store read and write checks that account's store epoch under the store
+// lock. If the account changes mid-sync, the rest is dropped: nothing lands in
+// the next account's database, and the previous account's ops stay pending
+// and its cursor stays put until it is active again.
 func (r *Registry) SyncNow() error {
-	cfg, account, ok := r.refreshedAccount()
-	if !ok || cfg.ServerURL == "" || account.DeviceToken == "" {
+	scope := r.refreshedScope()
+	if !scope.connected() {
 		return nil
 	}
 	r.setSyncState(true, "")
 	defer r.setSyncing(false)
 
-	pending, err := r.pendingOperations()
+	err := r.syncScope(scope)
+	if errors.Is(err, errStoreScopeChanged) {
+		return nil
+	}
 	if err != nil {
-		r.setSyncState(false, err.Error())
-		return err
-	}
-	if len(pending) > 0 {
-		if err := r.pushOperations(account, pending); err != nil {
-			if errors.Is(err, errAccountUnauthorized) {
-				_ = r.markAccountNeedsPairing(account.ID, err.Error())
-			}
-			r.setSyncState(false, err.Error())
-			return err
-		}
-	}
-	if err := r.pullOperations(account); err != nil {
 		if errors.Is(err, errAccountUnauthorized) {
-			_ = r.markAccountNeedsPairing(account.ID, err.Error())
+			_ = r.markAccountNeedsPairing(scope.account.ID, err.Error())
 		}
 		r.setSyncState(false, err.Error())
 		return err
@@ -145,14 +148,30 @@ func (r *Registry) SyncNow() error {
 	return nil
 }
 
+func (r *Registry) syncScope(scope storeScope) error {
+	pending, err := r.pendingOperations(scope.epoch)
+	if err != nil {
+		return err
+	}
+	if len(pending) > 0 {
+		if err := r.pushOperations(scope, pending); err != nil {
+			return err
+		}
+	}
+	return r.pullOperations(scope)
+}
+
 func (r *Registry) refreshActiveAccount() error {
-	cfg, account, ok := r.refreshedAccount()
-	if !ok || cfg.ServerURL == "" || account.DeviceToken == "" {
+	scope := r.refreshedScope()
+	if !scope.connected() {
 		return nil
 	}
-	if err := r.pullOperations(account); err != nil {
+	if err := r.pullOperations(scope); err != nil {
+		if errors.Is(err, errStoreScopeChanged) {
+			return nil
+		}
 		if errors.Is(err, errAccountUnauthorized) {
-			if markErr := r.markAccountNeedsPairing(account.ID, err.Error()); markErr != nil {
+			if markErr := r.markAccountNeedsPairing(scope.account.ID, err.Error()); markErr != nil {
 				return markErr
 			}
 		}
@@ -212,17 +231,38 @@ func (r *Registry) markAccountNeedsPairing(accountID, reason string) error {
 	return nil
 }
 
-func (r *Registry) recordMutation(method string, params json.RawMessage, result any) {
+// recordsMutation lists the methods recordMutationErr writes an outbox entry
+// for. DispatchAuthenticated holds mutationMu for reading around them.
+func recordsMutation(method string) bool {
+	switch method {
+	case "storage.set", "storage.delete", "store.put", "store.delete",
+		"apps.sources.add", "apps.sources.refresh", "apps.sources.remove",
+		"apps.install", "apps.dev.install", "apps.uninstall",
+		"plugins.sources.add", "plugins.sources.refresh", "plugins.sources.remove",
+		"plugins.install", "plugins.uninstall", "plugins.enable", "plugins.disable",
+		"plugins.permissions.update", "plugins.administrator.update", "plugins.settings.update":
+		return true
+	default:
+		return false
+	}
+}
+
+// recordMutation appends the outbox entry for a command to the store at
+// epoch, the one the command ran against. The caller holds mutationMu for
+// reading, so an account transition cannot publish between the command's
+// write and this entry. If the store has moved on anyway, the entry is
+// dropped rather than written to another account's outbox.
+func (r *Registry) recordMutation(epoch uint64, method string, params json.RawMessage, result any) {
 	cfg := r.snapshotConfig()
 	if cfg.ActiveAccountID == "" || cfg.ServerURL == "" {
 		return
 	}
-	if err := r.recordMutationErr(method, params, result); err != nil {
+	if err := r.recordMutationErr(epoch, method, params, result); err != nil {
 		log.Printf("sync operation record failed for %s: %v", method, err)
 	}
 }
 
-func (r *Registry) recordMutationErr(method string, params json.RawMessage, result any) error {
+func (r *Registry) recordMutationErr(epoch uint64, method string, params json.RawMessage, result any) error {
 	switch method {
 	case "storage.set":
 		var p struct {
@@ -232,7 +272,7 @@ func (r *Registry) recordMutationErr(method string, params json.RawMessage, resu
 		if err := json.Unmarshal(params, &p); err != nil {
 			return err
 		}
-		return r.recordPut(defaultStorageCollection, p.Key, p.Value)
+		return r.recordPut(epoch, defaultStorageCollection, p.Key, p.Value)
 	case "storage.delete":
 		var p struct {
 			Key string `json:"key"`
@@ -240,26 +280,26 @@ func (r *Registry) recordMutationErr(method string, params json.RawMessage, resu
 		if err := json.Unmarshal(params, &p); err != nil {
 			return err
 		}
-		return r.recordDelete(defaultStorageCollection, p.Key)
+		return r.recordDelete(epoch, defaultStorageCollection, p.Key)
 	case "store.put":
 		var p valueParams
 		if err := json.Unmarshal(params, &p); err != nil {
 			return err
 		}
-		return r.recordPutRaw(p.Collection, p.ID, p.Value)
+		return r.recordPutRaw(epoch, p.Collection, p.ID, p.Value)
 	case "store.delete":
 		var p documentParams
 		if err := json.Unmarshal(params, &p); err != nil {
 			return err
 		}
-		return r.recordDelete(p.Collection, p.ID)
+		return r.recordDelete(epoch, p.Collection, p.ID)
 	case "apps.sources.add", "apps.sources.refresh":
 		if record, ok := result.(appSourceRecord); ok {
-			if err := r.recordPut(appSourcesCollection, record.ID, record); err != nil {
+			if err := r.recordPut(epoch, appSourcesCollection, record.ID, record); err != nil {
 				return err
 			}
 		}
-		return r.recordReplaceCollection(appCatalogCollection)
+		return r.recordReplaceCollection(epoch, appCatalogCollection)
 	case "apps.sources.remove":
 		var p struct {
 			ID string `json:"id"`
@@ -267,13 +307,13 @@ func (r *Registry) recordMutationErr(method string, params json.RawMessage, resu
 		if err := json.Unmarshal(params, &p); err != nil {
 			return err
 		}
-		if err := r.recordDelete(appSourcesCollection, p.ID); err != nil {
+		if err := r.recordDelete(epoch, appSourcesCollection, p.ID); err != nil {
 			return err
 		}
-		return r.recordReplaceCollection(appCatalogCollection)
+		return r.recordReplaceCollection(epoch, appCatalogCollection)
 	case "apps.install", "apps.dev.install":
 		if record, ok := result.(installedAppRecord); ok {
-			return r.recordPut(installedAppsCollection, record.ID, record)
+			return r.recordPut(epoch, installedAppsCollection, record.ID, record)
 		}
 	case "apps.uninstall":
 		var p struct {
@@ -282,14 +322,14 @@ func (r *Registry) recordMutationErr(method string, params json.RawMessage, resu
 		if err := json.Unmarshal(params, &p); err != nil {
 			return err
 		}
-		return r.recordDelete(installedAppsCollection, p.ID)
+		return r.recordDelete(epoch, installedAppsCollection, p.ID)
 	case "plugins.sources.add", "plugins.sources.refresh":
 		if record, ok := result.(pluginSourceRecord); ok {
-			if err := r.recordPut(pluginSourcesCollection, record.ID, record); err != nil {
+			if err := r.recordPut(epoch, pluginSourcesCollection, record.ID, record); err != nil {
 				return err
 			}
 		}
-		return r.recordReplaceCollection(pluginCatalogCollection)
+		return r.recordReplaceCollection(epoch, pluginCatalogCollection)
 	case "plugins.sources.remove":
 		var p struct {
 			ID string `json:"id"`
@@ -297,16 +337,16 @@ func (r *Registry) recordMutationErr(method string, params json.RawMessage, resu
 		if err := json.Unmarshal(params, &p); err != nil {
 			return err
 		}
-		if err := r.recordDelete(pluginSourcesCollection, p.ID); err != nil {
+		if err := r.recordDelete(epoch, pluginSourcesCollection, p.ID); err != nil {
 			return err
 		}
-		return r.recordReplaceCollection(pluginCatalogCollection)
+		return r.recordReplaceCollection(epoch, pluginCatalogCollection)
 	case "plugins.install":
 		if record, ok := result.(installedPluginRecord); ok {
-			if err := r.recordPut(installedPluginsCollection, record.ID, record); err != nil {
+			if err := r.recordPut(epoch, installedPluginsCollection, record.ID, record); err != nil {
 				return err
 			}
-			return r.recordReplaceCollection(pluginStateCollection)
+			return r.recordReplaceCollection(epoch, pluginStateCollection)
 		}
 	case "plugins.uninstall":
 		var p struct {
@@ -315,9 +355,9 @@ func (r *Registry) recordMutationErr(method string, params json.RawMessage, resu
 		if err := json.Unmarshal(params, &p); err != nil {
 			return err
 		}
-		return r.recordDelete(installedPluginsCollection, p.ID)
+		return r.recordDelete(epoch, installedPluginsCollection, p.ID)
 	case "plugins.enable", "plugins.disable", "plugins.permissions.update", "plugins.administrator.update":
-		return r.recordReplaceCollection(pluginStateCollection)
+		return r.recordReplaceCollection(epoch, pluginStateCollection)
 	case "plugins.settings.update":
 		var p struct {
 			ID string `json:"id"`
@@ -325,74 +365,90 @@ func (r *Registry) recordMutationErr(method string, params json.RawMessage, resu
 		if err := json.Unmarshal(params, &p); err != nil {
 			return err
 		}
-		db, err := r.Store()
-		if err != nil {
+		if err := r.ensureDeviceUID(); err != nil {
 			return err
 		}
-		doc, ok, err := db.Collection(pluginSettingsCollection).Get(p.ID)
-		if err != nil || !ok {
-			return err
-		}
-		return r.recordPutRaw(pluginSettingsCollection, p.ID, doc.Value)
+		return r.withStoreAt(epoch, func(db *store.DB) error {
+			doc, ok, err := db.Collection(pluginSettingsCollection).Get(p.ID)
+			if err != nil || !ok {
+				return err
+			}
+			return r.appendOperationDB(db, pluginSettingsCollection, p.ID, "put", doc.Value)
+		})
 	}
 	return nil
 }
 
-func (r *Registry) recordPut(collection, id string, value any) error {
+func (r *Registry) recordPut(epoch uint64, collection, id string, value any) error {
 	data, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
-	return r.recordPutRaw(collection, id, data)
+	return r.recordPutRaw(epoch, collection, id, data)
 }
 
-func (r *Registry) recordPutRaw(collection, id string, value json.RawMessage) error {
-	return r.appendOperation(collection, id, "put", value)
+func (r *Registry) recordPutRaw(epoch uint64, collection, id string, value json.RawMessage) error {
+	return r.appendOperation(epoch, collection, id, "put", value)
 }
 
-func (r *Registry) recordDelete(collection, id string) error {
-	return r.appendOperation(collection, id, "delete", nil)
+func (r *Registry) recordDelete(epoch uint64, collection, id string) error {
+	return r.appendOperation(epoch, collection, id, "delete", nil)
 }
 
-func (r *Registry) recordReplaceCollection(collection string) error {
-	db, err := r.Store()
-	if err != nil {
+func (r *Registry) recordReplaceCollection(epoch uint64, collection string) error {
+	if err := r.ensureDeviceUID(); err != nil {
 		return err
 	}
-	docs, err := db.Collection(collection).List(store.ListOptions{})
-	if err != nil {
-		return err
-	}
-	payloadDocs := make([]map[string]any, 0, len(docs))
-	for _, doc := range docs {
-		var value any
-		if err := json.Unmarshal(doc.Value, &value); err != nil {
+	return r.withStoreAt(epoch, func(db *store.DB) error {
+		docs, err := db.Collection(collection).List(store.ListOptions{})
+		if err != nil {
 			return err
 		}
-		payloadDocs = append(payloadDocs, map[string]any{"id": doc.ID, "value": value})
-	}
-	data, err := json.Marshal(payloadDocs)
-	if err != nil {
-		return err
-	}
-	return r.appendOperation(collection, "", "replace_collection", data)
-}
-
-func (r *Registry) appendOperation(collection, id, action string, payload json.RawMessage) error {
-	if r.snapshotConfig().DeviceUID == "" {
-		if _, err := r.mutateConfig(func(cfg *config.Config) error {
-			if cfg.DeviceUID == "" {
-				cfg.DeviceUID = newDeviceUID()
+		payloadDocs := make([]map[string]any, 0, len(docs))
+		for _, doc := range docs {
+			var value any
+			if err := json.Unmarshal(doc.Value, &value); err != nil {
+				return err
 			}
-			return nil
-		}); err != nil {
+			payloadDocs = append(payloadDocs, map[string]any{"id": doc.ID, "value": value})
+		}
+		data, err := json.Marshal(payloadDocs)
+		if err != nil {
 			return err
 		}
-	}
-	db, err := r.Store()
-	if err != nil {
+		return r.appendOperationDB(db, collection, "", "replace_collection", data)
+	})
+}
+
+// appendOperation adds one outbox entry to the store at epoch, or returns
+// errStoreScopeChanged if that store is no longer active.
+func (r *Registry) appendOperation(epoch uint64, collection, id, action string, payload json.RawMessage) error {
+	if err := r.ensureDeviceUID(); err != nil {
 		return err
 	}
+	return r.withStoreAt(epoch, func(db *store.DB) error {
+		return r.appendOperationDB(db, collection, id, action, payload)
+	})
+}
+
+// ensureDeviceUID saves a device id before the first outbox entry. It takes
+// configMu, so it must run before withStoreAt, never inside it.
+func (r *Registry) ensureDeviceUID() error {
+	if r.snapshotConfig().DeviceUID != "" {
+		return nil
+	}
+	_, err := r.mutateConfig(func(cfg *config.Config) error {
+		if cfg.DeviceUID == "" {
+			cfg.DeviceUID = newDeviceUID()
+		}
+		return nil
+	})
+	return err
+}
+
+// appendOperationDB writes the entry and the next sequence number. The
+// caller holds storeMu through withStoreAt.
+func (r *Registry) appendOperationDB(db *store.DB, collection, id, action string, payload json.RawMessage) error {
 	meta, err := r.syncMeta(db)
 	if err != nil {
 		return err
@@ -437,48 +493,55 @@ func (r *Registry) syncMeta(db *store.DB) (syncMeta, error) {
 	return meta, nil
 }
 
-func (r *Registry) pendingOperations() ([]syncOperation, error) {
-	db, err := r.Store()
+func (r *Registry) pendingOperations(epoch uint64) ([]syncOperation, error) {
+	var ops []syncOperation
+	err := r.withStoreAt(epoch, func(db *store.DB) error {
+		docs, err := db.Collection(syncOperationsCollection).List(store.ListOptions{})
+		if err != nil {
+			return err
+		}
+		ops = make([]syncOperation, 0, len(docs))
+		for _, doc := range docs {
+			var op syncOperation
+			if err := json.Unmarshal(doc.Value, &op); err != nil {
+				return err
+			}
+			if !op.Synced {
+				ops = append(ops, op)
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
-	}
-	docs, err := db.Collection(syncOperationsCollection).List(store.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-	ops := make([]syncOperation, 0, len(docs))
-	for _, doc := range docs {
-		var op syncOperation
-		if err := json.Unmarshal(doc.Value, &op); err != nil {
-			return nil, err
-		}
-		if !op.Synced {
-			ops = append(ops, op)
-		}
 	}
 	return ops, nil
 }
 
-func (r *Registry) pushOperations(account config.AccountConfig, ops []syncOperation) error {
+func (r *Registry) pushOperations(scope storeScope, ops []syncOperation) error {
 	for start := 0; start < len(ops); start += accountSyncBatchSize {
 		end := start + accountSyncBatchSize
 		if end > len(ops) {
 			end = len(ops)
 		}
 		batch := ops[start:end]
-		if err := r.pushOperationBatch(account, batch); err != nil {
+		if err := r.pushOperationBatch(scope, batch); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (r *Registry) pushOperationBatch(account config.AccountConfig, ops []syncOperation) error {
+// pushOperationBatch sends ops for scope's account and marks them synced in
+// that account's database. If the account changed during the request, the
+// ops stay pending there and are pushed again next time; ids are per
+// database, so marking them in the next account would overwrite its ops.
+func (r *Registry) pushOperationBatch(scope storeScope, ops []syncOperation) error {
 	body, err := json.Marshal(map[string]any{"operations": ops})
 	if err != nil {
 		return err
 	}
-	req, err := r.accountRequest(http.MethodPost, "/api/kiosk/sync/push", account, bytes.NewReader(body))
+	req, err := accountRequest(scope.cfg.ServerURL, http.MethodPost, "/api/kiosk/sync/push", scope.account, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -490,22 +553,21 @@ func (r *Registry) pushOperationBatch(account config.AccountConfig, ops []syncOp
 	if err := requireOK(resp); err != nil {
 		return err
 	}
-	db, err := r.Store()
-	if err != nil {
-		return err
-	}
-	for _, op := range ops {
-		op.Synced = true
-		if err := db.Collection(syncOperationsCollection).Put(op.ID, op); err != nil {
-			return err
+	return r.withStoreAt(scope.epoch, func(db *store.DB) error {
+		for _, op := range ops {
+			op.Synced = true
+			if err := db.Collection(syncOperationsCollection).Put(op.ID, op); err != nil {
+				return err
+			}
 		}
-	}
-	return nil
+		return nil
+	})
 }
 
-func (r *Registry) pullOperations(account config.AccountConfig) error {
+func (r *Registry) pullOperations(scope storeScope) error {
+	account := scope.account
 	for {
-		next, hasMore, err := r.pullOperationPage(account)
+		next, hasMore, err := r.pullOperationPage(scope, account)
 		if err != nil {
 			return err
 		}
@@ -516,9 +578,12 @@ func (r *Registry) pullOperations(account config.AccountConfig) error {
 	}
 }
 
-func (r *Registry) pullOperationPage(account config.AccountConfig) (config.AccountConfig, bool, error) {
+// pullOperationPage applies one page to scope's database and only then
+// advances the cursor. A page that arrives after the account changed is not
+// applied and the cursor is not saved, so the account gets it next time.
+func (r *Registry) pullOperationPage(scope storeScope, account config.AccountConfig) (config.AccountConfig, bool, error) {
 	path := fmt.Sprintf("/api/kiosk/sync/pull?cursor=%d", account.SyncCursor)
-	req, err := r.accountRequest(http.MethodGet, path, account, nil)
+	req, err := accountRequest(scope.cfg.ServerURL, http.MethodGet, path, account, nil)
 	if err != nil {
 		return account, false, err
 	}
@@ -543,7 +608,7 @@ func (r *Registry) pullOperationPage(account config.AccountConfig) (config.Accou
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return account, false, err
 	}
-	if err := r.applyRemoteOperations(result.Operations); err != nil {
+	if err := r.applyRemoteOperations(scope.epoch, result.Operations); err != nil {
 		return account, false, err
 	}
 	if result.Account.ID != "" {
@@ -557,49 +622,53 @@ func (r *Registry) pullOperationPage(account config.AccountConfig) (config.Accou
 	return account, result.HasMore, r.saveAccount(account)
 }
 
-func (r *Registry) applyRemoteOperations(ops []remoteOperation) error {
-	db, err := r.Store()
-	if err != nil {
-		return err
-	}
-	meta, err := r.syncMeta(db)
-	if err != nil {
-		return err
-	}
+// applyRemoteOperations writes ops into the store at epoch. It returns
+// errStoreScopeChanged without writing if that store is no longer active.
+func (r *Registry) applyRemoteOperations(epoch uint64, ops []remoteOperation) error {
 	touchedPlugins := false
-	for _, op := range ops {
-		if op.ClientID == meta.ClientID {
-			continue
+	err := r.withStoreAt(epoch, func(db *store.DB) error {
+		meta, err := r.syncMeta(db)
+		if err != nil {
+			return err
 		}
-		if collectionAffectsPlugins(op.Collection) {
-			touchedPlugins = true
-		}
-		switch op.Action {
-		case "put":
-			if err := db.Collection(op.Collection).Put(op.RecordID, op.Payload); err != nil {
-				return err
+		for _, op := range ops {
+			if op.ClientID == meta.ClientID {
+				continue
 			}
-		case "delete":
-			if err := db.Collection(op.Collection).Delete(op.RecordID); err != nil {
-				return err
+			if collectionAffectsPlugins(op.Collection) {
+				touchedPlugins = true
 			}
-		case "replace_collection":
-			if err := db.Collection(op.Collection).Clear(); err != nil {
-				return err
-			}
-			var docs []struct {
-				ID    string          `json:"id"`
-				Value json.RawMessage `json:"value"`
-			}
-			if err := json.Unmarshal(op.Payload, &docs); err != nil {
-				return err
-			}
-			for _, doc := range docs {
-				if err := db.Collection(op.Collection).Put(doc.ID, doc.Value); err != nil {
+			switch op.Action {
+			case "put":
+				if err := db.Collection(op.Collection).Put(op.RecordID, op.Payload); err != nil {
 					return err
+				}
+			case "delete":
+				if err := db.Collection(op.Collection).Delete(op.RecordID); err != nil {
+					return err
+				}
+			case "replace_collection":
+				if err := db.Collection(op.Collection).Clear(); err != nil {
+					return err
+				}
+				var docs []struct {
+					ID    string          `json:"id"`
+					Value json.RawMessage `json:"value"`
+				}
+				if err := json.Unmarshal(op.Payload, &docs); err != nil {
+					return err
+				}
+				for _, doc := range docs {
+					if err := db.Collection(op.Collection).Put(doc.ID, doc.Value); err != nil {
+						return err
+					}
 				}
 			}
 		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 	if touchedPlugins && r.plugins != nil && r.pluginCtx != nil {
 		r.plugins.Stop()
@@ -617,16 +686,32 @@ func collectionAffectsPlugins(collection string) bool {
 	}
 }
 
+// saveAccount stores the profile and cursor from a pull. It edits the cached
+// entry in place: a pull that finishes after the account was disconnected
+// does not add it back, and it does not restore a token cleared meanwhile.
 func (r *Registry) saveAccount(account config.AccountConfig) error {
 	_, err := r.mutateConfig(func(cfg *config.Config) error {
-		cfg.Accounts = upsertAccount(cfg.Accounts, account)
-		return nil
+		for i := range cfg.Accounts {
+			if cfg.Accounts[i].ID != account.ID {
+				continue
+			}
+			cfg.Accounts[i].Name = account.Name
+			cfg.Accounts[i].ProfileImageURL = account.ProfileImageURL
+			cfg.Accounts[i].SyncCursor = account.SyncCursor
+			return nil
+		}
+		return errConfigUnchanged
 	})
+	if errors.Is(err, errConfigUnchanged) {
+		return nil
+	}
 	return err
 }
 
-func (r *Registry) accountRequest(method, path string, account config.AccountConfig, body io.Reader) (*http.Request, error) {
-	req, err := http.NewRequest(method, strings.TrimRight(r.snapshotConfig().ServerURL, "/")+path, body)
+// accountRequest builds a request for account against serverURL. Both come
+// from the same scope, so a token is never sent to another account's server.
+func accountRequest(serverURL, method, path string, account config.AccountConfig, body io.Reader) (*http.Request, error) {
+	req, err := http.NewRequest(method, strings.TrimRight(serverURL, "/")+path, body)
 	if err != nil {
 		return nil, err
 	}
@@ -662,9 +747,13 @@ func remoteCommandAllowed(method string) bool {
 	}
 }
 
+// streamRemoteCommands keeps one KioskCommandsChannel socket open for the
+// account active when it starts. An account transition cancels it through
+// cancelCommandStream, and it returns errCommandStreamSwitched so the loop
+// reconnects for the next account.
 func (r *Registry) streamRemoteCommands(ctx context.Context) error {
-	cfg, account, ok := r.refreshedAccount()
-	if !ok || cfg.ServerURL == "" || account.DeviceToken == "" {
+	scope := r.refreshedScope()
+	if !scope.connected() {
 		select {
 		case <-ctx.Done():
 			return nil
@@ -673,21 +762,34 @@ func (r *Registry) streamRemoteCommands(ctx context.Context) error {
 		}
 	}
 
-	wsURL, err := accountCableURL(cfg.ServerURL)
+	streamCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	if !r.bindCommandStream(scope.epoch, cancel) {
+		return errCommandStreamSwitched
+	}
+	defer r.bindCommandStream(scope.epoch, nil)
+	ended := func(err error) error {
+		if ctx.Err() == nil && streamCtx.Err() != nil {
+			return errCommandStreamSwitched
+		}
+		return err
+	}
+
+	wsURL, err := accountCableURL(scope.cfg.ServerURL)
 	if err != nil {
 		return err
 	}
-	header, err := accountCableHeader(cfg.ServerURL, account.DeviceToken)
+	header, err := accountCableHeader(scope.cfg.ServerURL, scope.account.DeviceToken)
 	if err != nil {
 		return err
 	}
-	conn, _, err := websocket.DefaultDialer.DialContext(ctx, wsURL, header)
+	conn, _, err := websocket.DefaultDialer.DialContext(streamCtx, wsURL, header)
 	if err != nil {
-		return err
+		return ended(err)
 	}
 	defer conn.Close()
 	go func() {
-		<-ctx.Done()
+		<-streamCtx.Done()
 		_ = conn.Close()
 	}()
 
@@ -708,15 +810,15 @@ func (r *Registry) streamRemoteCommands(ctx context.Context) error {
 
 	for {
 		select {
-		case <-ctx.Done():
+		case <-streamCtx.Done():
 			_ = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
-			return nil
+			return ended(nil)
 		default:
 		}
 
 		_, data, err := conn.ReadMessage()
 		if err != nil {
-			return err
+			return ended(err)
 		}
 		var message struct {
 			Type    string          `json:"type"`
@@ -728,7 +830,7 @@ func (r *Registry) streamRemoteCommands(ctx context.Context) error {
 		if len(message.Message) == 0 {
 			continue
 		}
-		if err := r.handleRemoteCommandMessage(message.Message); err != nil {
+		if err := r.handleRemoteCommandMessage(scope, message.Message); err != nil {
 			log.Printf("account command execution failed: %v", err)
 		}
 	}
@@ -783,11 +885,33 @@ func accountCableEndpoint(serverURL string) (*url.URL, string, error) {
 	return parsed, originScheme + "://" + parsed.Host, nil
 }
 
-func (r *Registry) handleRemoteCommandMessage(data json.RawMessage) error {
-	cfg, account, ok := r.refreshedAccount()
-	if !ok || cfg.ServerURL == "" || account.DeviceToken == "" {
-		return nil
+// bindCommandStream records cancel as the closer of the live command socket
+// (nil clears it). It reports false when the store epoch already moved past
+// epoch: a transition that published before the socket registered could not
+// cancel it, so the caller must not keep it.
+func (r *Registry) bindCommandStream(epoch uint64, cancel context.CancelFunc) bool {
+	r.cmdMu.Lock()
+	r.cmdCancel = cancel
+	r.cmdMu.Unlock()
+	return r.currentScope().epoch == epoch
+}
+
+// cancelCommandStream closes the command socket. Account transitions call it
+// after publishing the next account.
+func (r *Registry) cancelCommandStream() {
+	r.cmdMu.Lock()
+	cancel := r.cmdCancel
+	r.cmdMu.Unlock()
+	if cancel != nil {
+		cancel()
 	}
+}
+
+// handleRemoteCommandMessage runs a command delivered on scope's socket and
+// reports the result with scope's credentials. A command that arrives after
+// the account changed is neither run nor reported; the server delivers
+// pending commands again when that account's socket subscribes.
+func (r *Registry) handleRemoteCommandMessage(scope storeScope, data json.RawMessage) error {
 	var command struct {
 		ID          string          `json:"id"`
 		CommandType string          `json:"command_type"`
@@ -799,20 +923,38 @@ func (r *Registry) handleRemoteCommandMessage(data json.RawMessage) error {
 	if command.ID == "" || command.CommandType == "" {
 		return nil
 	}
-	out, err := r.DispatchRemote(command.CommandType, command.Payload)
+	out, ran, err := r.runRemoteCommand(scope, command.CommandType, command.Payload)
+	if !ran {
+		return nil
+	}
 	if err != nil {
-		_ = r.completeRemoteCommand(account, command.ID, "failed", nil, err.Error())
+		_ = r.completeRemoteCommand(scope, command.ID, "failed", nil, err.Error())
 		return err
 	}
-	return r.completeRemoteCommand(account, command.ID, "succeeded", out, "")
+	return r.completeRemoteCommand(scope, command.ID, "succeeded", out, "")
 }
 
-func (r *Registry) completeRemoteCommand(account config.AccountConfig, id, status string, result any, errText string) error {
+// runRemoteCommand holds mutationMu for reading so an account transition waits
+// for the command and its outbox entry before it publishes. ran is false when
+// scope's account is no longer the active, connected one.
+func (r *Registry) runRemoteCommand(scope storeScope, method string, params json.RawMessage) (out any, ran bool, err error) {
+	r.reloadAccountConfig()
+	r.mutationMu.RLock()
+	defer r.mutationMu.RUnlock()
+	current := r.currentScope()
+	if current.epoch != scope.epoch || !current.connected() || current.account.ID != scope.account.ID {
+		return nil, false, nil
+	}
+	out, err = r.dispatchRemoteAt(scope.epoch, method, params)
+	return out, true, err
+}
+
+func (r *Registry) completeRemoteCommand(scope storeScope, id, status string, result any, errText string) error {
 	body, err := json.Marshal(map[string]any{"status": status, "result": result, "error": errText})
 	if err != nil {
 		return err
 	}
-	req, err := r.accountRequest(http.MethodPatch, "/api/kiosk/commands/"+id, account, bytes.NewReader(body))
+	req, err := accountRequest(scope.cfg.ServerURL, http.MethodPatch, "/api/kiosk/commands/"+id, scope.account, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
