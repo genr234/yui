@@ -1,0 +1,28 @@
+<% play_sessions = PlaySession.active.where(kiosk: kiosks).includes(:kiosk, :players).order(:created_at) %>
+<% if play_sessions.any? %>
+  <section class="project-section" aria-label="Play sessions">
+    <article class="project-cell project-cell--full">
+      <h2>Play Sessions</h2>
+      <ul class="plain-list">
+        <% play_sessions.each do |play_session| %>
+          <% players = play_session.players.reject(&:kicked?).sort_by { |player| [ player.slot || 99, player.id ] } %>
+          <li>
+            <span>
+              <strong><%= play_session.kiosk.name %> - <code><%= play_session.code %></code></strong>
+              <small>
+                <% if players.any? %>
+                  <%= players.map { |player| "#{player.slot ? "P#{player.slot}" : "Spectator"} #{player.name}#{" (host)" if player.host?}" }.join(", ") %>
+                <% else %>
+                  No players yet
+                <% end %>
+              </small>
+            </span>
+            <span class="quiet-status <%= "quiet-status--on" if play_session.lobby_open? %>">
+              <%= play_session.lobby_open? ? "Lobby open" : "QR only" %>
+            </span>
+          </li>
+        <% end %>
+      </ul>
+    </article>
+  </section>
+<% end %>

@@ -148,6 +148,8 @@
       </article>
     </section>
 
+    <%= render "accounts/play_sessions", kiosks: @kiosks %>
+
     <section class="project-section project-section--commands">
       <% if @kiosks.any? %>
         <div class="command-stack">

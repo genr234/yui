@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_17_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_08_100000) do
   create_table "account_state_records", force: :cascade do |t|
     t.integer "account_id", null: false
     t.string "collection", null: false
@@ -135,6 +135,37 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_17_120000) do
     t.index ["webauthn_id"], name: "index_passkey_credentials_on_webauthn_id", unique: true
   end
 
+  create_table "play_sessions", force: :cascade do |t|
+    t.string "code", null: false
+    t.datetime "created_at", null: false
+    t.datetime "ended_at"
+    t.integer "kiosk_id", null: false
+    t.boolean "lobby_open", default: false, null: false
+    t.string "qr_key", null: false
+    t.datetime "updated_at", null: false
+    t.index ["code"], name: "index_play_sessions_on_active_code", unique: true, where: "ended_at IS NULL"
+    t.index ["kiosk_id"], name: "index_play_sessions_on_active_kiosk", unique: true, where: "ended_at IS NULL"
+    t.index ["kiosk_id"], name: "index_play_sessions_on_kiosk_id"
+  end
+
+  create_table "players", force: :cascade do |t|
+    t.string "color", null: false
+    t.boolean "connected", default: false, null: false
+    t.string "connection_nonce"
+    t.datetime "created_at", null: false
+    t.boolean "host", default: false, null: false
+    t.datetime "kicked_at"
+    t.datetime "last_seen_at"
+    t.string "name", null: false
+    t.integer "play_session_id", null: false
+    t.integer "slot"
+    t.string "token_digest", null: false
+    t.datetime "updated_at", null: false
+    t.index ["play_session_id", "slot"], name: "index_players_on_session_active_slot", unique: true, where: "slot IS NOT NULL AND kicked_at IS NULL"
+    t.index ["play_session_id"], name: "index_players_on_play_session_id"
+    t.index ["token_digest"], name: "index_players_on_token_digest", unique: true
+  end
+
   create_table "users", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "name", null: false
@@ -152,4 +183,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_17_120000) do
   add_foreign_key "kiosks", "accounts"
   add_foreign_key "pairing_codes", "accounts"
   add_foreign_key "passkey_credentials", "users"
+  add_foreign_key "play_sessions", "kiosks"
+  add_foreign_key "players", "play_sessions"
 end
