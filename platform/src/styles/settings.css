@@ -23,22 +23,22 @@
 }
 
 .plugin-health-gauge {
-	--gauge-color: #20b56b;
+	--gauge-color: var(--yui-green);
 	display: grid;
 	gap: 4px;
 	justify-items: center;
 	padding: 10px 12px 12px;
-	border: 1px solid #dfe6ee;
-	border-radius: 12px;
-	background: #ffffff;
+	border: 1px solid var(--yui-line);
+	border-radius: var(--yui-radius-control);
+	background: var(--yui-surface);
 }
 
 .plugin-health-gauge.warning {
-	--gauge-color: #f2b72f;
+	--gauge-color: var(--yui-orange);
 }
 
 .plugin-health-gauge.danger {
-	--gauge-color: #df3d2f;
+	--gauge-color: var(--yui-red);
 }
 
 .plugin-gauge-svg {
@@ -57,18 +57,18 @@
 }
 
 .plugin-gauge-outer {
-	stroke: #dce2e9;
+	stroke: var(--yui-track);
 	stroke-width: 8;
 }
 
 .plugin-gauge-band {
-	stroke: #e6ebf1;
+	stroke: var(--yui-track);
 	stroke-width: 18;
 	opacity: 0.72;
 }
 
 .plugin-gauge-tick {
-	stroke: #c9d2dc;
+	stroke: var(--yui-line-strong);
 	stroke-width: 2;
 	stroke-linecap: round;
 	opacity: 0.72;
@@ -83,7 +83,7 @@
 }
 
 .plugin-gauge-hub-ring {
-	fill: #ffffff;
+	fill: var(--yui-surface);
 	filter: drop-shadow(0 1px 5px rgba(23, 35, 52, 0.18));
 }
 
@@ -115,14 +115,14 @@
 }
 
 .plugin-gauge-copy strong {
-	color: #172334;
+	color: var(--yui-ink-2);
 	font-size: 16px;
 	font-weight: 600;
 	line-height: 1.1;
 }
 
 .plugin-gauge-copy small {
-	color: #647487;
+	color: var(--yui-muted);
 	font-size: 12px;
 	font-weight: 500;
 }
@@ -163,7 +163,7 @@
 
 .settings-nav {
 	display: grid;
-	grid-template-columns: 42px minmax(0, 1fr);
+	grid-template-columns: 44px minmax(0, 1fr);
 	gap: 12px;
 	align-items: center;
 }
@@ -171,16 +171,16 @@
 .settings-nav p {
 	min-width: 0;
 	overflow-wrap: anywhere;
-	color: #111925;
+	color: var(--yui-ink);
 	font-size: 22px;
 	font-weight: 500;
 }
 
 .settings-group {
 	overflow: hidden;
-	border: 1px solid #dfe6ee;
-	border-radius: 12px;
-	background: #ffffff;
+	border: 1px solid var(--yui-line);
+	border-radius: var(--yui-radius-control);
+	background: var(--yui-surface);
 }
 
 .settings-row {
@@ -192,9 +192,9 @@
 	min-height: 58px;
 	padding: 12px 16px;
 	border: 0;
-	border-bottom: 1px solid #e6edf4;
-	color: #172334;
-	background: #ffffff;
+	border-bottom: 1px solid var(--yui-track);
+	color: var(--yui-ink-2);
+	background: var(--yui-surface);
 	text-align: left;
 	cursor: pointer;
 }
@@ -221,7 +221,7 @@
 
 .settings-row small {
 	margin-top: 3px;
-	color: #647487;
+	color: var(--yui-muted);
 	font-size: 13px;
 	font-weight: 500;
 }
@@ -258,13 +258,13 @@
 	gap: 14px;
 	align-items: center;
 	padding: 16px;
-	border: 1px solid #dfe6ee;
-	border-radius: 12px;
-	background: #ffffff;
+	border: 1px solid var(--yui-line);
+	border-radius: var(--yui-radius-control);
+	background: var(--yui-surface);
 }
 
 .settings-app-hero h2 {
-	color: #111925;
+	color: var(--yui-ink);
 	font-size: 22px;
 	font-weight: 600;
 	line-height: 1.15;
@@ -279,14 +279,14 @@
 
 .settings-app-hero p {
 	margin-top: 5px;
-	color: #647487;
+	color: var(--yui-muted);
 	font-size: 14px;
 	font-weight: 500;
 }
 
 .settings-app-hero small {
 	margin-top: 6px;
-	color: #728095;
+	color: var(--yui-muted);
 	font-size: 12px;
 	font-weight: 400;
 }
@@ -303,10 +303,10 @@
 	width: 46px;
 	height: 28px;
 	margin: 0;
-	border: 1px solid #c8d3df;
+	border: 1px solid var(--yui-line-strong);
 	border-radius: 999px;
 	appearance: none;
-	background: #dbe3ec;
+	background: var(--yui-track);
 	cursor: pointer;
 	transform: translateZ(0);
 	transition:
@@ -324,7 +324,7 @@
 	width: 22px;
 	height: 22px;
 	border-radius: 50%;
-	background: #ffffff;
+	background: var(--yui-surface);
 	box-shadow: 0 1px 3px rgba(17, 25, 37, 0.16);
 	content: "";
 	transition:
@@ -341,8 +341,8 @@
 .permission-card input[type="checkbox"]:checked,
 .permission-row input[type="checkbox"]:checked,
 .yui-app-check input[type="checkbox"]:checked {
-	border-color: #007be0;
-	background: #007be0;
+	border-color: var(--yui-blue);
+	background: var(--yui-blue);
 }
 
 .permission-card input[type="checkbox"]:checked::after,
@@ -405,12 +405,13 @@
 	gap: 6px;
 	align-items: center;
 	justify-content: center;
-	min-height: 32px;
-	padding: 6px 10px;
-	border: 1px solid #ccd7e3;
+	min-width: 44px;
+	min-height: 44px;
+	padding: 8px 12px;
+	border: 1px solid var(--yui-line);
 	border-radius: 8px;
-	color: #172334;
-	background: #ffffff;
+	color: var(--yui-ink-2);
+	background: var(--yui-surface);
 	font-size: 12px;
 	font-weight: 600;
 	cursor: pointer;
@@ -422,13 +423,13 @@
 }
 
 .settings-inline-button.danger {
-	border-color: #e2b7b7;
-	color: #a73535;
-	background: #fff7f7;
+	border-color: var(--yui-red);
+	color: var(--yui-red);
+	background: color-mix(in srgb, var(--yui-red) 8%, var(--yui-surface));
 }
 
 .settings-row.active-account {
-	background: #f5f9ff;
+	background: color-mix(in srgb, var(--yui-blue) 8%, var(--yui-surface));
 }
 
 .settings-row:disabled {
@@ -438,12 +439,12 @@
 
 .settings-text-input {
 	width: min(100%, 440px);
-	min-height: 36px;
-	padding: 7px 10px;
-	border: 1px solid #ccd7e3;
+	min-height: 44px;
+	padding: 8px 12px;
+	border: 1px solid var(--yui-line);
 	border-radius: 8px;
-	color: #172334;
-	background: #ffffff;
+	color: var(--yui-ink-2);
+	background: var(--yui-surface);
 	font-size: 13px;
 	font-weight: 600;
 }
@@ -479,14 +480,14 @@
 	width: 42px;
 	height: 42px;
 	overflow: hidden;
-	border: 1px solid #dfe6ee;
-	border-radius: 10px;
+	border: 1px solid var(--yui-line);
+	border-radius: var(--yui-radius-badge);
 	background:
-		linear-gradient(45deg, #eef3f8 25%, transparent 25%),
-		linear-gradient(-45deg, #eef3f8 25%, transparent 25%),
-		linear-gradient(45deg, transparent 75%, #eef3f8 75%),
-		linear-gradient(-45deg, transparent 75%, #eef3f8 75%),
-		#ffffff;
+		linear-gradient(45deg, var(--yui-backdrop) 25%, transparent 25%),
+		linear-gradient(-45deg, var(--yui-backdrop) 25%, transparent 25%),
+		linear-gradient(45deg, transparent 75%, var(--yui-backdrop) 75%),
+		linear-gradient(-45deg, transparent 75%, var(--yui-backdrop) 75%),
+		var(--yui-surface);
 	background-position:
 		0 0,
 		0 8px,
@@ -517,7 +518,7 @@
 .account-form label {
 	display: grid;
 	gap: 6px;
-	color: #172334;
+	color: var(--yui-ink-2);
 	font-size: 13px;
 	font-weight: 500;
 }
@@ -529,11 +530,11 @@
 
 .settings-message {
 	margin: -4px 4px 0;
-	color: #526477;
+	color: var(--yui-muted);
 	font-size: 13px;
 	font-weight: 500;
 }
 
 .settings-message.error {
-	color: #a73535;
+	color: var(--yui-red);
 }

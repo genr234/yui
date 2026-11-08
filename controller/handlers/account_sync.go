@@ -45,6 +45,7 @@ var syncCollections = []string{
 	pluginSettingsCollection,
 	pluginSecretsCollection,
 	pluginStorageCollection,
+	"shell",
 }
 
 type syncOperation struct {

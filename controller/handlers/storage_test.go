@@ -52,6 +52,30 @@ func TestStoreCommandsAllowScopedStorageCollections(t *testing.T) {
 	}
 }
 
+func TestStoreCommandsAllowShellCollection(t *testing.T) {
+	registry := testRegistry(t)
+
+	if _, err := (StorePutCommand{}).Handle(registry, mustJSON(t, map[string]any{
+		"collection": "shell",
+		"id":         "recent-apps",
+		"value":      []any{map[string]any{"id": "links", "openedAt": float64(10)}},
+	})); err != nil {
+		t.Fatalf("put shell recent apps: %v", err)
+	}
+
+	value, err := StoreGetCommand{}.Handle(registry, mustJSON(t, map[string]string{
+		"collection": "shell",
+		"id":         "recent-apps",
+	}))
+	if err != nil {
+		t.Fatalf("get shell recent apps: %v", err)
+	}
+	doc := value.(map[string]any)
+	if doc["id"] != "recent-apps" {
+		t.Fatalf("unexpected document: %+v", doc)
+	}
+}
+
 func TestStoreKeysReturnsEmptySliceForMissingCollection(t *testing.T) {
 	registry := testRegistry(t)
 

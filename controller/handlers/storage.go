@@ -12,6 +12,8 @@ const defaultStorageCollection = "storage"
 var scopedStoreCollections = map[string]struct{}{
 	"app-storage":    {},
 	"plugin-storage": {},
+	// Shell UI state for the active account (recent apps). Synced with the account.
+	"shell": {},
 }
 
 func StorageCommands() []Command {

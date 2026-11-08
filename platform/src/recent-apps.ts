@@ -2,31 +2,42 @@
  * Recently opened apps, newest first. Stand-in for `ctx.library` (plan D10):
  * once apps can register their own resume points, the Jump back in banner
  * reads those instead and this list only orders apps.
+ *
+ * Stored in the kiosk's internal store (collection `shell`, id `recent-apps`)
+ * so it follows the active account and survives a browser profile reset.
  */
+import { internalStore } from "./sdk/internal-store";
+
 export type RecentApp = { id: string; openedAt: number };
 
-const KEY = "yui:recent-apps";
+const COLLECTION = "shell";
+const ID = "recent-apps";
 const LIMIT = 12;
 
-export function loadRecentApps(): RecentApp[] {
+const recents = () => internalStore.collection<RecentApp[]>(COLLECTION);
+
+function parseRecentApps(value: unknown): RecentApp[] {
+	if (!Array.isArray(value)) return [];
+	return value.filter(
+		(entry): entry is RecentApp =>
+			typeof entry?.id === "string" && typeof entry?.openedAt === "number",
+	);
+}
+
+export async function loadRecentApps(): Promise<RecentApp[]> {
 	try {
-		const parsed = JSON.parse(localStorage.getItem(KEY) ?? "[]");
-		if (!Array.isArray(parsed)) return [];
-		return parsed.filter(
-			(entry): entry is RecentApp =>
-				typeof entry?.id === "string" && typeof entry?.openedAt === "number",
-		);
+		return parseRecentApps(await recents().get(ID));
 	} catch {
 		return [];
 	}
 }
 
-export function recordRecentApp(id: string, now = Date.now()): RecentApp[] {
-	const next = [{ id, openedAt: now }, ...loadRecentApps().filter((entry) => entry.id !== id)].slice(0, LIMIT);
+export async function recordRecentApp(id: string, now = Date.now()): Promise<RecentApp[]> {
+	const next = [{ id, openedAt: now }, ...(await loadRecentApps()).filter((entry) => entry.id !== id)].slice(0, LIMIT);
 	try {
-		localStorage.setItem(KEY, JSON.stringify(next));
+		await recents().put(ID, next);
 	} catch {
-		// Storage can be unavailable; the list just won't persist.
+		// The store can be unavailable; the caller still shows this session's list.
 	}
 	return next;
 }

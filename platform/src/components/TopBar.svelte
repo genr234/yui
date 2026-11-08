@@ -15,6 +15,9 @@
 	export let accountName = "Anonymous";
 	export let accountImage = "";
 	export let accountState = "Local only";
+	export let accountServer = "Local only";
+	export let accountSyncLabel = "Not synced yet";
+	export let accountSyncError = false;
 	export let accountSyncing = false;
 
 	const dispatch = createEventDispatcher<{ select: Section; account: void }>();
@@ -22,6 +25,8 @@
 
 	let sync: AssetSyncStatus | null = null;
 	let padState: PadState = { session: null, players: [] };
+	let accountOpen = false;
+	let accountWrap: HTMLDivElement | undefined;
 
 	$: resolvedLogoUrl = platformAssetUrl(logoUrl);
 	$: download = sync?.current && sync.current.byte_size > 0 ? sync.current : null;
@@ -34,11 +39,35 @@
 		void pad.state().then((state) => (padState = state));
 		const offSync = assetSync.onChange((status) => (sync = status));
 		const offPad = pad.onState((state) => (padState = state));
+		const onPointerDown = (event: PointerEvent) => {
+			if (!accountOpen || !accountWrap) return;
+			if (event.composedPath().includes(accountWrap)) return;
+			accountOpen = false;
+		};
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (!accountOpen || event.key !== "Escape") return;
+			event.stopPropagation();
+			accountOpen = false;
+		};
+		window.addEventListener("pointerdown", onPointerDown);
+		window.addEventListener("keydown", onKeyDown);
 		return () => {
 			offSync();
 			offPad();
+			window.removeEventListener("pointerdown", onPointerDown);
+			window.removeEventListener("keydown", onKeyDown);
 		};
 	});
+
+	function openAccountSettings() {
+		accountOpen = false;
+		dispatch("account");
+	}
+
+	function openAbout() {
+		accountOpen = false;
+		dispatch("select", "about");
+	}
 
 	function playerTitle(slot: number) {
 		const player = playerBySlot.get(slot);
@@ -105,16 +134,44 @@
 			</div>
 		{/if}
 
-		<button class="topbar-account" title={`${accountName} · ${accountSyncing ? "Syncing" : accountState}`} on:click={() => dispatch("account")}>
-			<span class="topbar-avatar" aria-hidden="true">
-				{#if accountImage}
-					<img src={accountImage} alt="" />
-				{:else}
-					<UserCircleIcon size={22} strokeWidth={2} />
-				{/if}
-				{#if accountSyncing}<span class="topbar-avatar-dot"></span>{/if}
-			</span>
-			<span class="topbar-account-name">{accountName}</span>
-		</button>
+		<div class="topbar-account-wrap" bind:this={accountWrap}>
+			<button
+				class="topbar-account"
+				title={`${accountName} · ${accountSyncing ? "Syncing" : accountState}`}
+				aria-expanded={accountOpen}
+				aria-haspopup="dialog"
+				on:click={() => (accountOpen = !accountOpen)}
+			>
+				<span class="topbar-avatar" aria-hidden="true">
+					{#if accountImage}
+						<img src={accountImage} alt="" />
+					{:else}
+						<UserCircleIcon size={22} strokeWidth={2} />
+					{/if}
+					{#if accountSyncing}<span class="topbar-avatar-dot"></span>{/if}
+				</span>
+				<span class="topbar-account-name">{accountName}</span>
+			</button>
+			{#if accountOpen}
+				<div class="account-popover" role="dialog" aria-label="Account">
+					<div class="account-popover-identity">
+						<span class="account-popover-avatar" aria-hidden="true">
+							{#if accountImage}
+								<img src={accountImage} alt="" />
+							{:else}
+								<UserCircleIcon size={26} strokeWidth={2} />
+							{/if}
+						</span>
+						<span class="account-popover-copy">
+							<strong>{accountName}</strong>
+							<span>{accountServer}</span>
+							<span class:error={accountSyncError}>{accountSyncLabel}</span>
+						</span>
+					</div>
+					<button class="account-popover-action" type="button" on:click={openAccountSettings}>Account settings</button>
+					<button class="account-popover-action" type="button" on:click={openAbout}>About</button>
+				</div>
+			{/if}
+		</div>
 	</div>
 </header>

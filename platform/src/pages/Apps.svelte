@@ -28,7 +28,8 @@
   export let openAppRequest: { appId: string; nonce: number } | null = null;
   export let theme: SidebarThemeSettings = { enabled: true, images: [] };
 
-  let recents: RecentApp[] = loadRecentApps();
+  let recents: RecentApp[] = [];
+  let recentLoad = 0;
   let padState: PadState = { session: null, players: [] };
   let filter = "";
   let now = Date.now();
@@ -62,11 +63,13 @@
     const onAccountChanged = () => {
       closeApp();
       void refreshApps();
+      void refreshRecents();
     };
     window.addEventListener("yui:apps-changed", onAppsChanged);
     window.addEventListener("yui:account-changed", onAccountChanged);
 
     void refreshApps();
+    void refreshRecents();
     void pad.state().then((state) => (padState = state));
     const offPad = pad.onState((state) => (padState = state));
     const clock = window.setInterval(() => (now = Date.now()), 60000);
@@ -120,12 +123,20 @@
     if (requested) launch(requested);
   }
 
-  function launch(app: YuiDevApp) {
-    recents = recordRecentApp(app.id);
+  async function refreshRecents() {
+    const ticket = ++recentLoad;
+    const items = await loadRecentApps();
+    if (ticket === recentLoad) recents = items;
+  }
+
+  async function launch(app: YuiDevApp) {
     now = Date.now();
     launchedId = app.id;
     reloadKey += 1;
     announceLaunched(true);
+    const ticket = ++recentLoad;
+    const items = await recordRecentApp(app.id);
+    if (ticket === recentLoad) recents = items;
   }
 
   function closeApp() {

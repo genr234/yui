@@ -513,7 +513,7 @@
     subtitle: page.pluginId,
     icon: BlocksIcon,
   })) satisfies SectionItem[];
-  $: sections = [...routes, ...pluginSections] satisfies SectionItem[];
+  $: sections = [...routes.filter((route) => route.id !== "about"), ...pluginSections] satisfies SectionItem[];
   $: activeRoute =
     pluginSections.find((route) => route.id === section) ?? findRoute(section);
   $: activeSubtitle = resolveSubtitle(activeRoute, { appCount, pluginCount });
@@ -522,6 +522,14 @@
   $: showTitleBar = section !== "apps";
   $: accountName = accountStatus?.active_account?.name ?? "Anonymous";
   $: accountImage = accountStatus?.active_account?.profile_image_url ?? "";
+  $: accountServer = accountStatus?.server_url || "Local only";
+  $: accountSyncLabel = accountStatus?.syncing
+    ? "Syncing"
+    : accountStatus?.last_sync_error
+      ? accountStatus.last_sync_error
+      : accountStatus?.last_sync_at
+        ? `Last sync ${new Date(accountStatus.last_sync_at).toLocaleString()}`
+        : "Not synced yet";
   $: accountState = accountStatus?.needs_pairing
     ? "Reconnect"
     : accountStatus?.last_sync_error
@@ -676,6 +684,9 @@
           {accountName}
           {accountImage}
           {accountState}
+          {accountServer}
+          {accountSyncLabel}
+          accountSyncError={Boolean(accountStatus?.last_sync_error)}
           accountSyncing={Boolean(accountStatus?.syncing)}
           on:select={(event) => (section = event.detail)}
           on:account={openAccountSettings}
