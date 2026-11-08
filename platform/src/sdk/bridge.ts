@@ -170,6 +170,17 @@ export class Bridge {
 
 class DemoBridge {
 	private values = new Map<string, unknown>();
+	private listeners = new Map<string, Set<BridgeEventListener<any>>>();
+	private padState: {
+		session: { code: string; join_url: string } | null;
+		players: Array<Record<string, unknown>>;
+	} = {
+		session: { code: "KQXM", join_url: "https://yui.example/play/KQXM?t=OT56FOOG" },
+		players: [
+			{ id: "p1", slot: 1, name: "Riccardo", color: "blue", host: true, connected: true },
+			{ id: "p2", slot: 2, name: "Sam", color: "purple", speaker: true, connected: true },
+		],
+	};
 	private storeEpoch = 0;
 	private config = {
 		url: "https://demo.yui.local",
@@ -228,13 +239,6 @@ class DemoBridge {
 			"plugins.settings.get": {},
 			"update.check": { available: false, current_commit: "browser-demo", latest_commit: "browser-demo" },
 			"store.list": [],
-			"pad.players": {
-				session: { code: "KQXM", join_url: "https://yui.example/join/KQXM" },
-				players: [
-					{ id: "p1", slot: 1, name: "Riccardo", color: "blue", host: true, connected: true },
-					{ id: "p2", slot: 2, name: "Sam", color: "purple", speaker: true, connected: true },
-				],
-			},
 			"assets.status": {
 				state: "syncing",
 				paused_reasons: [],
@@ -268,13 +272,52 @@ class DemoBridge {
 		if (method === "store.delete") this.values.delete(String(params.id));
 		if (method === "storage.set") this.values.set(String(params.key), params.value);
 		if (method === "storage.delete") this.values.delete(String(params.key));
+		if (method === "pad.session.end") {
+			this.padState = { session: null, players: [] };
+			this.emitPad();
+			return this.padState as T;
+		}
+		if (method === "pad.session.start") {
+			this.padState = {
+				session: { code: "KQXM", join_url: "https://yui.example/play/KQXM?t=OT56FOOG" },
+				players: [
+					{ id: "p1", slot: 1, name: "Riccardo", color: "blue", host: true, connected: true },
+					{ id: "p2", slot: 2, name: "Sam", color: "purple", speaker: true, connected: true },
+				],
+			};
+			this.emitPad();
+			return this.padState as T;
+		}
+		if (method === "pad.players" || method === "pad.lobby" || method === "pad.kick" || method === "pad.host") {
+			return this.padState as T;
+		}
+		if (method === "pad.sensitive") return { active: Boolean(params.active) } as T;
 		if (method in responses) return responses[method] as T;
 
 		return undefined as T;
 	}
 
-	on<T = unknown>(_event: string, _fn: BridgeEventListener<T>): () => void {
-		return () => {};
+	on<T = unknown>(event: string, fn: BridgeEventListener<T>): () => void {
+		let set = this.listeners.get(event);
+		if (!set) {
+			set = new Set();
+			this.listeners.set(event, set);
+		}
+		set.add(fn as BridgeEventListener<any>);
+		return () => {
+			const current = this.listeners.get(event);
+			if (!current) return;
+			current.delete(fn as BridgeEventListener<any>);
+			if (current.size === 0) this.listeners.delete(event);
+		};
+	}
+
+	private emitPad() {
+		const set = this.listeners.get("pad.players");
+		if (!set) return;
+		for (const fn of [...set]) {
+			fn(this.padState);
+		}
 	}
 
 	setAuthToken(_token: string) {}

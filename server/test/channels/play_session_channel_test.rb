@@ -102,6 +102,22 @@ class PlaySessionChannelTest < ActionCable::Channel::TestCase
     end
   end
 
+  test "control fallback frames are relayed both ways" do
+    frame = { "t" => "ping", "id" => 1, "ts" => 42 }
+
+    stub_connection current_kiosk: @kiosk, current_player: nil
+    subscribe session_id: @play_session.id
+    assert_broadcast_on(player_stream, { type: "control", data: frame }) do
+      perform :signal, to: @player.id.to_s, type: "control", data: frame
+    end
+
+    stub_connection current_kiosk: nil, current_player: @player
+    subscribe
+    assert_broadcast_on(kiosk_stream, { from: @player.id.to_s, type: "control", data: frame }) do
+      perform :signal, type: "control", data: frame
+    end
+  end
+
   test "player signals with a bad type, or after a kick, are dropped" do
     stub_connection current_kiosk: nil, current_player: @player
     subscribe

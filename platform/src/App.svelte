@@ -25,6 +25,8 @@
   import DeleteIcon from "lucide-svelte/icons/delete";
   import PlusIcon from "lucide-svelte/icons/plus";
   import RefreshCwIcon from "lucide-svelte/icons/refresh-cw";
+  import SmartphoneIcon from "lucide-svelte/icons/smartphone";
+  import { pad } from "./sdk/pad";
   import { loadApps } from "./apps";
   import { resolveSubtitle } from "@/pages/subtitle";
   import {
@@ -64,6 +66,7 @@
   let authConfigured = false;
   let authUnlocked = false;
   let authVisible = false;
+  let padSensitiveSent = false;
   let authMode: "setup" | "unlock" = "unlock";
   let authSetupStep: "create" | "confirm" = "create";
   let authPin = "";
@@ -545,7 +548,23 @@
   ) {
     void requestAdminEntry();
   }
+  $: {
+    const sensitive = authVisible || section === "settings";
+    if (sensitive !== padSensitiveSent) {
+      padSensitiveSent = sensitive;
+      void pad.setSensitive(sensitive);
+    }
+  }
   $: homeActions = [
+    {
+      label: "Play on your phones",
+      icon: SmartphoneIcon,
+      tone: "blue",
+      run: () => {
+        section = "apps";
+        void pad.start();
+      },
+    },
     {
       label: "Refresh Status",
       icon: RefreshCwIcon,

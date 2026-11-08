@@ -155,6 +155,16 @@
 	opacity: 0.45;
 }
 
+.player-square.arrive {
+	animation: player-arrive 720ms ease;
+}
+
+@keyframes player-arrive {
+	0% { transform: scale(0.35); }
+	55% { transform: scale(1.18); }
+	100% { transform: scale(1); }
+}
+
 .topbar-account-wrap {
 	position: relative;
 	flex: 0 0 auto;

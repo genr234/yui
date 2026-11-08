@@ -25,6 +25,9 @@
 
 	let sync: AssetSyncStatus | null = null;
 	let padState: PadState = { session: null, players: [] };
+	let arrived: Record<string, boolean> = {};
+	let seenPlayers = new Set<string>();
+	let playersPrimed = false;
 	let accountOpen = false;
 	let accountWrap: HTMLDivElement | undefined;
 
@@ -36,9 +39,9 @@
 
 	onMount(() => {
 		void assetSync.status().then((status) => (sync = status));
-		void pad.state().then((state) => (padState = state));
+		void pad.state().then((state) => notePlayers(state));
 		const offSync = assetSync.onChange((status) => (sync = status));
-		const offPad = pad.onState((state) => (padState = state));
+		const offPad = pad.onState((state) => notePlayers(state));
 		const onPointerDown = (event: PointerEvent) => {
 			if (!accountOpen || !accountWrap) return;
 			if (event.composedPath().includes(accountWrap)) return;
@@ -67,6 +70,28 @@
 	function openAbout() {
 		accountOpen = false;
 		dispatch("select", "about");
+	}
+
+	function notePlayers(state: PadState) {
+		padState = state;
+		const connected = state.players.filter((player) => player.connected).map((player) => player.id);
+		if (!playersPrimed) {
+			playersPrimed = true;
+			seenPlayers = new Set(connected);
+			return;
+		}
+		const fresh: Record<string, boolean> = {};
+		for (const id of connected) {
+			if (!seenPlayers.has(id)) fresh[id] = true;
+		}
+		seenPlayers = new Set(connected);
+		if (Object.keys(fresh).length === 0) return;
+		arrived = { ...arrived, ...fresh };
+		window.setTimeout(() => {
+			const next = { ...arrived };
+			for (const id of Object.keys(fresh)) delete next[id];
+			arrived = next;
+		}, 720);
 	}
 
 	function playerTitle(slot: number) {
@@ -125,6 +150,7 @@
 						class="player-square"
 						class:open={!player}
 						class:away={player && !player.connected}
+						class:arrive={player && arrived[player.id]}
 						title={playerTitle(slot)}
 						style={player ? `background: ${playerSwatch[player.color] ?? "#2f76dc"}` : ""}
 					>
