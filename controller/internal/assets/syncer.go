@@ -116,17 +116,37 @@ type failure struct {
 	next  time.Time
 }
 
+// reconcileBind is one reconcile attempt's cancel. Pointer identity lets a
+// finishing attempt clear only its own registration.
+type reconcileBind struct {
+	cancel context.CancelFunc
+}
+
 type Syncer struct {
 	cfg Config
 
 	reconMu sync.Mutex // serialises reconciles; Quiesce holds it across an account switch
 
-	mu            sync.Mutex
-	generation    uint64
-	cancel        context.CancelFunc
-	reasons       map[string]struct{}
-	wake          chan struct{}
-	reconciling   bool
+	mu         sync.Mutex
+	generation uint64
+	// quiescing is set for the whole switch, before Quiesce waits on reconMu,
+	// so an attempt cannot adopt the bumped generation and download while the
+	// switch is blocked.
+	quiescing bool
+	// resumed is closed by Resume. Waiters must copy the channel under mu.
+	resumed     chan struct{}
+	bound       *reconcileBind
+	reasons     map[string]struct{}
+	wake        chan struct{}
+	reconciling bool
+	// beforeBind, when set, runs once with no syncer lock held after Reconcile
+	// sees a clear switch and before it publishes its cancel or takes reconMu.
+	// Tests freeze that window. The hook must not call Reconcile or Quiesce on
+	// this goroutine.
+	beforeBind func()
+	// onQuiesceWait, when set, runs once with no syncer lock held when an
+	// attempt notices a switch and waits instead of publishing a cancel.
+	onQuiesceWait func()
 	lastReconcile time.Time
 	lastErr       string
 	current       *Current
@@ -164,6 +184,7 @@ func NewSyncer(cfg Config) *Syncer {
 	}
 	return &Syncer{
 		cfg:      cfg,
+		resumed:  make(chan struct{}),
 		reasons:  map[string]struct{}{},
 		wake:     make(chan struct{}),
 		failures: map[string]failure{},
@@ -216,13 +237,20 @@ func (s *Syncer) TriggerReconcile() {
 // so a reconcile that already read the previous account cannot write or delete
 // on the new one. A reconcile that has not read yet waits here and then runs
 // against the published account.
+//
+// quiescing and the generation bump are published before this waits on
+// reconMu. An attempt publishes its cancel before it takes reconMu, and it
+// will not keep a generation that this bump already made. Otherwise an attempt
+// that held reconMu before registering its cancel would sample the new
+// generation, skip cancellation, and block this switch on the old download.
 func (s *Syncer) Quiesce() {
 	s.mu.Lock()
+	s.quiescing = true
 	s.generation++
-	cancel := s.cancel
+	bound := s.bound
 	s.mu.Unlock()
-	if cancel != nil {
-		cancel()
+	if bound != nil && bound.cancel != nil {
+		bound.cancel()
 	}
 	s.reconMu.Lock()
 	s.mu.Lock()
@@ -233,6 +261,12 @@ func (s *Syncer) Quiesce() {
 
 // Resume lets reconciles run again after Quiesce.
 func (s *Syncer) Resume() {
+	s.mu.Lock()
+	s.quiescing = false
+	resumed := s.resumed
+	s.resumed = make(chan struct{})
+	s.mu.Unlock()
+	close(resumed)
 	s.reconMu.Unlock()
 }
 
@@ -420,25 +454,135 @@ func validItem(it ManifestItem) error {
 // Reconcile diffs the manifest against local state and downloads what is
 // missing. force clears retry backoff.
 func (s *Syncer) Reconcile(ctx context.Context, force bool) error {
-	s.reconMu.Lock()
-	defer s.reconMu.Unlock()
+	gen, recCtx, slot, err := s.lockReconcile(ctx)
+	if err != nil {
+		return err
+	}
+	err = s.reconcileLocked(ctx, recCtx, gen, force)
+	s.unlockReconcile(slot)
+	return err
+}
 
+// lockReconcile publishes this attempt's cancel before taking reconMu. mu is
+// never held while waiting for reconMu. Quiesce takes mu and drops it before
+// taking reconMu, so the two locks are not inverted.
+func (s *Syncer) lockReconcile(ctx context.Context) (uint64, context.Context, *reconcileBind, error) {
+	for {
+		if err := ctx.Err(); err != nil {
+			return 0, nil, nil, err
+		}
+		gen, recCtx, slot, wait, err := s.bindReconcile(ctx)
+		if err != nil {
+			return 0, nil, nil, err
+		}
+		if wait != nil {
+			select {
+			case <-ctx.Done():
+				return 0, nil, nil, ctx.Err()
+			case <-wait:
+			}
+			continue
+		}
+		s.reconMu.Lock()
+		parentDone := ctx.Err() != nil
+		stale := recCtx.Err() != nil || s.superseded(gen) || s.quiesceActive()
+		if parentDone || stale {
+			s.unlockReconcile(slot)
+			if parentDone {
+				return 0, nil, nil, ctx.Err()
+			}
+			if err := s.waitUntilResumed(ctx); err != nil {
+				return 0, nil, nil, err
+			}
+			continue
+		}
+		return gen, recCtx, slot, nil
+	}
+}
+
+// bindReconcile registers cancel for the current generation, or reports that
+// the caller has to wait out a switch. It does not take reconMu.
+func (s *Syncer) bindReconcile(ctx context.Context) (uint64, context.Context, *reconcileBind, <-chan struct{}, error) {
 	s.mu.Lock()
+	if err := ctx.Err(); err != nil {
+		s.mu.Unlock()
+		return 0, nil, nil, nil, err
+	}
+	if s.quiescing {
+		return 0, nil, nil, s.takeQuiesceWait(), nil
+	}
+	if s.beforeBind != nil {
+		hook := s.beforeBind
+		s.beforeBind = nil
+		s.mu.Unlock()
+		hook()
+		s.mu.Lock()
+		if err := ctx.Err(); err != nil {
+			s.mu.Unlock()
+			return 0, nil, nil, nil, err
+		}
+		if s.quiescing {
+			return 0, nil, nil, s.takeQuiesceWait(), nil
+		}
+	}
 	gen := s.generation
 	recCtx, cancel := context.WithCancel(ctx)
-	s.cancel = cancel
+	slot := &reconcileBind{cancel: cancel}
+	s.bound = slot
 	s.reconciling = true
 	s.mu.Unlock()
-	defer func() {
-		cancel()
-		// reconMu is still held, so this reconcile is the only writer of cancel.
-		s.mu.Lock()
-		s.cancel = nil
-		s.reconciling = false
-		s.current = nil
-		s.mu.Unlock()
-	}()
+	return gen, recCtx, slot, nil, nil
+}
 
+// takeQuiesceWait releases mu and returns the channel Resume closes.
+func (s *Syncer) takeQuiesceWait() <-chan struct{} {
+	wait := s.resumed
+	hook := s.onQuiesceWait
+	s.onQuiesceWait = nil
+	s.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
+	return wait
+}
+
+func (s *Syncer) unlockReconcile(slot *reconcileBind) {
+	if slot != nil && slot.cancel != nil {
+		slot.cancel()
+	}
+	s.mu.Lock()
+	if slot != nil && s.bound == slot {
+		s.bound = nil
+		s.reconciling = false
+	}
+	s.current = nil
+	s.mu.Unlock()
+	s.reconMu.Unlock()
+}
+
+func (s *Syncer) quiesceActive() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.quiescing
+}
+
+func (s *Syncer) waitUntilResumed(ctx context.Context) error {
+	s.mu.Lock()
+	quiescing := s.quiescing
+	resumed := s.resumed
+	s.mu.Unlock()
+	if !quiescing {
+		return nil
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-resumed:
+		return nil
+	}
+}
+
+func (s *Syncer) reconcileLocked(ctx, recCtx context.Context, gen uint64, force bool) error {
 	manifest, err := s.cfg.Remote.Manifest(recCtx)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -563,6 +707,14 @@ func (s *Syncer) Reconcile(ctx context.Context, force bool) error {
 			continue
 		}
 		s.downloadOne(recCtx, it)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		// A switch that cancelled this stream must not record success or
+		// continue into another asset's download.
+		if s.superseded(gen) || recCtx.Err() != nil {
+			return nil
+		}
 	}
 
 	s.mu.Lock()
