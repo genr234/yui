@@ -1,31 +1,58 @@
 import type { Node } from '@yui/protocol'
 
+/** Dev-only preview tree (`?demo=layout`, `?demo=gamepad`, `?demo=remote`): every control type once. */
 export const demoTree: Node = {
   type: 'column',
-  props: { gap: 16 },
+  props: { gap: 14 },
   children: [
     { type: 'text', props: { text: 'Layout demo', size: 'large' } },
-    { type: 'text', props: { text: 'Hold a button; press and release events are logged below.' } },
     {
       type: 'row',
       children: [
-        { type: 'button', props: { id: 'minus', label: '-', variant: 'secondary' } },
+        { type: 'button', props: { id: 'minus', label: '−', variant: 'secondary' } },
         { type: 'button', props: { id: 'plus', label: '+', variant: 'secondary' } },
+        { type: 'button', props: { id: 'jump', label: 'Jump', bit: 0 } },
       ],
     },
-    { type: 'spacer', props: { flex: 1 } },
     {
-      type: 'grid',
-      props: { columns: 3 },
+      type: 'choice',
+      props: {
+        id: 'team',
+        options: [
+          { id: 'red', label: 'Red', color: '#d84a4a' },
+          { id: 'blue', label: 'Blue', color: '#2f76dc' },
+        ],
+      },
+    },
+    { type: 'keyboard', props: { id: 'kb', mode: 'field', placeholder: 'Say something', submit_label: 'Send' } },
+    { type: 'keyboard', props: { id: 'live' } },
+    { type: 'trackpad', props: { id: 'tp' } },
+    {
+      type: 'row',
+      props: { flex: 1 },
       children: [
-        { type: 'button', props: { id: 'one', label: '1' } },
-        { type: 'button', props: { id: 'two', label: '2' } },
-        { type: 'button', props: { id: 'a', label: 'A' } },
-        { type: 'button', props: { id: 'b', label: 'B' } },
-        { type: 'button', props: { id: 'z', label: 'Z' } },
-        { type: 'button', props: { id: 'c', label: 'C' } },
+        { type: 'stick', props: { id: 'ls', side: 'left', click_bit: 11 } },
+        { type: 'dpad', props: { id: 'dp' } },
       ],
     },
-    { type: 'button', props: { id: 'home', label: 'Home', variant: 'danger' } },
+    {
+      type: 'list',
+      props: {
+        id: 'games',
+        columns: 3,
+        items: [
+          { id: 'g1', title: 'First game', subtitle: '2 players' },
+          { id: 'g2', title: 'Second game' },
+          { id: 'g3', title: 'Third game' },
+        ],
+      },
+    },
   ],
+}
+
+export const demoGamepad: Node = { type: 'preset', props: { name: 'gamepad' } }
+
+export const demoRemote: Node = {
+  type: 'preset',
+  props: { name: 'motion-remote', labels: { South: 'A', R2: 'B', West: '1', North: '2', Select: '−', Start: '+' } },
 }

@@ -1,10 +1,48 @@
+/*
+ * Yui Pad theme. Values are copied from platform/src/styles/tokens.css (the
+ * pad is a separate bundle): the dark "chrome" palette, Yui blue, radii,
+ * press timing and font. --player is the player's colour (playerSwatch).
+ */
 :root {
-  --bg: #0f1020;
-  --surface: #181a33;
-  --surface-2: #252850;
-  --fg: #f3f4ff;
-  --muted: #9ea3cf;
-  --accent: #6c8cff;
+  --yui-chrome: linear-gradient(165deg, rgba(255, 255, 255, 0.08), transparent 38%),
+    linear-gradient(180deg, #1c2b3d 0%, #0d1825 100%);
+  --yui-chrome-fg: #f7fbff;
+  --yui-chrome-muted: #9fb1c4;
+  --yui-chrome-soft: #c9d6e4;
+  --yui-chrome-fill: rgba(255, 255, 255, 0.08);
+  --yui-chrome-active: rgba(255, 255, 255, 0.12);
+  --yui-chrome-line: rgba(255, 255, 255, 0.16);
+
+  --yui-blue: #2f76dc;
+  --yui-blue-lip: #1d58ad;
+  --yui-blue-soft: #6fb0ff;
+  --yui-violet: #6558d8;
+  --yui-teal: #0f9f8f;
+  --yui-orange: #ee9b23;
+  --yui-red: #d84a4a;
+
+  --yui-radius-shell: 22px;
+  --yui-radius-hero: 18px;
+  --yui-radius-card: 14px;
+  --yui-radius-control: 12px;
+  --yui-radius-badge: 10px;
+  --yui-lip: 3px;
+  --yui-ease-out: cubic-bezier(0.2, 0.9, 0.18, 1);
+  --yui-press: 120ms;
+  --yui-scrim: rgba(10, 16, 22, 0.6);
+  --yui-font: 'YuiAvenirNext', 'Avenir Next', 'Segoe UI', Helvetica, Arial, sans-serif;
+
+  /* pad aliases */
+  --bg: #0d1825;
+  --surface: #16263a;
+  --surface-2: #213650;
+  --fg: var(--yui-chrome-fg);
+  --muted: var(--yui-chrome-muted);
+  --line: var(--yui-chrome-line);
+  --accent: var(--yui-blue);
+  --accent-lip: var(--yui-blue-lip);
+  --player: var(--yui-blue);
+  --ink: #0d1825;
   color-scheme: dark;
 }
 
@@ -17,10 +55,13 @@ html,
 body {
   margin: 0;
   max-width: 100%;
+  min-height: 100%;
   overflow-x: hidden;
-  background: var(--bg);
+  background: #0d1825;
+  background-image: var(--yui-chrome);
+  background-attachment: fixed;
   color: var(--fg);
-  font-family: ui-rounded, 'SF Pro Rounded', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--yui-font);
   overscroll-behavior: none;
 }
 
@@ -38,16 +79,16 @@ h1 {
 input {
   width: 100%;
   padding: 16px 18px;
-  border: 3px solid var(--surface-2);
-  border-radius: 20px;
-  background: var(--surface);
+  border: 2px solid var(--line);
+  border-radius: var(--yui-radius-card);
+  background: var(--yui-chrome-fill);
   color: var(--fg);
   font: inherit;
   font-size: 1.1rem; /* >= 16px stops iOS zooming on focus */
 }
 input:focus {
   outline: none;
-  border-color: var(--accent);
+  border-color: var(--yui-blue-soft);
 }
 
 button {
@@ -56,22 +97,40 @@ button {
   cursor: pointer;
 }
 
-button.primary {
-  min-height: 64px;
+button.primary,
+button.secondary {
+  min-height: 60px;
   padding: 14px 24px;
   border: 0;
-  border-radius: 24px;
+  border-radius: var(--yui-radius-hero);
   background: var(--accent);
-  color: #0f1020;
-  font-size: 1.25rem;
-  font-weight: 800;
-  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font-size: 1.15rem;
+  font-weight: 700;
+  box-shadow: 0 var(--yui-lip) 0 var(--accent-lip);
+  transition: transform var(--yui-press) var(--yui-ease-out), box-shadow var(--yui-press) var(--yui-ease-out);
 }
-button.primary:active:not(:disabled) {
-  transform: translateY(5px);
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+button.secondary {
+  background: var(--yui-chrome-fill);
+  box-shadow: 0 var(--yui-lip) 0 rgba(0, 0, 0, 0.35), 0 0 0 1px var(--line) inset;
+}
+button.primary:active:not(:disabled),
+button.secondary:active:not(:disabled) {
+  transform: translateY(var(--yui-lip));
+  box-shadow: 0 0 0 var(--accent-lip);
 }
 button.primary:disabled {
   opacity: 0.4;
   box-shadow: none;
+}
+
+/* iOS haptic switch (platform/haptics.ts): present but invisible. */
+.haptic-switch {
+  position: fixed;
+  left: -100px;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
