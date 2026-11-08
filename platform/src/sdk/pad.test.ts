@@ -14,11 +14,51 @@ mock.module("./bridge", () => ({
 				release = resolve;
 			});
 		},
-		on: () => () => {},
+		on: (event: string, fn: (data: unknown) => void) => {
+			listeners.set(event, fn);
+			return () => listeners.delete(event);
+		},
 	},
 }));
 
-const { pad, padAction } = await import("./pad");
+const listeners = new Map<string, (data: unknown) => void>();
+
+const { pad, padAction, cursorColor, remoteIntent } = await import("./pad");
+
+describe("pad events", () => {
+	test("each phone event has its own bridge event name", () => {
+		const seen: string[] = [];
+		const offs = [
+			pad.onHome((home) => seen.push(`home:${home.via}`)),
+			pad.onRemote((remote) => seen.push(`remote:${remote.action}`)),
+			pad.onCursor((cursor) => seen.push(`cursor:${cursor.x},${cursor.y}`)),
+			pad.onKeyboard((active) => seen.push(`keyboard:${active}`)),
+		];
+		listeners.get("pad.home")?.({ player_id: "p1", via: "button" });
+		listeners.get("pad.remote")?.({ player_id: "p1", action: "open_yui" });
+		listeners.get("pad.cursor")?.({ x: 4, y: 5, visible: true });
+		listeners.get("pad.keyboard")?.({ active: true });
+		listeners.get("pad.keyboard")?.(null);
+		expect(seen).toEqual(["home:button", "remote:open_yui", "cursor:4,5", "keyboard:true", "keyboard:false"]);
+		for (const off of offs) off();
+		expect(listeners.size).toBe(0);
+	});
+
+	test("remote buttons open, close and go back", () => {
+		expect(remoteIntent("open_yui", false)).toBe("open");
+		expect(remoteIntent("open_yui", true)).toBe("close");
+		expect(remoteIntent("back", true)).toBe("close");
+		expect(remoteIntent("back", false)).toBe("history-back");
+		expect(remoteIntent("home", true)).toBe("close");
+		expect(remoteIntent("home", false)).toBe("none");
+	});
+
+	test("cursor colour follows the player swatch", () => {
+		expect(cursorColor("teal")).toBe("#0f9f8f");
+		expect(cursorColor(undefined)).toBe("var(--yui-blue)");
+		expect(cursorColor("plaid")).toBe("var(--yui-blue)");
+	});
+});
 
 describe("pad.run", () => {
 	test("a second tap while one is in flight shares the first call", async () => {
