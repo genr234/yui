@@ -149,6 +149,58 @@ class PlayerTest < ActiveSupport::TestCase
     assert_raises(ArgumentError) { start_session.transfer_speaker!(other) }
   end
 
+  test "a second speaker pairs as stereo, and either leaving sends the other back to mono" do
+    play_session = start_session
+    host, = join_player(play_session, name: "Host")
+    other, = join_player(play_session, name: "Other")
+    third, = join_player(play_session, name: "Third")
+
+    assert_broadcasts(PlaySessionChannel.broadcasting_for(play_session), 2) do
+      play_session.pair_speaker!(other, "right")
+    end
+    assert_equal "left", host.reload.speaker_channel
+    assert_equal "right", other.reload.speaker_channel
+    assert host.speaker? && other.speaker?
+    assert_equal "right", other.as_player_json[:speaker_channel]
+
+    # A third phone asking for the right channel displaces the old one.
+    play_session.pair_speaker!(third, "right")
+    assert_not other.reload.speaker?
+    assert_nil other.speaker_channel
+    assert_equal [ "left", "right" ], [ host.reload.speaker_channel, third.reload.speaker_channel ]
+
+    # The right phone leaves: the host plays the whole mix again.
+    third.mark_connected!("n")
+    play_session.speaker_left!(third)
+    assert_not third.reload.speaker?
+    assert host.reload.speaker?
+    assert_nil host.speaker_channel
+
+    play_session.pair_speaker!(other, "left")
+    assert_equal "right", host.reload.speaker_channel
+    play_session.kick!(other)
+    assert_nil host.reload.speaker_channel
+    assert host.speaker?
+  end
+
+  test "pairing needs another speaker and a valid channel; be_speaker dissolves a pair" do
+    play_session = start_session
+    host, = join_player(play_session, name: "Host")
+    other, = join_player(play_session, name: "Other")
+
+    assert_raises(ArgumentError) { play_session.pair_speaker!(host, "left") }
+    assert_raises(ArgumentError) { play_session.pair_speaker!(other, "middle") }
+
+    play_session.pair_speaker!(other, "left")
+    assert_equal "right", host.reload.speaker_channel
+
+    play_session.transfer_speaker!(other)
+    assert other.reload.speaker?
+    assert_nil other.speaker_channel
+    assert_not host.reload.speaker?
+    assert_nil host.speaker_channel
+  end
+
   test "kicking the speaker hands the role to the host" do
     play_session = start_session
     host, = join_player(play_session, name: "Host")

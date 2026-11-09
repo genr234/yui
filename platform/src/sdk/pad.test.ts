@@ -2,13 +2,15 @@ import { describe, expect, mock, test } from "bun:test";
 import { get } from "svelte/store";
 
 const sends: string[] = [];
+const sentParams: unknown[] = [];
 let release: (value: unknown) => void = () => {};
 let fail: Error | null = null;
 
 mock.module("./bridge", () => ({
 	bridge: {
-		send: (method: string) => {
+		send: (method: string, params?: unknown) => {
 			sends.push(method);
+			sentParams.push(params);
 			if (fail) return Promise.reject(fail);
 			return new Promise((resolve) => {
 				release = resolve;
@@ -87,6 +89,15 @@ describe("pad.run", () => {
 });
 
 describe("session admin", () => {
+	test("pairing as stereo sends the channel with pad.speaker", () => {
+		sends.length = 0;
+		sentParams.length = 0;
+		void pad.makeSpeaker("p2", "right");
+		void pad.makeSpeaker("p3");
+		expect(sends).toEqual(["pad.speaker", "pad.speaker"]);
+		expect(sentParams).toEqual([{ player_id: "p2", channel: "right" }, { player_id: "p3" }]);
+	});
+
 	test("lobby, kick, host and speaker call their bridge commands", async () => {
 		sends.length = 0;
 		void pad.kick("p2");

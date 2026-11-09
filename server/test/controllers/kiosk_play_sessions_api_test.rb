@@ -95,6 +95,28 @@ class KioskPlaySessionsApiTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "pairs a second speaker as a stereo channel" do
+    play_session = start_session(@kiosk)
+    host, = join_player(play_session, name: "Host")
+    other, = join_player(play_session, name: "Other")
+
+    post "/api/kiosk/play_sessions/#{play_session.id}/players/#{other.id}/speaker", headers: @auth, params: { channel: "right" }
+    assert_response :no_content
+    assert_equal "right", other.reload.speaker_channel
+    assert_equal "left", host.reload.speaker_channel
+
+    get "/api/kiosk/play_sessions/#{play_session.id}", headers: @auth
+    assert_equal [ "left", "right" ], response.parsed_body["players"].map { |player| player["speaker_channel"] }
+
+    post "/api/kiosk/play_sessions/#{play_session.id}/players/#{other.id}/speaker", headers: @auth, params: { channel: "middle" }
+    assert_response :unprocessable_entity
+
+    post "/api/kiosk/play_sessions/#{play_session.id}/players/#{other.id}/speaker", headers: @auth
+    assert_response :no_content
+    assert_nil other.reload.speaker_channel
+    assert_not host.reload.speaker?
+  end
+
   test "kicks players and transfers host" do
     play_session = start_session(@kiosk)
     host, = join_player(play_session, name: "Host")

@@ -98,6 +98,9 @@ type System struct {
 	T      string `json:"t"`
 	Action string `json:"action"`
 	Value  any    `json:"value,omitempty"`
+	// Channel (be_speaker only): "left" or "right" joins the current speaker
+	// as one half of a stereo pair; empty makes the sender the one speaker.
+	Channel string `json:"channel,omitempty"`
 }
 
 // ProfileRequest (kiosk → pad) asks the phone's player to let a game keep a

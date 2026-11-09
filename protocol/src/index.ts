@@ -6,6 +6,8 @@ export const PROTOCOL_VERSION = 1;
 export type Color = "blue" | "red" | "green" | "yellow" | "purple" | "orange" | "pink" | "teal";
 export const COLORS: readonly Color[] = ["blue", "red", "green", "yellow", "purple", "orange", "pink", "teal"];
 
+export type SpeakerChannel = "left" | "right";
+
 export interface Player {
   id: string;
   slot: number | null;
@@ -15,6 +17,11 @@ export interface Player {
   connected: boolean;
   /** This phone plays the kiosk's audio (contracts §2). Absent on older kiosks. */
   speaker?: boolean;
+  /**
+   * "left" or "right" while two speaker phones form a stereo pair (each plays
+   * that channel); absent or null for a mono speaker and for non-speakers.
+   */
+  speaker_channel?: SpeakerChannel | null;
   /**
    * An emoji, or a selfie as a `data:image/jpeg|webp;base64,` URL (contracts §2).
    * Render it as an image only when `avatarImage` returns a URL; otherwise as text.
@@ -111,6 +118,8 @@ export interface System {
   t: "system";
   action: SystemAction;
   value?: unknown;
+  /** `be_speaker` only: join the current speaker as one half of a stereo pair. */
+  channel?: SpeakerChannel;
 }
 /** kiosk -> pad: a game asks to keep a profile for this player (plan 10). */
 export interface ProfileRequest {
@@ -361,6 +370,7 @@ export function parseControl(json: string): ControlMessage {
       break;
     case "system":
       if (!isStr(m.action) || !SYSTEM_ACTIONS.includes(m.action)) fail("system: bad action");
+      if (m.channel !== undefined && m.channel !== "left" && m.channel !== "right") fail("system: channel must be left or right");
       break;
     case "profile_request":
       if (!isStr(m.app_id) || m.app_id === "") fail("profile_request: app_id must be a non-empty string");

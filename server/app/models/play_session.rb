@@ -123,9 +123,10 @@ class PlaySession < ApplicationRecord
       was_host = player.host?
       was_speaker = player.speaker?
       freed_slot = player.slot
-      player.update!(kicked_at: Time.current, host: false, speaker: false, connected: false, connection_nonce: nil)
+      player.update!(kicked_at: Time.current, host: false, speaker: false, speaker_channel: nil, connected: false, connection_nonce: nil)
       seated = seat_spectator!(freed_slot) if freed_slot
       assign_new_host! if was_host
+      dissolve_pair!
       give_speaker_to_host! if was_speaker
     end
     seated&.broadcast_updated
@@ -144,27 +145,75 @@ class PlaySession < ApplicationRecord
     spectator
   end
 
-  # Moves the speaker role (the one phone that plays the kiosk's sound).
-  # Exactly one active player holds it; the kiosk reroutes the audio track.
+  # Moves the speaker role (the one phone that plays the kiosk's sound) to
+  # the player, alone and mono: a stereo pair, if there was one, is dissolved.
+  # The kiosk reroutes the audio track.
   def transfer_speaker!(player)
     raise ArgumentError, "player is not in this session" unless player.play_session_id == id
     raise ArgumentError, "player was kicked" if player.kicked?
-    return if player.speaker?
 
-    previous = nil
+    others = players.active.where(speaker: true).where.not(id: player.id).to_a
+    return if player.speaker? && player.speaker_channel.nil? && others.empty?
+
     transaction do
-      previous = players.active.find_by(speaker: true)
-      previous&.update!(speaker: false)
-      player.update!(speaker: true)
+      others.each { |other| other.update!(speaker: false, speaker_channel: nil) }
+      player.update!(speaker: true, speaker_channel: nil)
     end
-    previous&.broadcast_updated
+    others.each(&:broadcast_updated)
     player.broadcast_updated
+  end
+
+  # Makes the player one channel ("left" or "right") of a stereo pair with the
+  # current speaker, who takes the other channel. A player asking for a
+  # channel someone else already holds takes it over; the displaced phone
+  # stops being a speaker. Needs a speaker other than the player.
+  def pair_speaker!(player, channel)
+    raise ArgumentError, "player is not in this session" unless player.play_session_id == id
+    raise ArgumentError, "player was kicked" if player.kicked?
+    raise ArgumentError, "channel must be left or right" unless Player::SPEAKER_CHANNELS.include?(channel)
+
+    opposite = (Player::SPEAKER_CHANNELS - [ channel ]).first
+    others = players.active.where(speaker: true).where.not(id: player.id).order(:id).to_a
+    displaced = others.find { |other| other.speaker_channel == channel }
+    partner = others.find { |other| other != displaced && other.speaker_channel == opposite } ||
+      others.find { |other| other != displaced }
+    raise ArgumentError, "there is no speaker to pair with" unless partner
+
+    changed = [ player, partner ]
+    transaction do
+      if displaced
+        displaced.update!(speaker: false, speaker_channel: nil)
+        changed << displaced
+      end
+      partner.update!(speaker_channel: opposite)
+      player.update!(speaker: true, speaker_channel: channel)
+    end
+    changed.each(&:broadcast_updated)
+  end
+
+  # One half of a stereo pair is gone: the other plays the whole mix again.
+  def dissolve_pair!
+    rest = players.active.where(speaker: true).where.not(speaker_channel: nil).to_a
+    return if rest.size != 1
+
+    rest.each { |player| player.update!(speaker_channel: nil) }
+    rest.each(&:broadcast_updated)
   end
 
   # The speaker's phone went away (cable unsubscribed): the host becomes the
   # speaker. A host who was the speaker keeps the role until it comes back.
+  # A phone in a stereo pair leaves it (host or not), and the other half goes
+  # back to mono.
   def speaker_left!(player)
-    return unless player.speaker? && !player.host?
+    return unless player.speaker?
+
+    if player.speaker_channel
+      player.update!(speaker: false, speaker_channel: nil)
+      player.broadcast_updated
+      dissolve_pair!
+      return
+    end
+    return if player.host?
 
     host = players.active.where.not(id: player.id).find_by(host: true)
     transfer_speaker!(host) if host

@@ -15,8 +15,16 @@ module Api
         end
 
         def speaker
-          @play_session.transfer_speaker!(@player)
+          # With `channel` (left|right) the player joins the current speaker as
+          # a stereo pair; without it the player becomes the one mono speaker.
+          if params[:channel].present?
+            @play_session.pair_speaker!(@player, params[:channel].to_s)
+          else
+            @play_session.transfer_speaker!(@player)
+          end
           head :no_content
+        rescue ArgumentError => error
+          render json: { error: "invalid", detail: error.message }, status: :unprocessable_entity
         end
 
         private

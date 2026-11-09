@@ -9,6 +9,8 @@ export type PadPlayer = {
 	color: string;
 	host: boolean;
 	speaker?: boolean;
+	/** "left" or "right" while two speaker phones form a stereo pair; absent for a mono speaker. */
+	speaker_channel?: "left" | "right" | null;
 	connected: boolean;
 	/** Last control round trip in ms and accepted input frames per second (absent until measured). */
 	rtt_ms?: number;
@@ -95,8 +97,12 @@ export const pad = {
 	kick: (playerId: string) => playerAction("pad.kick", { player_id: playerId }),
 	/** Give the host role (the remote and the Home sheet) to another phone. */
 	makeHost: (playerId: string) => playerAction("pad.host", { player_id: playerId }),
-	/** Play the kiosk's sound on this phone. */
-	makeSpeaker: (playerId: string) => playerAction("pad.speaker", { player_id: playerId }),
+	/**
+	 * Play the kiosk's sound on this phone. With a channel the phone pairs with
+	 * the current speaker as that half of a stereo pair.
+	 */
+	makeSpeaker: (playerId: string, channel?: "left" | "right") =>
+		playerAction("pad.speaker", channel ? { player_id: playerId, channel } : { player_id: playerId }),
 	/** True while the PIN screen or Settings is open. The controller drops phone pointer and text input meanwhile (D9). */
 	setSensitive: (active: boolean) =>
 		bridge.send("pad.sensitive", { active }).then(() => undefined).catch(() => undefined),

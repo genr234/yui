@@ -12,7 +12,8 @@
   export let onResume: () => void
   export let onQuit: () => void
   export let onVolume: (v: number) => void
-  export let onSpeaker: () => void
+  /** Take the sound here; with a channel, join the current speaker as that half of a stereo pair. */
+  export let onSpeaker: (channel?: 'left' | 'right') => void
   /** Vibration on/off for this phone; null hides the switch (no haptics here). */
   export let vibration: boolean | null = null
   export let onVibration: (on: boolean) => void = () => {}
@@ -28,7 +29,9 @@
   export let onAccountLink: (code: string) => Promise<void> = async () => {}
 
   let confirmQuit = false
-  let speakerAsked = false
+  let speakerAsked: '' | 'mono' | 'right' = ''
+  // A role change from the kiosk (or a failed ask) re-enables the buttons.
+  $: ((player.speaker, player.speaker_channel), (speakerAsked = ''))
   let editingAvatar = false
   let draftAvatar: string | null = null
   let savingAvatar = false
@@ -168,15 +171,35 @@
     {/if}
 
     {#if player.speaker}
-      <p class="speaker-now">This phone is the speaker</p>
+      <p class="speaker-now">
+        {player.speaker_channel ? `This phone is the ${player.speaker_channel} speaker` : 'This phone is the speaker'}
+      </p>
+      {#if player.speaker_channel}
+        <button
+          class="secondary"
+          disabled={speakerAsked !== ''}
+          on:click={() => {
+            speakerAsked = 'mono'
+            onSpeaker()
+          }}>{speakerAsked ? 'Switching the sound here…' : 'Play all the sound here'}</button
+        >
+      {/if}
     {:else}
       <button
         class="secondary"
-        disabled={speakerAsked}
+        disabled={speakerAsked !== ''}
         on:click={() => {
-          speakerAsked = true
+          speakerAsked = 'mono'
           onSpeaker()
-        }}>{speakerAsked ? 'Switching the sound here…' : 'Be the speaker'}</button
+        }}>{speakerAsked === 'mono' ? 'Switching the sound here…' : 'Be the speaker'}</button
+      >
+      <button
+        class="secondary"
+        disabled={speakerAsked !== ''}
+        on:click={() => {
+          speakerAsked = 'right'
+          onSpeaker('right')
+        }}>{speakerAsked === 'right' ? 'Pairing as the right speaker…' : 'Be the right speaker'}</button
       >
     {/if}
 

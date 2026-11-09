@@ -133,10 +133,15 @@ func (c *apiClient) TransferHost(ctx context.Context, sessionID, playerID string
 	return c.postEmpty(ctx, playerActionPath(sessionID, playerID, "host"))
 }
 
-// TransferSpeaker moves the speaker role (contracts §2). Rails sends
-// player_updated for the old and the new speaker.
-func (c *apiClient) TransferSpeaker(ctx context.Context, sessionID, playerID string) error {
-	return c.postEmpty(ctx, playerActionPath(sessionID, playerID, "speaker"))
+// TransferSpeaker moves the speaker role (contracts §2), or with a channel
+// ("left" or "right") pairs the player with the current speaker as stereo.
+// Rails sends player_updated for every phone whose role changed.
+func (c *apiClient) TransferSpeaker(ctx context.Context, sessionID, playerID, channel string) error {
+	path := playerActionPath(sessionID, playerID, "speaker")
+	if channel != "" {
+		path += "?channel=" + url.QueryEscape(channel)
+	}
+	return c.postEmpty(ctx, path)
 }
 
 func (c *apiClient) ICE(ctx context.Context, id string) (ICEConfig, error) {

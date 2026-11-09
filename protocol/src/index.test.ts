@@ -94,6 +94,18 @@ describe("system sensitive", () => {
   });
 });
 
+describe("system be_speaker channel", () => {
+  test("be_speaker takes an optional left or right channel", () => {
+    expect(parseControl('{"t":"system","action":"be_speaker"}')).toEqual({ t: "system", action: "be_speaker" });
+    expect(parseControl('{"t":"system","action":"be_speaker","channel":"right"}')).toEqual({
+      t: "system",
+      action: "be_speaker",
+      channel: "right",
+    });
+    expect(() => parseControl('{"t":"system","action":"be_speaker","channel":"middle"}')).toThrow();
+  });
+});
+
 describe("profile messages (plan 10)", () => {
   test("request and reply parse", () => {
     expect(parseControl('{"t":"profile_request","app_id":"a.b","app_name":"Game"}')).toEqual({ t: "profile_request", app_id: "a.b", app_name: "Game" });

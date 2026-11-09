@@ -23,6 +23,7 @@
 	$: session = padState.session;
 	$: playerBySlot = new Map(padState.players.filter((player) => player.slot).map((player) => [player.slot, player]));
 	$: seated = padState.players.filter((player) => player.slot);
+	$: hasSpeaker = padState.players.some((player) => player.speaker);
 	$: watching = padState.players.filter((player) => !player.slot);
 	$: if (!session) {
 		open = false;
@@ -98,10 +99,20 @@
 		return playerSwatch[player.color] ?? "#2f76dc";
 	}
 
+	/** " (left)" / " (right)" for a phone in a stereo pair. */
+	function channelTag(player: PadPlayer) {
+		return player.speaker_channel ? ` (${player.speaker_channel})` : "";
+	}
+
+	/** "L" / "R" for a phone in a stereo pair, else "". */
+	function channelLetter(player: PadPlayer) {
+		return player.speaker_channel === "left" ? " L" : player.speaker_channel === "right" ? " R" : "";
+	}
+
 	function squareTitle(slot: number) {
 		const player = playerBySlot.get(slot);
 		if (!player) return `Player ${slot}: open`;
-		const roles = [player.host && "host", player.speaker && "speaker"].filter(Boolean).join(", ");
+		const roles = [player.host && "host", player.speaker && `speaker${channelTag(player)}`].filter(Boolean).join(", ");
 		return `Player ${slot}: ${player.name}${roles ? ` (${roles})` : ""}`;
 	}
 </script>
@@ -194,7 +205,7 @@
 							<span class="session-player-name">
 								<strong>{player.name}</strong>
 								<span>
-									{#if !player.connected}Reconnecting…{:else if player.host && player.speaker}Host · sound{:else if player.host}Host{:else if player.speaker}Sound{:else}Playing{/if}
+									{#if !player.connected}Reconnecting…{:else if player.host && player.speaker}Host · sound{channelLetter(player)}{:else if player.host}Host{:else if player.speaker}Sound{channelLetter(player)}{:else}Playing{/if}
 									{#if player.connected && linkQuality(player.rtt_ms)}
 										<span
 											class={`session-link ${linkQuality(player.rtt_ms)}`}
@@ -207,6 +218,15 @@
 								{#if !player.speaker && player.connected}
 									<button type="button" title={`Play sound on ${player.name}'s phone`} on:click={() => pad.makeSpeaker(player.id)}>
 										<Volume2Icon size={17} strokeWidth={2.2} />
+									</button>
+								{/if}
+								{#if !player.speaker && player.connected && hasSpeaker}
+									<button
+										type="button"
+										title={`Pair as stereo: ${player.name}'s phone plays the right channel`}
+										on:click={() => pad.makeSpeaker(player.id, "right")}
+									>
+										L+R
 									</button>
 								{/if}
 								{#if !player.host && player.connected}

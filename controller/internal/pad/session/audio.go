@@ -85,6 +85,8 @@ type Audio struct {
 	mu        sync.Mutex
 	track     *audio.Track
 	target    audio.SampleWriter
+	pairL     audio.SampleWriter // stereo pair (SetPair); target is nil then
+	pairR     audio.SampleWriter
 	route     string
 	nativePID int
 	volume    float64
@@ -115,13 +117,26 @@ func NewAudio(cfg AudioConfig) *Audio {
 
 // SetTarget points the encoder at w (the speaker peer's track) or at nobody
 // (nil), and starts or stops the capture to match.
-func (a *Audio) SetTarget(w audio.SampleWriter) {
+func (a *Audio) SetTarget(w audio.SampleWriter) { a.setTargets(w, nil, nil) }
+
+// SetPair sends the left channel to l and the right channel to r, as two
+// mono Opus streams (a stereo speaker pair). With either nil it behaves
+// like SetTarget(nil). SetTarget returns to the single stream.
+func (a *Audio) SetPair(l, r audio.SampleWriter) {
+	if l == nil || r == nil {
+		a.setTargets(nil, nil, nil)
+		return
+	}
+	a.setTargets(nil, l, r)
+}
+
+func (a *Audio) setTargets(w, l, r audio.SampleWriter) {
 	a.mu.Lock()
 	if a.closed {
 		a.mu.Unlock()
 		return
 	}
-	if w != nil && a.track == nil {
+	if (w != nil || l != nil) && a.track == nil {
 		tr, err := audio.NewTrack(a.cfg.Track)
 		if err != nil {
 			a.lastErr = err
@@ -132,9 +147,19 @@ func (a *Audio) SetTarget(w audio.SampleWriter) {
 		tr.SetGain(a.volume)
 		a.track = tr
 	}
-	a.target = w
+	a.target, a.pairL, a.pairR = w, l, r
 	if a.track != nil {
-		a.track.SwitchTarget(w)
+		if l != nil {
+			if err := a.track.SwitchPair(l, r); err != nil {
+				// No stereo encoders: stop rather than play a half mix.
+				a.lastErr = err
+				a.pairL, a.pairR = nil, nil
+				a.track.SwitchTarget(nil)
+				log.Printf("pad audio: stereo pair encoders: %v", err)
+			}
+		} else {
+			a.track.SwitchTarget(w)
+		}
 	}
 	a.mu.Unlock()
 	a.reconcile()
@@ -227,7 +252,7 @@ func (a *Audio) Stats() audio.Stats {
 func (a *Audio) Close() error {
 	a.mu.Lock()
 	a.closed = true
-	a.target = nil
+	a.target, a.pairL, a.pairR = nil, nil, nil
 	a.mu.Unlock()
 	a.reconcile()
 	a.mu.Lock()
@@ -258,7 +283,7 @@ func (a *Audio) reconcile() {
 	a.recMu.Lock()
 	defer a.recMu.Unlock()
 	a.mu.Lock()
-	want := a.target != nil && a.track != nil && !a.closed
+	want := (a.target != nil || a.pairL != nil) && a.track != nil && !a.closed
 	process, nativePID := a.wantedLocked()
 	if run := a.run; run != nil && (!want || run.process != process || run.nativePID != nativePID) {
 		a.run = nil
