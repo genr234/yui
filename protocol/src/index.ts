@@ -58,8 +58,9 @@ export interface Node {
 
 export type EventKind = "press" | "release" | "tap" | "change" | "submit" | "swipe";
 export type TextOp = "insert" | "backspace" | "enter";
+// "playing" is kiosk→pad only: value true while an app or native game owns the phones, so the Home sheet offers Quit.
 // "sensitive" is kiosk→pad only: value true while the kiosk shows a sensitive surface (D9).
-export type SystemAction = "home" | "resume" | "quit" | "save_state" | "load_state" | "be_speaker" | "volume" | "sensitive";
+export type SystemAction = "home" | "resume" | "quit" | "save_state" | "load_state" | "be_speaker" | "volume" | "sensitive" | "playing";
 
 export interface Hello {
   t: "hello";
@@ -309,7 +310,7 @@ function checkNode(n: unknown, depth = 0): void {
 
 const EVENT_KINDS = ["press", "release", "tap", "change", "submit", "swipe"];
 const TEXT_OPS = ["insert", "backspace", "enter"];
-const SYSTEM_ACTIONS = ["home", "resume", "quit", "save_state", "load_state", "be_speaker", "volume", "sensitive"];
+const SYSTEM_ACTIONS = ["home", "resume", "quit", "save_state", "load_state", "be_speaker", "volume", "sensitive", "playing"];
 
 /** Parse and validate a control-channel JSON frame. Throws on invalid input. */
 export function parseControl(json: string): ControlMessage {

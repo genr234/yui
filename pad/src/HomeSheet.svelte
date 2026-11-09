@@ -11,6 +11,8 @@
   export let volume = 1
   export let onResume: () => void
   export let onQuit: () => void
+  /** Something (an app or a game) is running on the kiosk, so Quit means something. */
+  export let playing = false
   export let onVolume: (v: number) => void
   /** Take the sound here; with a channel, join the current speaker as that half of a stereo pair. */
   export let onSpeaker: (channel?: 'left' | 'right') => void
@@ -129,7 +131,7 @@
       </section>
     {/if}
 
-    <button class="primary big" on:click={onResume}>Resume</button>
+    <button class="primary big" on:click={onResume}>{playing ? 'Resume' : 'Close'}</button>
 
     <section class="account" aria-label="Yui account">
       {#if enteringCode}
@@ -203,7 +205,9 @@
       >
     {/if}
 
-    <button class="secondary danger" on:click={quit}>{confirmQuit ? 'Tap again to quit' : 'Quit game'}</button>
+    {#if playing}
+      <button class="secondary danger" on:click={quit}>{confirmQuit ? 'Tap again to quit' : 'Quit game'}</button>
+    {/if}
   </div>
 </div>
 

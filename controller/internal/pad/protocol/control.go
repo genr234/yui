@@ -131,7 +131,7 @@ type Pong = Ping
 var (
 	eventKinds    = set("press", "release", "tap", "change", "submit", "swipe")
 	textOps       = set("insert", "backspace", "enter")
-	systemActions = set("home", "resume", "quit", "save_state", "load_state", "be_speaker", "volume", "sensitive")
+	systemActions = set("home", "resume", "quit", "save_state", "load_state", "be_speaker", "volume", "sensitive", "playing")
 )
 
 func set(v ...string) map[string]bool {

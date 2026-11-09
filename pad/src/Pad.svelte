@@ -61,6 +61,8 @@
   let tree: Node | null = demoTree
   let layoutVersion = -Infinity
   let sensitive = false
+  // True while an app or native game owns the phones (kiosk `system` `playing`).
+  let playing = false
   let homeOpen = false
   let volume = loadVolume()
   setMasterVolume(volume)
@@ -133,6 +135,7 @@
         return
       case 'system':
         if (msg.action === 'sensitive') sensitive = msg.value === true
+        else if (msg.action === 'playing') playing = msg.value === true
         else if (msg.action === 'resume') homeOpen = false
         else if (msg.action === 'home') homeOpen = true
         else if (msg.action === 'volume' && typeof msg.value === 'number') {
@@ -443,6 +446,7 @@
       {volume}
       onResume={resume}
       onQuit={quit}
+      {playing}
       onVolume={changeVolume}
       vibration={hapticsSupported() ? vibration : null}
       onVibration={changeVibration}

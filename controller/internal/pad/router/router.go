@@ -96,6 +96,7 @@ type Router struct {
 	sess      Session
 	players   map[string]protocol.Player // ready players
 	sensitive bool
+	playing   bool
 
 	// pushMu orders layout sends so versions reach each phone increasing.
 	pushMu   sync.Mutex
@@ -130,7 +131,10 @@ func New(cfg Config) (*Router, error) {
 	if err != nil {
 		return nil, err
 	}
-	stack.SetFocusFunc(func(hub.Layer, hub.Provider) { r.Refresh(true) })
+	stack.SetFocusFunc(func(layer hub.Layer, _ hub.Provider) {
+		r.Refresh(true)
+		r.notePlaying(layer > hub.LayerShell)
+	})
 	if cfg.Pointer != nil {
 		if err := stack.RegisterAdapter(cfg.Pointer); err != nil {
 			return nil, err
@@ -312,6 +316,9 @@ func (r *Router) onPlayer(ev session.PlayerEvent) {
 		if sensitive {
 			r.sendSensitive(id, true)
 		}
+		if layer, _ := r.stack.Top(); layer > hub.LayerShell {
+			r.sendPlaying(id, true)
+		}
 		r.Refresh(false)
 	case session.PlayerUpdated:
 		r.mu.Lock()
@@ -426,6 +433,27 @@ func (r *Router) Refresh(force bool) {
 	if keyboard != r.keyboard {
 		r.keyboard = keyboard
 		r.emit(KeyboardEvent, Keyboard{Active: keyboard})
+	}
+}
+
+// notePlaying tells every phone whether an app or native game is on top, so
+// its Home sheet offers Quit only when there is something to quit.
+func (r *Router) notePlaying(playing bool) {
+	r.mu.Lock()
+	if r.playing == playing {
+		r.mu.Unlock()
+		return
+	}
+	r.playing = playing
+	r.mu.Unlock()
+	for _, id := range r.readyIDs() {
+		r.sendPlaying(id, playing)
+	}
+}
+
+func (r *Router) sendPlaying(playerID string, playing bool) {
+	if err := r.send(playerID, protocol.System{T: "system", Action: "playing", Value: playing}); err != nil {
+		log.Printf("pad hub: playing to %s: %v", playerID, err)
 	}
 }
 
