@@ -36,6 +36,15 @@ type Config struct {
 	// Audio sends the kiosk's sound to the speaker phone. nil leaves the
 	// peers without an audio track.
 	Audio *Audio
+	// OpenLobby opens the lobby (code-only joins) as soon as the session is
+	// up, including a reused one. Event mode sets it.
+	OpenLobby bool
+	// IdleTimeout ends the session by itself once no player is connected
+	// and nothing has happened (join, leave, input) for this long. Zero
+	// leaves idle sessions alone. IdleTick is how often that is checked
+	// (default 5 s); the elapsed time is measured with Now.
+	IdleTimeout time.Duration
+	IdleTick    time.Duration
 }
 
 // Player is a roster entry: the contracts §2 Player JSON, which carries the
@@ -115,6 +124,9 @@ type Manager struct {
 	onInput          func(playerID string, state protocol.InputState)
 	onPlayer         func(ev PlayerEvent)
 	cable            *cable
+	// lastActive is the clock reading of the last join, leave or accepted
+	// input, or the session start. Used by the idle timeout.
+	lastActive time.Time
 }
 
 type playerState struct {
@@ -163,6 +175,10 @@ func Open(cfg Config) (*Manager, error) {
 // Run creates or reuses the kiosk session, subscribes to signaling, and
 // deletes the session when ctx is cancelled (controller stop or host end).
 func (m *Manager) Run(ctx context.Context) error {
+	// The idle timeout ends the run like a host end: cancelling this
+	// derived context deletes the session on the way out.
+	ctx, stopSelf := context.WithCancel(ctx)
+	defer stopSelf()
 	m.mu.Lock()
 	if m.running {
 		m.mu.Unlock()
@@ -212,8 +228,14 @@ func (m *Manager) Run(ctx context.Context) error {
 	}
 	m.mu.Lock()
 	m.active = true
+	m.lastActive = m.now()
 	m.mu.Unlock()
 	m.emit()
+	if m.cfg.OpenLobby && !record.LobbyOpen {
+		if err := m.SetLobbyOpen(ctx, true); err != nil {
+			log.Printf("pad session: open lobby: %v", err)
+		}
+	}
 
 	runCtx, cancel := context.WithCancel(ctx)
 	// Deferred calls run last-in first-out: delete, cancel the loops, wait
@@ -225,6 +247,10 @@ func (m *Manager) Run(ctx context.Context) error {
 	defer m.deleteIfStopped(ctx, record.ID)
 
 	loops.Add(2)
+	if m.cfg.IdleTimeout > 0 {
+		loops.Add(1)
+		go func() { defer loops.Done(); m.idleLoop(runCtx, stopSelf) }()
+	}
 	go func() { defer loops.Done(); m.qrLoop(runCtx) }()
 	go func() { defer loops.Done(); m.pingLoop(runCtx) }()
 
@@ -856,6 +882,7 @@ func (m *Manager) applyPlayer(rp Player, event string) {
 		m.players[p.ID] = st
 	}
 	st.Player = p
+	m.lastActive = m.now()
 	m.noteSpeakerLocked(rp)
 	wasFallback := st.fallback
 	pushed := m.withSpeakerLocked(p)
@@ -1119,6 +1146,7 @@ func (m *Manager) applyInput(playerID string, raw []byte) {
 	st.input = state
 	st.hasInput = true
 	st.frames++
+	m.lastActive = m.now()
 	fn := m.onInput
 	m.mu.Unlock()
 	if fn != nil {
@@ -1137,6 +1165,7 @@ func (m *Manager) removePlayer(playerID string) {
 	delete(m.pings, playerID)
 	// Rails hands the role to the host (or the other half of a pair goes back
 	// to mono) and says so with player_updated.
+	m.lastActive = m.now()
 	if m.speakerID == playerID {
 		m.speakerID = ""
 	}
@@ -1317,6 +1346,49 @@ func (m *Manager) qrLoop(ctx context.Context) {
 				continue
 			}
 			m.emit()
+		}
+	}
+}
+
+// IdleExpired reports whether a session with this many connected players,
+// last active at lastActive, has been idle for timeout at now. A zero
+// timeout never expires.
+func IdleExpired(now, lastActive time.Time, timeout time.Duration, connected int) bool {
+	if timeout <= 0 || connected > 0 {
+		return false
+	}
+	return now.Sub(lastActive) >= timeout
+}
+
+func (m *Manager) idleExpired() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	connected := 0
+	for _, st := range m.players {
+		if st.Connected {
+			connected++
+		}
+	}
+	return IdleExpired(m.now(), m.lastActive, m.cfg.IdleTimeout, connected)
+}
+
+func (m *Manager) idleLoop(ctx context.Context, end context.CancelFunc) {
+	tick := m.cfg.IdleTick
+	if tick <= 0 {
+		tick = 5 * time.Second
+	}
+	ticker := time.NewTicker(tick)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if m.idleExpired() {
+				log.Printf("pad session: idle for %s, ending", m.cfg.IdleTimeout)
+				end()
+				return
+			}
 		}
 	}
 }

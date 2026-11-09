@@ -68,6 +68,7 @@
     | "app"
     | "plugins"
     | "update"
+    | "event"
     | "account"
     | "sidebar-theme";
 
@@ -307,6 +308,7 @@
     if (page === "account") return "root";
     if (page === "sidebar-theme") return "root";
     if (page === "update") return "root";
+    if (page === "event") return "root";
     if (page === "apps") return "root";
     return "root";
   }
@@ -372,6 +374,42 @@
     } finally {
       updateBusy = false;
     }
+  }
+
+  const EVENT_MINUTES_MIN = 1;
+  const EVENT_MINUTES_MAX = 60;
+  let eventBusy = false;
+  let eventError = "";
+
+  function eventIdleMinutes(currentConfig = config) {
+    const value = Number(currentConfig?.event_idle_minutes);
+    return Number.isFinite(value) && value >= 1 ? Math.round(value) : 5;
+  }
+
+  async function saveEventConfig(patch: {
+    event_mode?: boolean;
+    event_idle_minutes?: number;
+  }) {
+    eventBusy = true;
+    eventError = "";
+    try {
+      config = await bridge.send("config.update", patch);
+      window.dispatchEvent(
+        new CustomEvent("yui:config-changed", { detail: config }),
+      );
+    } catch (error) {
+      eventError = error instanceof Error ? error.message : String(error);
+    } finally {
+      eventBusy = false;
+    }
+  }
+
+  function stepEventMinutes(delta: number) {
+    const next = Math.min(
+      EVENT_MINUTES_MAX,
+      Math.max(EVENT_MINUTES_MIN, eventIdleMinutes() + delta),
+    );
+    if (next !== eventIdleMinutes()) void saveEventConfig({ event_idle_minutes: next });
   }
 
   async function applyUpdate() {
@@ -685,6 +723,13 @@
             <span>
               <span>Auto update</span>
               <small>{updateSummary(updateStatus, config)}</small>
+            </span>
+            <ChevronRightIcon size={18} strokeWidth={2.4} />
+          </button>
+          <button class="settings-row" on:click={() => goTo("event", "forward")}>
+            <span>
+              <span>Event mode</span>
+              <small>{config?.event_mode ? `On, idle after ${eventIdleMinutes(config)} min` : "Off"}</small>
             </span>
             <ChevronRightIcon size={18} strokeWidth={2.4} />
           </button>
@@ -1139,6 +1184,63 @@
                 <DownloadIcon size={14} strokeWidth={2.4} />
                 Install
               </button>
+            </span>
+          </div>
+        </section>
+      </div>
+    {:else if page === "event"}
+      <div
+        class:settings-page-motion={hasNavigated}
+        class="settings-page {pageDirection}"
+      >
+        <nav class="settings-nav" aria-label="Settings navigation">
+          <button
+            class="icon-button"
+            aria-label="Back to settings"
+            title="Back to settings"
+            on:click={() => goTo("root", "back")}
+          >
+            <ArrowLeftIcon size={18} strokeWidth={2.4} />
+          </button>
+          <span>Event mode</span>
+        </nav>
+
+        <section class="settings-group">
+          <label class="settings-row permission-row">
+            <span>
+              <span>Event mode</span>
+              <small
+                >Anyone can join with the code, idle sessions end after {eventIdleMinutes(
+                  config,
+                )} minutes, and Yui shows an attract screen when nobody is playing.</small
+              >
+            </span>
+            <input
+              type="checkbox"
+              checked={config?.event_mode === true}
+              disabled={eventBusy}
+              on:change={(event) =>
+                saveEventConfig({ event_mode: event.currentTarget.checked })}
+            />
+          </label>
+          <div class="settings-row static settings-actions-row">
+            <span>
+              <span>End idle sessions after</span>
+              <small>{eventError || `${eventIdleMinutes(config)} ${eventIdleMinutes(config) === 1 ? "minute" : "minutes"} with no players and no input`}</small>
+            </span>
+            <span class="settings-actions">
+              <button
+                class="settings-inline-button"
+                aria-label="One minute less"
+                disabled={eventBusy || eventIdleMinutes(config) <= EVENT_MINUTES_MIN}
+                on:click={() => stepEventMinutes(-1)}>-</button
+              >
+              <button
+                class="settings-inline-button"
+                aria-label="One minute more"
+                disabled={eventBusy || eventIdleMinutes(config) >= EVENT_MINUTES_MAX}
+                on:click={() => stepEventMinutes(1)}>+</button
+              >
             </span>
           </div>
         </section>

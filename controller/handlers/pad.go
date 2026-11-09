@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"kiosk/controller/internal/config"
 	"kiosk/controller/internal/pad/cdp"
 	"kiosk/controller/internal/pad/pads"
 	"kiosk/controller/internal/pad/protocol"
@@ -236,6 +237,8 @@ func (r *Registry) startPadSession() (session.Snapshot, error) {
 		DeviceToken: account.DeviceToken,
 		KioskName:   account.Name,
 		Audio:       r.Audio(),
+		OpenLobby:   cfg.EventMode,
+		IdleTimeout: eventIdleTimeout(cfg),
 	})
 	if err != nil {
 		return emptyPadSnapshot(), err
@@ -390,4 +393,17 @@ func (r *Registry) padHub() *router.Router {
 	hub.SetSensitive(r.padSensitive)
 	r.padMu.Unlock()
 	return hub
+}
+
+// eventIdleTimeout is how long an empty session may sit before it ends by
+// itself: only in event mode, never shorter than a minute.
+func eventIdleTimeout(cfg config.Config) time.Duration {
+	if !cfg.EventMode {
+		return 0
+	}
+	minutes := cfg.EventIdleMinutes
+	if minutes <= 0 {
+		minutes = 5
+	}
+	return time.Duration(minutes) * time.Minute
 }

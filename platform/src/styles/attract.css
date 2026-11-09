@@ -1,0 +1,280 @@
+/* Event mode's attract screen (AttractScreen.svelte): the Night arcade look in
+ * Yui's navy chrome, one big join code and a slow loop of covers. */
+.attract {
+	position: fixed;
+	inset: 0;
+	/* Same layer as the shell; it comes later in the DOM, so it sits on top. */
+	z-index: 2147483647;
+	display: grid;
+	grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+	align-items: center;
+	gap: clamp(24px, 5vw, 96px);
+	padding: clamp(32px, 6vh, 80px) clamp(40px, 7vw, 120px);
+	overflow: hidden;
+	color: var(--yui-chrome-fg);
+	background: var(--yui-chrome);
+	font: 16px / 1.35 var(--yui-font);
+	pointer-events: auto;
+	cursor: none;
+	animation: attract-in 420ms var(--yui-ease-out) both;
+}
+
+.attract.leaving {
+	animation: attract-out 280ms ease-in both;
+}
+
+.attract-glow {
+	position: absolute;
+	width: 60vmax;
+	height: 60vmax;
+	border-radius: 50%;
+	filter: blur(90px);
+	opacity: 0.35;
+	pointer-events: none;
+	animation: attract-drift 22s ease-in-out infinite alternate;
+}
+
+.attract-glow-a {
+	top: -30vmax;
+	left: -15vmax;
+	background: var(--yui-blue);
+}
+
+.attract-glow-b {
+	right: -25vmax;
+	bottom: -35vmax;
+	background: var(--yui-violet);
+	animation-duration: 28s;
+	animation-direction: alternate-reverse;
+}
+
+.attract-copy,
+.attract-stage {
+	position: relative;
+	z-index: 1;
+}
+
+.attract-brand {
+	display: inline-block;
+	padding: 6px 16px;
+	border: 1px solid var(--yui-chrome-line);
+	border-radius: 999px;
+	color: var(--yui-chrome-soft);
+	background: var(--yui-chrome-fill);
+	font-size: 18px;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+
+.attract h1 {
+	margin: 20px 0 0;
+	font-size: clamp(44px, 5.4vw, 108px);
+	font-weight: 800;
+	line-height: 0.98;
+	letter-spacing: -0.02em;
+	text-wrap: balance;
+}
+
+.attract-sub {
+	margin: 18px 0 0;
+	color: var(--yui-chrome-muted);
+	font-size: clamp(18px, 1.7vw, 28px);
+	font-weight: 500;
+}
+
+.attract-join {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: clamp(20px, 2.4vw, 40px);
+	margin-top: clamp(20px, 4vh, 48px);
+}
+
+.attract-qr {
+	display: grid;
+	place-items: center;
+	width: min(300px, 32vh, 20vw);
+	min-width: 170px;
+	aspect-ratio: 1;
+	border-radius: var(--yui-radius-hero);
+	background: #ffffff;
+	box-shadow:
+		0 var(--yui-lip) 0 rgba(0, 0, 0, 0.28),
+		var(--yui-shadow-hero);
+	overflow: hidden;
+}
+
+.attract-qr svg {
+	display: block;
+	width: 100%;
+	height: 100%;
+}
+
+.attract-qr-wait {
+	padding: 16px;
+	color: var(--yui-muted);
+	font-size: 16px;
+	font-weight: 600;
+	text-align: center;
+	animation: attract-pulse 1.6s ease-in-out infinite;
+}
+
+.attract-code small {
+	display: block;
+	color: var(--yui-chrome-muted);
+	font-size: clamp(14px, 1.2vw, 20px);
+	font-weight: 500;
+}
+
+.attract-code strong {
+	display: block;
+	margin-top: 6px;
+	font-size: clamp(40px, 4.2vw, 84px);
+	font-weight: 800;
+	letter-spacing: 0.14em;
+	line-height: 1;
+}
+
+.attract-stage {
+	display: grid;
+	place-items: center;
+	min-height: 0;
+}
+
+.attract-card {
+	margin: 0;
+	display: grid;
+	gap: 18px;
+	justify-items: center;
+	animation:
+		attract-card-in 700ms var(--yui-ease-out) both,
+		attract-float 9s ease-in-out infinite alternate;
+}
+
+.attract-art {
+	display: grid;
+	place-items: center;
+	width: min(34vw, 56vh);
+	aspect-ratio: 1;
+	overflow: hidden;
+	border-radius: var(--yui-radius-icon);
+	background: var(--yui-surface);
+	box-shadow:
+		0 var(--yui-lip) 0 rgba(0, 0, 0, 0.3),
+		0 28px 64px rgba(0, 0, 0, 0.45);
+}
+
+.attract-art img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+.attract-icon {
+	display: grid;
+	place-items: center;
+	width: 100%;
+	height: 100%;
+	color: var(--yui-ink);
+}
+
+.attract-icon .app-icon-image {
+	width: 55%;
+	height: 55%;
+	border-radius: 28px;
+}
+
+.attract-card figcaption {
+	max-width: 100%;
+	overflow: hidden;
+	font-size: clamp(22px, 2.2vw, 38px);
+	font-weight: 700;
+	text-align: center;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.attract-hint {
+	position: absolute;
+	right: 0;
+	bottom: clamp(16px, 3vh, 36px);
+	left: 0;
+	z-index: 1;
+	margin: 0;
+	color: var(--yui-chrome-muted);
+	font-size: 16px;
+	font-weight: 500;
+	text-align: center;
+	animation: attract-pulse 3.2s ease-in-out infinite;
+}
+
+@keyframes attract-in {
+	from {
+		opacity: 0;
+	}
+}
+
+@keyframes attract-out {
+	to {
+		opacity: 0;
+	}
+}
+
+@keyframes attract-card-in {
+	from {
+		opacity: 0;
+		transform: translateY(24px) scale(0.96);
+	}
+}
+
+@keyframes attract-float {
+	from {
+		translate: 0 -8px;
+	}
+	to {
+		translate: 0 8px;
+	}
+}
+
+@keyframes attract-drift {
+	from {
+		transform: translate(0, 0);
+	}
+	to {
+		transform: translate(6vmax, 4vmax);
+	}
+}
+
+@keyframes attract-pulse {
+	50% {
+		opacity: 0.55;
+	}
+}
+
+@media (max-aspect-ratio: 1/1) {
+	.attract {
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-rows: auto minmax(0, 1fr);
+		align-content: center;
+	}
+
+	.attract-art {
+		width: min(60vw, 36vh);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.attract,
+	.attract.leaving,
+	.attract-card,
+	.attract-glow,
+	.attract-qr-wait,
+	.attract-hint {
+		animation: none;
+	}
+
+	.attract.leaving {
+		opacity: 0;
+	}
+}

@@ -13,28 +13,33 @@ const fileName = "controller.json"
 const envConfigPath = "YUI_KIOSK_CONFIG"
 
 type Config struct {
-	ChromePath          string          `json:"chrome_path"`
-	URL                 string          `json:"url"`
-	Flags               []string        `json:"flags"`
-	UserDataDir         string          `json:"user_data_dir"`
-	RestartDelaySeconds int             `json:"restart_delay_seconds"`
-	RestartMaxSeconds   int             `json:"restart_max_seconds"`
-	LogPath             string          `json:"log_path"`
-	StatusPath          string          `json:"status_path"`
-	StorePath           string          `json:"store_path"`
-	PlatformEnabled     bool            `json:"platform_enabled"`
-	PlatformHTTPAddr    string          `json:"platform_http_addr"`
-	PlatformBridgeAddr  string          `json:"platform_bridge_addr"`
-	PlatformDebugPort   int             `json:"platform_remote_debugging_port"`
-	PlatformDevServer   string          `json:"platform_dev_server"`
-	AutoUpdateEnabled   bool            `json:"auto_update_enabled"`
-	AutoUpdateRepo      string          `json:"auto_update_repo"`
-	AutoUpdateInterval  int             `json:"auto_update_interval_minutes"`
-	AdminPIN            PINHash         `json:"admin_pin,omitempty"`
-	ServerURL           string          `json:"server_url,omitempty"`
-	DeviceUID           string          `json:"device_uid,omitempty"`
-	ActiveAccountID     string          `json:"active_account_id,omitempty"`
-	Accounts            []AccountConfig `json:"accounts,omitempty"`
+	ChromePath          string   `json:"chrome_path"`
+	URL                 string   `json:"url"`
+	Flags               []string `json:"flags"`
+	UserDataDir         string   `json:"user_data_dir"`
+	RestartDelaySeconds int      `json:"restart_delay_seconds"`
+	RestartMaxSeconds   int      `json:"restart_max_seconds"`
+	LogPath             string   `json:"log_path"`
+	StatusPath          string   `json:"status_path"`
+	StorePath           string   `json:"store_path"`
+	PlatformEnabled     bool     `json:"platform_enabled"`
+	PlatformHTTPAddr    string   `json:"platform_http_addr"`
+	PlatformBridgeAddr  string   `json:"platform_bridge_addr"`
+	PlatformDebugPort   int      `json:"platform_remote_debugging_port"`
+	PlatformDevServer   string   `json:"platform_dev_server"`
+	AutoUpdateEnabled   bool     `json:"auto_update_enabled"`
+	AutoUpdateRepo      string   `json:"auto_update_repo"`
+	AutoUpdateInterval  int      `json:"auto_update_interval_minutes"`
+	// EventMode turns on demo/kiosk-event behavior: new play sessions open
+	// the lobby, idle sessions end after EventIdleMinutes, and the overlay
+	// shows an attract screen when nobody is playing. Off by default.
+	EventMode        bool            `json:"event_mode"`
+	EventIdleMinutes int             `json:"event_idle_minutes"`
+	AdminPIN         PINHash         `json:"admin_pin,omitempty"`
+	ServerURL        string          `json:"server_url,omitempty"`
+	DeviceUID        string          `json:"device_uid,omitempty"`
+	ActiveAccountID  string          `json:"active_account_id,omitempty"`
+	Accounts         []AccountConfig `json:"accounts,omitempty"`
 
 	ConfigPath          string `json:"-"`
 	ConfigDir           string `json:"-"`
@@ -93,6 +98,7 @@ func Default() Config {
 		AutoUpdateEnabled:   true,
 		AutoUpdateRepo:      "genr234/yui",
 		AutoUpdateInterval:  30,
+		EventIdleMinutes:    5,
 	}
 }
 
@@ -269,6 +275,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.AutoUpdateInterval <= 0 {
 		cfg.AutoUpdateInterval = defaults.AutoUpdateInterval
+	}
+	if cfg.EventIdleMinutes <= 0 {
+		cfg.EventIdleMinutes = defaults.EventIdleMinutes
 	}
 	applyEnvOverrides(cfg)
 }
