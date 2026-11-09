@@ -42,46 +42,88 @@ textarea {
   font: inherit;
 }
 
+/* Buttons: pills with a soft inner glow, in the Yui palette. */
 .button,
 input[type="submit"].button {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 2.5rem;
-  padding: 0.62rem 1rem;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--base);
+  gap: 6px;
+  min-height: 2.25rem;
+  padding: 0.45rem 1rem;
+  border: 0;
+  border-radius: 9999px;
+  background: var(--panel);
   color: var(--ink);
   font-weight: 500;
+  line-height: 1.2;
   text-decoration: none;
+  white-space: nowrap;
   cursor: pointer;
+  transition: transform 160ms ease, background 160ms ease, filter 160ms ease;
 }
+.button:hover:not(:disabled) { background: #dce0e8; }
+.button:active:not(:disabled) { transform: scale(0.97); }
+.button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+.button--ghost { background: transparent; }
+.button--ghost:hover:not(:disabled) { background: rgb(76 79 105 / 8%); }
 
 .button--primary,
 input[type="submit"].button--primary {
-  border-color: #7287fd;
-  background: #7287fd;
   color: #fff;
+  background: #7287fd;
+  box-shadow:
+    0 1px 0.5px -0.5px rgb(114 135 253 / 22%),
+    0 1px 2px -0.5px rgb(114 135 253 / 22%),
+    0 4px 6px -2px rgb(114 135 253 / 22%),
+    0 2px 3px -1.5px rgb(114 135 253 / 22%),
+    inset 0 0 4px 1px #7287fd,
+    inset 0 0 4px 2px rgba(255, 255, 255, 0.1),
+    inset 0 0 12px -6px rgba(255, 255, 255, 0.75);
 }
+.button--primary:hover:not(:disabled) { background: #7287fd; filter: brightness(1.06); }
 
 .button--dark,
 input[type="submit"].button--dark {
-  border-color: var(--ink);
-  background: var(--ink);
   color: #fff;
+  background: var(--ink);
+  box-shadow:
+    0 1px 0.5px -0.5px rgb(76 79 105 / 18%),
+    0 1px 2px -0.5px rgb(76 79 105 / 18%),
+    0 4px 6px -2px rgb(76 79 105 / 18%),
+    0 2px 3px -1.5px rgb(76 79 105 / 18%),
+    inset 0 0 4px 1px #4c4f69,
+    inset 0 0 4px 2px rgba(255, 255, 255, 0.1),
+    inset 0 0 12px -6px rgba(255, 255, 255, 0.75);
 }
+.button--dark:hover:not(:disabled) { background: var(--ink); filter: brightness(1.12); }
 
-.button--ghost {
-  background: transparent;
+.button--danger,
+input[type="submit"].button--danger {
+  color: #fff;
+  background: var(--red);
+  box-shadow:
+    0 1px 0.5px -0.5px rgb(210 15 57 / 18%),
+    0 1px 2px -0.5px rgb(210 15 57 / 18%),
+    0 4px 6px -2px rgb(210 15 57 / 18%),
+    0 2px 3px -1.5px rgb(210 15 57 / 18%),
+    inset 0 0 4px 1px #d20f39,
+    inset 0 0 4px 2px rgba(255, 255, 255, 0.1),
+    inset 0 0 12px -6px rgba(255, 255, 255, 0.75);
 }
+.button--danger:hover:not(:disabled) { background: var(--red); filter: brightness(1.08); }
 
 .button--small,
 input[type="submit"].button--small {
-  min-height: 2rem;
-  padding: 0.35rem 0.7rem;
+  min-height: 1.9rem;
+  padding: 0.3rem 0.8rem;
   font-size: 0.86rem;
 }
+
+.button:disabled,
+input[type="submit"].button:disabled { cursor: not-allowed; opacity: 0.5; filter: none; }
 
 .notice {
   max-width: 1120px;
@@ -657,19 +699,6 @@ textarea {
 .danger-zone p {
   margin: 0;
   color: var(--muted);
-}
-
-.button--danger,
-input[type="submit"].button--danger {
-  border-color: var(--red);
-  background: var(--red);
-  color: #fff;
-}
-
-.button:disabled,
-input[type="submit"].button:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
 }
 
 .passkey-manager .project-card__header {
