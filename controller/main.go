@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"os/signal"
@@ -101,7 +102,11 @@ func run() error {
 	defer stop()
 
 	platform.Start(ctx, cfg, staticFS)
-	waitBridge := bridge.Start(ctx, cfg)
+	var webBundles fs.FS
+	if sub, err := fs.Sub(staticFS, "static"); err == nil {
+		webBundles = sub
+	}
+	waitBridge := bridge.Start(ctx, cfg, webBundles)
 	updater.Start(ctx, cfg)
 
 	runner := supervisor.New(cfg, statusWriter)

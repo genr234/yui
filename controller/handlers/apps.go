@@ -131,6 +131,8 @@ type appMetadataRecord struct {
 	Category    string   `json:"category,omitempty"`
 	Tags        []string `json:"tags,omitempty"`
 	Permissions []string `json:"permissions,omitempty"`
+	// WebSha256 is the SHA-256 of the app's web.zip (empty: no web bundle).
+	WebSha256 string `json:"webSha256,omitempty"`
 }
 
 type AppSourcesListCommand struct{}
@@ -232,7 +234,11 @@ func (AppUninstallCommand) Handle(r *Registry, params json.RawMessage) (any, err
 	if err != nil {
 		return nil, err
 	}
-	return nil, db.Collection(installedAppsCollection).Delete(p.ID)
+	if err := db.Collection(installedAppsCollection).Delete(p.ID); err != nil {
+		return nil, err
+	}
+	r.removeWebBundle(p.ID)
+	return nil, nil
 }
 
 type AppInstallCommand struct{}
@@ -277,6 +283,9 @@ func (AppInstallCommand) Handle(r *Registry, params json.RawMessage) (any, error
 		return nil, err
 	}
 	if err := metadataMatchesCatalog(meta, entry.App); err != nil {
+		return nil, err
+	}
+	if err := r.installWebBundle(meta.ID, entry.App.SourceURL, meta.WebSha256); err != nil {
 		return nil, err
 	}
 	installed := installedAppRecord{
@@ -538,6 +547,7 @@ func metadataFromAppSource(source string) (appMetadataRecord, error) {
 			meta.Category = match[1]
 		}
 	}
+	meta.WebSha256 = webSha256FromSource(source)
 	if match := appPermissionsField.FindStringSubmatch(source); len(match) > 1 {
 		for _, item := range appPermissionItem.FindAllStringSubmatch(match[1], -1) {
 			meta.Permissions = append(meta.Permissions, item[1])
