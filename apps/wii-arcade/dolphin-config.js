@@ -212,6 +212,9 @@ function dolphinFiles(options = {}) {
 				["SkipNKitWarning", bool(true)],
 			],
 		],
+		// Hotkeys.ini is read from the system pad; by default Dolphin only acts on
+		// hotkeys while its render window has focus (UISettings.cpp, "General").
+		["General", [["HotkeysRequireFocus", bool(false)]]],
 		["Input", [["BackgroundInput", bool(true)]]],
 		[
 			"Analytics",
