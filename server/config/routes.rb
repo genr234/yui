@@ -22,6 +22,15 @@ Rails.application.routes.draw do
     resources :pairing_codes, only: [ :create ]
     resources :phone_links, only: [ :create, :destroy ]
     resources :kiosk_commands, only: [ :create ]
+    resources :linked_accounts, only: [ :new, :create, :show, :edit, :update, :destroy ] do
+      collection { post :test }
+      member do
+        post :test
+        post :sync
+        get "cover/:remote_id", action: :cover, as: :cover
+      end
+      resources :linked_imports, only: [ :create, :destroy ]
+    end
   end
 
   namespace :api do
@@ -83,6 +92,7 @@ Rails.application.routes.draw do
     match "uploads/:id", to: "asset_uploads#options", via: :options
   end
   get "media_covers/:key", to: "media_covers#show", as: :media_cover, format: false, constraints: { key: /\h{32}\.(png|jpg|gif|webp)/ }
+  get "covers/linked/:key", to: "covers#linked", as: :linked_cover, format: false, constraints: { key: /\d+-\h{8}\.(png|jpg|webp)/ }
   get "covers/:game_id.png", to: "covers#show", as: :cover, format: false, constraints: { game_id: /[A-Z0-9]{6}/ }
   namespace :api do
     namespace :kiosk do

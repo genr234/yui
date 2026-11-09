@@ -1,0 +1,18 @@
+<%# One import checkbox: ticking adds the import, unticking removes it (form auto-submits). %>
+<% imported = imports_set.include?([ kind, remote_id.to_s ]) %>
+<% import = imported && imports.find { |row| row.kind == kind && row.remote_id == remote_id.to_s } %>
+<%= form_with url: (imported ? account_linked_account_linked_import_path(account, linked_account, import) : account_linked_account_linked_imports_path(account, linked_account)),
+      method: (imported ? :delete : :post), class: "linked-toggle", data: { controller: "auto-submit" } do %>
+  <% unless imported %>
+    <%= hidden_field_tag :kind, kind %>
+    <%= hidden_field_tag :remote_id, remote_id %>
+    <%= hidden_field_tag :label, label %>
+  <% end %>
+  <%= hidden_field_tag :tab, tab %>
+  <%= hidden_field_tag :q, query if query.present? %>
+  <%= hidden_field_tag :page, page if tab == "search" %>
+  <label class="check-field">
+    <%= check_box_tag "import_#{kind}_#{remote_id}", "1", imported, data: { action: "change->auto-submit#submit" } %>
+    <span><strong><%= label %></strong> <small><%= detail %></small></span>
+  </label>
+<% end %>

@@ -5,14 +5,14 @@
         <% assets.each do |asset| %>
           <li id="<%= dom_id(asset) %>" class="asset-row">
             <span class="asset-cover">
-              <% if asset.cover? %>
-                <%= image_tag cover_path(asset.game_id), alt: "", loading: "lazy" %>
+              <% if (cover_src = asset.cover_src) %>
+                <%= image_tag cover_src, alt: "", loading: "lazy" %>
               <% else %>
                 <span><%= asset_kind_label(asset.kind).first %></span>
               <% end %>
             </span>
             <span class="asset-row__main">
-              <strong><%= asset.title %></strong>
+              <strong><%= asset.title %><% if asset.imported? %> <span class="source-badge" title="Imported from a linked account; the next sync keeps it up to date"><%= asset.linked_account&.provider_label %></span><% end %></strong>
               <small>
                 <%= asset_kind_label(asset.kind) %>
                 · <%= number_to_human_size(asset.byte_size) %>
@@ -48,9 +48,13 @@
             </span>
             <span class="asset-row__actions">
               <span class="quiet-status quiet-status--<%= asset.status == "ready" ? "on" : asset.status %>"><%= asset.status %></span>
-              <%= button_to "Delete", account_asset_path(account, asset), method: :delete,
-                    class: "button button--ghost button--small",
-                    form: { data: { turbo_frame: "_top", turbo_confirm: "Delete #{asset.title}? Kiosks will remove it too." } } %>
+              <% if asset.imported? %>
+                <small>Managed by sync</small>
+              <% else %>
+                <%= button_to "Delete", account_asset_path(account, asset), method: :delete,
+                      class: "button button--ghost button--small",
+                      form: { data: { turbo_frame: "_top", turbo_confirm: "Delete #{asset.title}? Kiosks will remove it too." } } %>
+              <% end %>
             </span>
           </li>
         <% end %>

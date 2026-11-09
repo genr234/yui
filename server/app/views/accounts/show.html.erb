@@ -171,6 +171,7 @@
     </section>
 
     <%= render "accounts/play_sessions", kiosks: @kiosks %>
+    <%= render "linked_accounts/section", account: @account, linked_accounts: @linked_accounts %>
     <section id="asset-library" class="project-section project-section--assets"
              data-controller="asset-library"
              data-asset-library-url-value="<%= account_assets_path(@account) %>"

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_09_000400) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_10_000100) do
   create_table "account_state_records", force: :cascade do |t|
     t.integer "account_id", null: false
     t.string "collection", null: false
@@ -83,6 +83,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_09_000400) do
     t.text "error"
     t.string "filename", null: false
     t.string "kind", null: false
+    t.integer "linked_account_id"
     t.json "metadata", default: {}, null: false
     t.string "save_key"
     t.string "sha256"
@@ -92,6 +93,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_09_000400) do
     t.index ["account_id", "save_key"], name: "index_assets_on_account_id_and_save_key", unique: true, where: "save_key IS NOT NULL"
     t.index ["account_id", "status"], name: "index_assets_on_account_id_and_status"
     t.index ["account_id"], name: "index_assets_on_account_id"
+    t.index ["linked_account_id"], name: "index_assets_on_linked_account_id"
     t.index ["status", "updated_at"], name: "index_assets_on_status_and_updated_at"
   end
 
@@ -154,6 +156,33 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_09_000400) do
     t.index ["account_id", "device_uid"], name: "index_kiosks_on_account_id_and_device_uid", unique: true
     t.index ["account_id"], name: "index_kiosks_on_account_id"
     t.index ["device_token_digest"], name: "index_kiosks_on_device_token_digest", unique: true
+  end
+
+  create_table "linked_accounts", force: :cascade do |t|
+    t.integer "account_id", null: false
+    t.boolean "allow_local_network", default: false, null: false
+    t.string "base_url", null: false
+    t.datetime "created_at", null: false
+    t.text "credentials"
+    t.string "label", null: false
+    t.text "last_error"
+    t.datetime "last_synced_at"
+    t.string "provider", null: false
+    t.string "status", default: "ok", null: false
+    t.datetime "syncing_since"
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_linked_accounts_on_account_id"
+  end
+
+  create_table "linked_imports", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "kind", null: false
+    t.string "label", null: false
+    t.integer "linked_account_id", null: false
+    t.string "remote_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["linked_account_id", "kind", "remote_id"], name: "idx_on_linked_account_id_kind_remote_id_fd365953bc", unique: true
+    t.index ["linked_account_id"], name: "index_linked_imports_on_linked_account_id"
   end
 
   create_table "pairing_codes", force: :cascade do |t|
@@ -264,12 +293,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_09_000400) do
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "app_saves", "accounts"
   add_foreign_key "assets", "accounts"
+  add_foreign_key "assets", "linked_accounts"
   add_foreign_key "kiosk_assets", "assets", on_delete: :cascade
   add_foreign_key "kiosk_assets", "kiosks", on_delete: :cascade
   add_foreign_key "kiosk_commands", "kiosks"
   add_foreign_key "kiosk_operations", "accounts"
   add_foreign_key "kiosk_operations", "kiosks"
   add_foreign_key "kiosks", "accounts"
+  add_foreign_key "linked_accounts", "accounts"
+  add_foreign_key "linked_imports", "linked_accounts"
   add_foreign_key "pairing_codes", "accounts"
   add_foreign_key "passkey_credentials", "users"
   add_foreign_key "phone_links", "accounts"

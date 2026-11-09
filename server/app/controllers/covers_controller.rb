@@ -10,4 +10,13 @@ class CoversController < ActionController::Base
     expires_in 1.day, public: true
     send_data path.binread, type: "image/png", disposition: "inline" if stale?(last_modified: path.mtime, public: true)
   end
+
+  # Covers of games imported from a linked account: GET /covers/linked/:key
+  def linked
+    path = LinkedCover.cached(params[:key])
+    return head :not_found if path.nil?
+
+    expires_in 1.day, public: true
+    send_data path.binread, type: LinkedCover.content_type(path.basename.to_s), disposition: "inline" if stale?(last_modified: path.mtime, public: true)
+  end
 end

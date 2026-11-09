@@ -6,6 +6,7 @@ class Account < ApplicationRecord
   has_many :kiosk_operations, dependent: :destroy
   has_many :account_state_records, dependent: :destroy
   has_many :assets, dependent: :destroy
+  has_many :linked_accounts, dependent: :destroy
   has_many :phone_links, dependent: :destroy
   has_many :profile_grants, dependent: :destroy
   has_many :player_profiles, dependent: :destroy

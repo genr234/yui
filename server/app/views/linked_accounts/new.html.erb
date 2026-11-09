@@ -1,0 +1,10 @@
+<% content_for :title, "Link RomM - Yui" %>
+
+<main class="form-page">
+  <section class="form-card">
+    <%= link_to "← #{@account.name}", account_path(@account, anchor: "linked-accounts"), class: "back-link" %>
+    <h1>Link RomM</h1>
+    <p>Yui fetches the games you pick into this account's library. Kiosks download them from Yui and never get your RomM login.</p>
+    <%= render "form", account: @account, linked_account: @linked_account %>
+  </section>
+</main>

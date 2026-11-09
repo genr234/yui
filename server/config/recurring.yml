@@ -16,6 +16,9 @@ production:
   cleanup_stale_asset_uploads:
     class: CleanupStaleUploadsJob
     schedule: every day at 4am
+  sync_linked_accounts:
+    class: LinkedAccountsSyncJob
+    schedule: every 6 hours
   end_abandoned_play_sessions:
     class: EndAbandonedPlaySessionsJob
     schedule: every minute

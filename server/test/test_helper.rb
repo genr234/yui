@@ -5,6 +5,7 @@ require "webauthn/fake_client"
 require_relative "test_helpers/play_session_test_helper"
 require_relative "support/disc_fixtures"
 require_relative "support/media_fixtures"
+require_relative "support/fake_romm"
 
 module ActiveSupport
   class TestCase

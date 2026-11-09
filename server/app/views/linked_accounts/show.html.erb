@@ -1,0 +1,90 @@
+<% content_for :title, "Import from #{@linked_account.label} - Yui" %>
+<% shared = { account: @account, linked_account: @linked_account, imports_set: @imported, imports: @imports, tab: @tab, query: @query, page: @page } %>
+
+<main class="form-page form-page--wide">
+  <section class="form-card">
+    <%= link_to "← #{@account.name}", account_path(@account, anchor: "linked-accounts"), class: "back-link" %>
+    <h1>Import from <%= @linked_account.label %></h1>
+    <p><%= @linked_account.summary %> Tick what to bring in, then sync. Nothing downloads until you do.</p>
+
+    <% if @problem %>
+      <p class="linked-test linked-test--error"><%= @problem %></p>
+    <% end %>
+
+    <nav class="linked-tabs" aria-label="What to import">
+      <% { "platforms" => "Platforms", "collections" => "Collections", "search" => "Search" }.each do |tab, label| %>
+        <%= link_to label, account_linked_account_path(@account, @linked_account, tab: tab), class: [ "linked-tabs__tab", ("linked-tabs__tab--on" if tab == @tab) ] %>
+      <% end %>
+    </nav>
+
+    <% if @tab == "platforms" %>
+      <% if @platforms&.any? %>
+        <ul class="plain-list">
+          <% @platforms.each do |platform| %>
+            <li><%= render "toggle", shared.merge(kind: "platform", remote_id: platform[:remote_id], label: platform[:label],
+                  detail: "#{pluralize(platform[:count], "game")}#{platform[:slug] ? " · #{platform[:slug]}" : ""}") %></li>
+          <% end %>
+        </ul>
+      <% elsif @platforms %>
+        <p class="empty-copy">RomM has no platforms yet.</p>
+      <% end %>
+    <% elsif @tab == "collections" %>
+      <% if @collections&.any? %>
+        <ul class="plain-list">
+          <% @collections.each do |collection| %>
+            <li><%= render "toggle", shared.merge(kind: "collection", remote_id: collection[:remote_id], label: collection[:label],
+                  detail: pluralize(collection[:count], "game")) %></li>
+          <% end %>
+        </ul>
+      <% elsif @collections %>
+        <p class="empty-copy">RomM has no collections you can see.</p>
+      <% end %>
+    <% else %>
+      <%= form_with url: account_linked_account_path(@account, @linked_account), method: :get, class: "linked-search" do %>
+        <%= hidden_field_tag :tab, "search" %>
+        <%= search_field_tag :q, @query, placeholder: "Search RomM for a game", "aria-label": "Search RomM" %>
+        <%= submit_tag "Search", name: nil, class: "button button--ghost" %>
+      <% end %>
+      <% if @catalog %>
+        <% if @catalog[:items].any? %>
+          <ul class="plain-list linked-results">
+            <% @catalog[:items].each do |item| %>
+              <li>
+                <span class="asset-cover">
+                  <% if item[:cover_path].present? %>
+                    <img src="<%= cover_account_linked_account_path(@account, @linked_account, remote_id: item[:remote_id]) %>" alt="" loading="lazy">
+                  <% else %>
+                    <span>G</span>
+                  <% end %>
+                </span>
+                <%= render "toggle", shared.merge(kind: "rom", remote_id: item[:remote_id], label: item[:title],
+                      detail: [ item[:platform], item[:region], number_to_human_size(item[:size].to_i) ].compact_blank.join(" · ")) %>
+              </li>
+            <% end %>
+          </ul>
+          <nav class="linked-pager">
+            <% if @page > 1 %><%= link_to "← Previous", account_linked_account_path(@account, @linked_account, tab: "search", q: @query, page: @page - 1), class: "button button--ghost button--small" %><% end %>
+            <small>Page <%= @page %> of <%= [ (@catalog[:total].to_f / @catalog[:per_page]).ceil, 1 ].max %> · <%= pluralize(@catalog[:total], "result") %></small>
+            <% if @page * @catalog[:per_page] < @catalog[:total].to_i %><%= link_to "Next →", account_linked_account_path(@account, @linked_account, tab: "search", q: @query, page: @page + 1), class: "button button--ghost button--small" %><% end %>
+          </nav>
+        <% else %>
+          <p class="empty-copy">Nothing matched “<%= @query %>”.</p>
+        <% end %>
+      <% end %>
+    <% end %>
+
+    <% single = @imports.select { |row| row.kind == "rom" } %>
+    <% if single.any? && @tab != "search" %>
+      <h2>Single games you picked</h2>
+      <ul class="plain-list">
+        <% single.each do |row| %>
+          <li><%= render "toggle", shared.merge(kind: "rom", remote_id: row.remote_id, label: row.label, detail: "") %></li>
+        <% end %>
+      </ul>
+    <% end %>
+
+    <div class="form-actions">
+      <%= button_to "Sync now", sync_account_linked_account_path(@account, @linked_account), method: :post, class: "button button--primary", disabled: @linked_account.syncing? %>
+    </div>
+  </section>
+</main>

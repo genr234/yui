@@ -27,6 +27,11 @@ class AssetsController < ApplicationController
 
   def destroy
     asset = @account.assets.find(params[:id])
+    if asset.imported?
+      return redirect_to account_path(@account, anchor: "asset-library"),
+        alert: "#{asset.title} is managed by #{asset.linked_account.provider_label}. Remove it from the import, or unlink the account."
+    end
+
     asset.destroy!
     redirect_to account_path(@account, anchor: "asset-library"), notice: "Deleted #{asset.title}."
   end

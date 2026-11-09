@@ -1,0 +1,63 @@
+<%# Credentials are never rendered back: secret fields stay blank, and a blank field keeps the saved value. %>
+<% creds = linked_account.credential_data %>
+<% auth = creds["auth"] || "password" %>
+<%= form_with model: linked_account, url: (linked_account.persisted? ? account_linked_account_path(account, linked_account) : account_linked_accounts_path(account)), scope: :linked_account, class: "account-form linked-form" do |form| %>
+  <% if linked_account.errors.any? %>
+    <div class="form-errors">
+      <strong>Check these details</strong>
+      <ul>
+        <% linked_account.errors.full_messages.each do |message| %>
+          <li><%= message %></li>
+        <% end %>
+      </ul>
+    </div>
+  <% end %>
+
+  <label class="field">
+    <span>Name</span>
+    <%= form.text_field :label, placeholder: "Living room RomM", maxlength: 100, required: true %>
+  </label>
+
+  <label class="field">
+    <span>RomM address</span>
+    <%= form.url_field :base_url, placeholder: "https://romm.example.com", required: true %>
+  </label>
+
+  <label class="check-field">
+    <%= form.check_box :allow_local_network %>
+    <span>My RomM is on my local network (allows http:// and private addresses)</span>
+  </label>
+
+  <fieldset class="linked-form__auth">
+    <legend>Sign in with</legend>
+    <label class="check-field">
+      <%= radio_button_tag "linked_account[auth]", "password", auth == "password" %>
+      <span>Username and password</span>
+    </label>
+    <label class="check-field">
+      <%= radio_button_tag "linked_account[auth]", "token", auth == "token" %>
+      <span>API token (Administration → Client API Tokens in RomM)</span>
+    </label>
+    <label class="field">
+      <span>Username</span>
+      <%= text_field_tag "linked_account[username]", creds["username"], autocomplete: "off" %>
+    </label>
+    <label class="field">
+      <span>Password <small>(<%= linked_account.persisted? ? "leave blank to keep the saved one" : "used to get a RomM token; stored encrypted" %>)</small></span>
+      <%= password_field_tag "linked_account[password]", nil, autocomplete: "new-password", placeholder: (linked_account.persisted? && creds["password"].present? ? "•••" : nil) %>
+    </label>
+    <label class="field">
+      <span>API token</span>
+      <%= password_field_tag "linked_account[token]", nil, autocomplete: "off", placeholder: (linked_account.persisted? && creds["token"].present? ? "•••" : "rmm_…") %>
+    </label>
+  </fieldset>
+
+  <turbo-frame id="linked_test_result"></turbo-frame>
+
+  <div class="form-actions">
+    <%= form.button "Test connection", type: "submit", class: "button button--ghost",
+          formaction: (linked_account.persisted? ? test_account_linked_account_path(account, linked_account) : test_account_linked_accounts_path(account)),
+          formmethod: "post", formnovalidate: true, data: { turbo_frame: "linked_test_result" } %>
+    <%= form.submit "Save", class: "button button--primary" %>
+  </div>
+<% end %>

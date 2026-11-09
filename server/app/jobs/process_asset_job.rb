@@ -43,7 +43,9 @@ class ProcessAssetJob < ApplicationJob
 
   def analyze_game(asset, path, base_url)
     result = AssetAnalyzers.analyze_game(path, base_url)
-    asset.metadata = asset.metadata.to_h.merge(AssetAnalyzers::GAME_DEFAULTS).merge(result&.metadata || {})
+    # Metadata already on the asset (e.g. an imported game's platform) beats the defaults;
+    # an analyzer that recognises the file beats both.
+    asset.metadata = AssetAnalyzers::GAME_DEFAULTS.merge(asset.metadata.to_h).merge(result&.metadata || {})
     # The uploader's own title wins; otherwise use what the analyzer found.
     asset.title = result.title if result&.title && asset.title == default_title(asset)
   end

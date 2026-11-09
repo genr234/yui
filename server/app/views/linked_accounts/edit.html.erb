@@ -1,0 +1,10 @@
+<% content_for :title, "Edit #{@linked_account.label} - Yui" %>
+
+<main class="form-page">
+  <section class="form-card">
+    <%= link_to "← #{@account.name}", account_path(@account, anchor: "linked-accounts"), class: "back-link" %>
+    <h1>Edit <%= @linked_account.label %></h1>
+    <p>Signed in as <strong><%= @linked_account.credential_summary %></strong>. Passwords and tokens are never shown again.</p>
+    <%= render "form", account: @account, linked_account: @linked_account %>
+  </section>
+</main>

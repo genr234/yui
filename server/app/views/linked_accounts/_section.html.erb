@@ -1,0 +1,46 @@
+<section id="linked-accounts" class="project-section project-section--assets">
+  <div class="project-cell__header">
+    <div>
+      <h2>Linked accounts</h2>
+      <p>Bring games in from a service you already run. Kiosks get them like any upload.</p>
+    </div>
+    <%= link_to "Link RomM", new_account_linked_account_path(account), class: "button button--primary" %>
+  </div>
+
+  <% if linked_accounts.any? %>
+    <ul class="plain-list linked-list">
+      <% linked_accounts.each do |linked| %>
+        <li id="<%= dom_id(linked) %>">
+          <span class="linked-list__main">
+            <strong>
+              <span class="status-dot status-dot--<%= linked.syncing? ? "syncing" : linked.status %>" title="<%= linked.syncing? ? "syncing" : linked.status %>"></span>
+              <%= linked.label %> <span class="source-badge"><%= linked.provider_label %></span>
+            </strong>
+            <small><%= linked.base_url %> · <%= linked.credential_summary %></small>
+            <small><%= linked.summary %></small>
+            <small>
+              <% if linked.syncing? %>Syncing now…<% elsif linked.last_synced_at %>Last synced <%= time_ago_in_words(linked.last_synced_at) %> ago<% else %>Never synced<% end %>
+            </small>
+            <% if linked.last_error.present? %><small class="asset-row__error"><%= linked.last_error %></small><% end %>
+          </span>
+          <span class="asset-row__actions">
+            <%= link_to "Import", account_linked_account_path(account, linked), class: "button button--ghost button--small" %>
+            <%= button_to "Sync now", sync_account_linked_account_path(account, linked), method: :post, class: "button button--ghost button--small", disabled: linked.syncing? %>
+            <%= link_to "Edit", edit_account_linked_account_path(account, linked), class: "button button--ghost button--small" %>
+            <details class="linked-unlink">
+              <summary class="button button--ghost button--small">Unlink</summary>
+              <div class="linked-unlink__panel">
+                <p>What should happen to the <%= linked.assets.count %> imported games?</p>
+                <%= button_to "Keep the games", account_linked_account_path(account, linked, assets: "keep"), method: :delete, class: "button button--ghost button--small" %>
+                <%= button_to "Remove the games", account_linked_account_path(account, linked, assets: "remove"), method: :delete, class: "button button--danger button--small",
+                      form: { data: { turbo_confirm: "Remove #{linked.assets.count} imported games from the library? Kiosks will delete them too." } } %>
+              </div>
+            </details>
+          </span>
+        </li>
+      <% end %>
+    </ul>
+  <% else %>
+    <p class="empty-copy">No linked accounts yet.</p>
+  <% end %>
+</section>

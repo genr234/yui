@@ -1,0 +1,7 @@
+<turbo-frame id="linked_test_result">
+  <% if result %>
+    <p class="linked-test linked-test--ok">Connected. RomM <%= result[:version] %> with <%= pluralize(result[:rom_count], "game") %> on <%= pluralize(result[:platform_count], "platform") %>.</p>
+  <% else %>
+    <p class="linked-test linked-test--error"><%= problem %></p>
+  <% end %>
+</turbo-frame>
