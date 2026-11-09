@@ -11,6 +11,7 @@ import (
 
 	"kiosk/controller/internal/pad/cdp"
 	"kiosk/controller/internal/pad/pads"
+	"kiosk/controller/internal/pad/protocol"
 	"kiosk/controller/internal/pad/router"
 	"kiosk/controller/internal/pad/session"
 )
@@ -373,6 +374,9 @@ func (r *Registry) padHub() *router.Router {
 		Pointer:  pointer,
 		Pads:     padAdapter,
 		StartURL: cfg.URL,
+		ProfileReply: func(playerID string, reply protocol.ProfileReply) {
+			r.profileReplied(playerID, reply)
+		},
 	})
 	if err != nil {
 		// Only nil providers or adapters fail here, and none are nil.

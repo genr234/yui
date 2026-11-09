@@ -79,6 +79,8 @@ type Config struct {
 	Emit    func(event string, data any)
 	Pointer Pointer
 	Pads    Pads
+	// ProfileReply receives a phone's profile_reply (plan 10).
+	ProfileReply func(playerID string, reply protocol.ProfileReply)
 	// StartURL is the page the remote's Home button loads.
 	StartURL string
 }
@@ -343,6 +345,11 @@ func (r *Router) onControl(playerID string, msg any) {
 			return // kiosk → pad only
 		}
 		err = r.stack.System(playerID, m)
+	case protocol.ProfileReply:
+		if r.cfg.ProfileReply != nil {
+			r.cfg.ProfileReply(playerID, m)
+		}
+		return
 	default:
 		return
 	}

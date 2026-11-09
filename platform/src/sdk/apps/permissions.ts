@@ -64,6 +64,10 @@ const permissionCopy: Record<string, { label: string; description: string }> = {
 		label: "Phone controllers",
 		description: "See who joined from their phone, show them controls, and receive their input.",
 	},
+	profiles: {
+		label: "Player profiles",
+		description: "Save each player's progress to their Yui account, if they allow it on their phone.",
+	},
 	"audio.speaker": {
 		label: "Phone speaker",
 		description: "Play this app's sound, or a program it started, on a player's phone.",

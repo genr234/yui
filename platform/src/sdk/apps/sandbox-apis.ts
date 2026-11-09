@@ -1,6 +1,7 @@
 /**
  * ctx APIs that cross the app sandbox boundary generically: `ctx.native`,
- * `ctx.library`, `ctx.assets`, `ctx.launch`, `ctx.controllers` and `ctx.virtualPads`.
+ * `ctx.library`, `ctx.assets`, `ctx.launch`, `ctx.controllers`, `ctx.profiles`
+ * and `ctx.virtualPads`.
  *
  * Apps run in a sandboxed iframe (AppHost). `sandboxApiSource` is spliced
  * into the sandbox script and adds the APIs to the sandbox's ctx as RPC
@@ -12,8 +13,10 @@
 import type { YuiContext, YuiNativeEvent } from "./types";
 import { controllersHostFor, type ControllersHost } from "./controllers";
 import { yuiControllersRuntime } from "./controllers-runtime";
+import { profileCalls, profilesHostFor } from "./profiles";
+import { yuiProfilesRuntime } from "./profiles-runtime";
 
-export const sandboxApis = ["native", "library", "assets", "controllers", "virtualPads"] as const;
+export const sandboxApis = ["native", "library", "assets", "controllers", "virtualPads", "profiles"] as const;
 export type SandboxApi = (typeof sandboxApis)[number];
 
 /**
@@ -25,11 +28,24 @@ export type SandboxApi = (typeof sandboxApis)[number];
 export const sandboxApiSource =
 	"const yuiControllersRuntime = (" +
 	yuiControllersRuntime.toString() +
+	");\nconst yuiProfilesRuntime = (" +
+	yuiProfilesRuntime.toString() +
 	");\n" +
 	String.raw`
 let yuiLaunchItem = null;
 const yuiPushHandlers = new Map();
 let yuiControllers = null;
+let yuiProfiles = null;
+
+function yuiProfilesApi() {
+  if (!yuiProfiles) {
+    yuiProfiles = yuiProfilesRuntime({
+      call: (method, args) => rpc("profiles", method, args || []),
+      players: () => yuiControllersApi().players
+    });
+  }
+  return yuiProfiles.api;
+}
 
 function yuiStateChanged() {
   if (yuiControllers) yuiControllers.stateChanged();
@@ -100,6 +116,11 @@ function yuiExtendContext(ctx) {
     onChange: (handler) => yuiSubscribe("assets", "changed", handler)
   });
   Object.defineProperty(ctx, "controllers", { get: yuiControllersApi, enumerable: true, configurable: true });
+  // ctx.profiles exists only when the manifest declares the permission; the
+  // host checks it again on every call.
+  if (typeof app !== "undefined" && app && Array.isArray(app.permissions) && app.permissions.includes("profiles")) {
+    Object.defineProperty(ctx, "profiles", { get: yuiProfilesApi, enumerable: true, configurable: true });
+  }
   ctx.virtualPads = {
     attach: (player, options) => rpc("virtualPads", "attach", [yuiPlayerId(player), options]),
     detach: (player) => rpc("virtualPads", "detach", [yuiPlayerId(player)]),
@@ -180,6 +201,11 @@ export async function handleSandboxApiCall(
 		default:
 			if (api === "controllers" && controllerCalls.has(method)) return hostOf(ctx).call(method, args);
 			if (api === "virtualPads" && virtualPadCalls.has(method)) return hostOf(ctx).virtualPads(method, args);
+			if (api === "profiles" && profileCalls.has(method)) {
+				const profiles = profilesHostFor(ctx);
+				if (!profiles) throw new Error("YUI_PERMISSION_DENIED: profiles permission is required");
+				return profiles.call(method, args);
+			}
 			return notASandboxApi;
 	}
 }

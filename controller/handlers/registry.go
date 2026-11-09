@@ -91,6 +91,10 @@ type Registry struct {
 	ctrlMu     sync.Mutex
 	ctrl       *apps.Controller
 	ctrlRouter *router.Router
+	// profiles holds the outstanding profile_request waits (profiles.go).
+	profiles profileWaits
+	// profileSendHook replaces the control send in tests.
+	profileSendHook func(playerID string, msg any) error
 }
 
 // errStoreScopeChanged means the active account store moved to a new epoch
@@ -155,6 +159,7 @@ func NewRegistry(cfg config.Config) *Registry {
 	r.Register(NativeCommands()...)
 	r.Register(LibraryCommands()...)
 	r.Register(ControllersCommands()...)
+	r.Register(ProfileCommands()...)
 	return r
 }
 
