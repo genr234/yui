@@ -203,6 +203,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_09_000100) do
 
   create_table "players", force: :cascade do |t|
     t.integer "account_id"
+    t.text "avatar"
     t.string "color", null: false
     t.boolean "connected", default: false, null: false
     t.string "connection_nonce"

@@ -13,7 +13,28 @@ export type PadPlayer = {
 	/** Last control round trip in ms and accepted input frames per second (absent until measured). */
 	rtt_ms?: number;
 	input_hz?: number;
+	/** An emoji, or a selfie as a JPEG/WebP data URL (contracts §2). Render it through `avatarKind`. */
+	avatar?: string | null;
 };
+
+const AVATAR_IMAGE_PREFIXES = ["data:image/jpeg;base64,", "data:image/webp;base64,"];
+/** Emoji avatars are one grapheme; anything longer is not shown. */
+const AVATAR_TEXT_MAX = 16;
+
+export type AvatarKind = { kind: "image"; src: string } | { kind: "text"; text: string };
+
+/**
+ * How to show a player's avatar. Only a JPEG/WebP base64 data URL becomes an
+ * image; everything else is plain text (Svelte text interpolation, never
+ * `{@html}`), and an empty or oversized string or another data URL is no avatar.
+ */
+export function avatarKind(avatar: unknown): AvatarKind | null {
+	if (typeof avatar !== "string") return null;
+	if (AVATAR_IMAGE_PREFIXES.some((prefix) => avatar.startsWith(prefix))) return { kind: "image", src: avatar };
+	const text = avatar.trim();
+	if (!text || text.length > AVATAR_TEXT_MAX || /^[a-z][a-z0-9+.-]*:/i.test(text)) return null;
+	return { kind: "text", text };
+}
 
 /** How a phone's link feels: good under 60 ms, ok under 150 ms, slow above. */
 export function linkQuality(rttMs: number | undefined): "good" | "ok" | "slow" | null {

@@ -1,6 +1,8 @@
 <script lang="ts">
   import type { Player } from '@yui/protocol'
   import { colorHex } from './colors'
+  import Avatar from './Avatar.svelte'
+  import AvatarPicker from './AvatarPicker.svelte'
 
   export let player: Player
   export let kioskName = ''
@@ -9,9 +11,34 @@
   export let onQuit: () => void
   export let onVolume: (v: number) => void
   export let onSpeaker: () => void
+  /** Saves a new avatar (null removes it). Rejects when the kiosk refused it. */
+  export let onAvatar: (avatar: string | null) => Promise<void>
 
   let confirmQuit = false
   let speakerAsked = false
+  let editingAvatar = false
+  let draftAvatar: string | null = null
+  let savingAvatar = false
+  let avatarError = ''
+
+  function editAvatar() {
+    draftAvatar = player.avatar ?? null
+    avatarError = ''
+    editingAvatar = true
+  }
+
+  async function saveAvatar() {
+    savingAvatar = true
+    avatarError = ''
+    try {
+      await onAvatar(draftAvatar)
+      editingAvatar = false
+    } catch {
+      avatarError = "Couldn't save that avatar. Try again."
+    } finally {
+      savingAvatar = false
+    }
+  }
 
   function quit() {
     if (!confirmQuit) {
@@ -26,12 +53,30 @@
 <div class="scrim" role="presentation" on:click|self={onResume}>
   <div class="sheet" role="dialog" aria-modal="true" aria-label="Home" style="--player:{colorHex(player.color)}">
     <header>
-      <span class="slot">{player.slot ? `P${player.slot}` : 'Spectator'}</span>
+      <span class="slot" class:with-avatar={!!player.avatar}
+        ><Avatar avatar={player.avatar} size={40} />{player.slot ? `P${player.slot}` : 'Spectator'}</span
+      >
       <div class="who">
         <strong>{player.name}</strong>
         <span class="muted">{kioskName || 'Yui'}{player.host ? ' · host' : ''}</span>
       </div>
+      {#if !editingAvatar}
+        <button class="link" type="button" on:click={editAvatar}>{player.avatar ? 'Change avatar' : 'Add avatar'}</button>
+      {/if}
     </header>
+
+    {#if editingAvatar}
+      <section class="avatar-edit" aria-label="Avatar">
+        <AvatarPicker bind:value={draftAvatar} disabled={savingAvatar} />
+        {#if avatarError}<p class="err" role="alert">{avatarError}</p>{/if}
+        <div class="avatar-actions">
+          <button class="secondary" type="button" disabled={savingAvatar} on:click={() => (editingAvatar = false)}>Cancel</button>
+          <button class="primary" type="button" disabled={savingAvatar || draftAvatar === (player.avatar ?? null)} on:click={saveAvatar}
+            >{savingAvatar ? 'Saving…' : 'Save avatar'}</button
+          >
+        </div>
+      </section>
+    {/if}
 
     <button class="primary big" on:click={onResume}>Resume</button>
 
@@ -105,6 +150,10 @@
     gap: 14px;
   }
   .slot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
     min-width: 64px;
     padding: 10px 14px;
     border-radius: var(--yui-radius-card);
@@ -114,10 +163,41 @@
     font-weight: 800;
     text-align: center;
   }
+  .slot.with-avatar {
+    padding: 4px 14px 4px 4px;
+  }
   .who {
+    flex: 1;
     display: flex;
     flex-direction: column;
     min-width: 0;
+  }
+  .link {
+    flex: 0 0 auto;
+    border: 0;
+    background: none;
+    color: var(--yui-blue-soft);
+    font: inherit;
+    font-weight: 700;
+    font-size: 0.9rem;
+  }
+  .avatar-edit {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px;
+    border-radius: var(--yui-radius-hero);
+    background: var(--yui-chrome-fill);
+  }
+  .avatar-actions {
+    display: grid;
+    grid-template-columns: 1fr 1.4fr;
+    gap: 10px;
+  }
+  .err {
+    margin: 0;
+    color: #ff9a9a;
+    font-weight: 600;
   }
   .who strong {
     font-size: 1.2rem;

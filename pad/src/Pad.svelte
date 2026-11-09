@@ -3,9 +3,10 @@
   import type { ControlMessage, Hello, Node, Player } from '@yui/protocol'
   import LayoutView from './layout/LayoutView.svelte'
   import HomeSheet from './HomeSheet.svelte'
+  import Avatar from './Avatar.svelte'
   import SimGyro from './SimGyro.svelte'
   import { colorHex } from './colors'
-  import { cableUrl, getIce, simSlotFromQuery } from './api'
+  import { cableUrl, getIce, simSlotFromQuery, updateAvatar } from './api'
   import { InputModel } from './input/model'
   import { InputLoop } from './input/loop'
   import { MotionController } from './input/motion'
@@ -126,6 +127,15 @@
         }
         return
     }
+  }
+
+  /** Home sheet: rejoin with a new avatar (Rails broadcasts it to the kiosk). */
+  async function changeAvatar(avatar: string | null) {
+    if (demoTree) {
+      player = { ...player, avatar }
+      return
+    }
+    player = (await updateAvatar(code, avatar)).player
   }
 
   function startSession() {
@@ -290,7 +300,9 @@
 
 <div class="pad" class:landscape style="--player:{swatch}">
   <header>
-    <span class="slot">{player.slot ? `P${player.slot}` : 'Spectator'}</span>
+    <span class="slot" class:with-avatar={!!player.avatar}
+      ><Avatar avatar={player.avatar} size={26} />{player.slot ? `P${player.slot}` : 'Spectator'}</span
+    >
     <span class="name">{player.name}</span>
     {#if player.speaker}
       <span class="speaker-badge" title="This phone plays the sound" aria-label="Speaker">
@@ -320,6 +332,9 @@
       {/if}
     {:else}
       <section class="waiting">
+        {#if player.avatar}
+          <div class="big-avatar"><Avatar avatar={player.avatar} size={112} /></div>
+        {/if}
         <div class="badge">{player.slot ? `P${player.slot}` : '—'}</div>
         <h1>{conn === 'online' || conn === 'fallback' ? "You're in" : connLabel + '…'}</h1>
         <p class="muted">
@@ -352,6 +367,7 @@
       onQuit={quit}
       onVolume={changeVolume}
       onSpeaker={() => send({ t: 'system', action: 'be_speaker' })}
+      onAvatar={changeAvatar}
     />
   {/if}
 </div>
@@ -378,11 +394,17 @@
     background: rgba(13, 24, 37, 0.6);
   }
   .slot {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     padding: 6px 12px;
     border-radius: var(--yui-radius-badge);
     background: var(--player);
     color: #fff;
     font-weight: 800;
+  }
+  .slot.with-avatar {
+    padding: 3px 12px 3px 3px;
   }
   .name {
     flex: 1;
@@ -524,6 +546,13 @@
     text-align: center;
     max-width: 480px;
     margin: 0 auto;
+  }
+  .big-avatar {
+    padding: 6px;
+    border-radius: 50%;
+    background: var(--player);
+    box-shadow: 0 var(--yui-lip) 0 rgba(0, 0, 0, 0.35);
+    margin-bottom: -4px;
   }
   .badge {
     min-width: 168px;

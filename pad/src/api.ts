@@ -62,10 +62,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const getInfo = (code: string) => request<SessionInfo>(`/play/${encodeURIComponent(code)}/info${simQuery}`)
 
-export const join = (code: string, name: string, color: string, qr_token: string | null) =>
-  request<{ player: Player; session: { id: string; code: string } }>(`/play/${encodeURIComponent(code)}/join${simQuery}`, {
+type JoinResponse = { player: Player; session: { id: string; code: string } }
+
+export const join = (code: string, name: string, color: string, qr_token: string | null, avatar: string | null = null) =>
+  request<JoinResponse>(`/play/${encodeURIComponent(code)}/join${simQuery}`, {
     method: 'POST',
-    body: JSON.stringify({ name, color, ...(qr_token ? { qr_token } : {}) }),
+    body: JSON.stringify({ name, color, ...(avatar ? { avatar } : {}), ...(qr_token ? { qr_token } : {}) }),
+  })
+
+/** Rejoins with only a new avatar (null removes it); name, colour and slot stay. */
+export const updateAvatar = (code: string, avatar: string | null) =>
+  request<JoinResponse>(`/play/${encodeURIComponent(code)}/join${simQuery}`, {
+    method: 'POST',
+    body: JSON.stringify({ avatar }),
   })
 
 export const getIce = (code: string) => request<IceConfig>(`/play/${encodeURIComponent(code)}/ice${simQuery}`)
@@ -82,7 +91,8 @@ export function friendlyError(e: unknown): string {
     case 'rate_limited':
       return 'Too many tries. Wait a moment and try again.'
     case 'validation':
-      return 'Check your name and colour and try again.'
+    case 'validation_failed':
+      return 'Check your name, colour and avatar and try again.'
     default:
       return 'Something went wrong. Please try again.'
   }
