@@ -90,6 +90,20 @@ class Asset < ApplicationRecord
     cover_path&.file? || false
   end
 
+  IMAGE_EXTENSIONS = %w[png jpg jpeg gif webp].freeze
+
+  def image?
+    kind == "media" && IMAGE_EXTENSIONS.include?(File.extname(filename).delete(".").downcase)
+  end
+
+  # { game asset id => MediaCover key } for the images attached to games with metadata.cover_for.
+  def self.attached_cover_keys(account)
+    account.assets.ready.where(kind: "media").each_with_object({}) do |asset, keys|
+      game_id = asset.metadata["cover_for"]
+      keys[game_id.to_s] = asset.metadata["cover_key"] if game_id.present? && asset.metadata["cover_key"].present?
+    end
+  end
+
   # Queues an `assets.reconcile` command for every kiosk on the account.
   def request_kiosk_reconcile!
     Asset.request_reconcile_for!(account)
@@ -103,7 +117,7 @@ class Asset < ApplicationRecord
 
   # Wire format for the kiosk API (contracts §1). `base_url` makes cover_url absolute
   # for whoever is asking, so it is right behind any host name.
-  def as_kiosk_json(base_url: nil)
+  def as_kiosk_json(base_url: nil, cover_keys: {})
     {
       id: id.to_s,
       kind: kind,
@@ -111,18 +125,26 @@ class Asset < ApplicationRecord
       filename: filename,
       byte_size: byte_size,
       sha256: sha256,
-      metadata: kiosk_metadata(base_url),
+      metadata: kiosk_metadata(base_url, cover_keys),
       updated_at: updated_at.utc.iso8601
     }
   end
 
   private
 
-  def kiosk_metadata(base_url)
+  def kiosk_metadata(base_url, cover_keys)
     data = metadata.to_h
+    if kind == "media"
+      key = data["cover_key"]
+      return key && base_url ? data.merge("cover_url" => MediaCover.url_for(key, base_url)) : data
+    end
     return data unless game?
 
-    data.merge("cover_url" => (base_url && cover? ? GameCover.url_for(game_id, base_url) : data["cover_url"]))
+    data = data.merge("cover_url" => (base_url && cover? ? GameCover.url_for(game_id, base_url) : data["cover_url"]))
+    # An image the admin attached (metadata.cover_for) fills in when there is no cover yet.
+    key = cover_keys[id.to_s]
+    data["cover_url"] = MediaCover.url_for(key, base_url) if data["cover_url"].blank? && key && base_url
+    data
   end
 
   def normalize_filename

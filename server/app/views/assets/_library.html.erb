@@ -28,6 +28,13 @@
               <% elsif asset.failed? %>
                 <small class="asset-row__error"><%= asset.error %></small>
               <% elsif asset.ready? %>
+                <% if asset.image? && (games = assets.select { |candidate| candidate.game? && candidate.ready? }).any? %>
+                  <%= form_with url: account_asset_path(account, asset), method: :patch, class: "asset-cover-form", data: { turbo_frame: "_top" } do |form| %>
+                    <%= form.label :cover_for, "Cover for", class: "visually-hidden" %>
+                    <%= form.select :cover_for, options_from_collection_for_select(games, :id, :title, asset.metadata["cover_for"]), { include_blank: "Cover for a game…" }, class: "asset-cover-form__select" %>
+                    <%= form.submit "Set", class: "button button--ghost button--small" %>
+                  <% end %>
+                <% end %>
                 <% if kiosks.any? %>
                   <span class="asset-sync">
                     <% kiosks.each do |kiosk| %>
