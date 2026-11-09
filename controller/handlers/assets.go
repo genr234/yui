@@ -37,12 +37,7 @@ func (r *Registry) AssetSyncer() *assets.Syncer {
 		r.assetEndpoint = &assetEndpointCache{}
 	}
 	endpointCache := r.assetEndpoint
-	endpoint := func() (string, string, bool) {
-		return endpointCache.current(func() (string, string, bool) {
-			cfg, account, ok := r.refreshedAccount()
-			return cfg.ServerURL, account.DeviceToken, ok && cfg.ServerURL != "" && account.DeviceToken != ""
-		})
-	}
+	endpoint := r.assetEndpointFunc(endpointCache)
 	var (
 		changeMu    sync.Mutex
 		changeTimer *time.Timer
@@ -75,6 +70,17 @@ func (r *Registry) AssetSyncer() *assets.Syncer {
 		},
 	})
 	return r.assetSync
+}
+
+// assetEndpointFunc returns the active account's server URL and device token,
+// cached in cache. The asset syncer and save-file backup share it.
+func (r *Registry) assetEndpointFunc(cache *assetEndpointCache) func() (string, string, bool) {
+	return func() (string, string, bool) {
+		return cache.current(func() (string, string, bool) {
+			cfg, account, ok := r.refreshedAccount()
+			return cfg.ServerURL, account.DeviceToken, ok && cfg.ServerURL != "" && account.DeviceToken != ""
+		})
+	}
 }
 
 func (r *Registry) assetSyncerIfStarted() *assets.Syncer {

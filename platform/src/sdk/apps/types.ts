@@ -160,6 +160,19 @@ export type YuiNativeSpec = {
 	files?: YuiNativeConfigFile[];
 	virtualPads?: number[];
 	audio?: "none" | "speaker";
+	/**
+	 * Paths inside the data directory that hold save data (relative, forward
+	 * slashes, no ".."). They are backed up to the account when the session
+	 * ends and a newer backup is restored before launch.
+	 */
+	saves?: string[];
+};
+
+/** Save-file backup progress of a session that declared `saves`. */
+export type YuiNativeSaves = {
+	state: "restoring" | "restored" | "up_to_date" | "kept_local" | "backing_up" | "saved" | "remote_newer" | "nothing" | "offline" | "error";
+	error?: string;
+	saved_at?: string;
 };
 
 export type YuiNativeStatus = {
@@ -174,6 +187,7 @@ export type YuiNativeStatus = {
 	ended_at?: string;
 	exit_code?: number;
 	error?: string;
+	saves?: YuiNativeSaves;
 };
 
 export type YuiNativeEvent = "status" | "started" | "exited" | "crashed";
@@ -182,6 +196,8 @@ export type YuiNativeApi = {
 	launch(spec: YuiNativeSpec): Promise<YuiNativeStatus>;
 	stop(options?: { force?: boolean }): Promise<YuiNativeStatus>;
 	status(): Promise<YuiNativeStatus>;
+	/** Back up the declared `saves` of this app's current or latest session now. */
+	backupSaves(): Promise<YuiNativeStatus>;
 	on(event: YuiNativeEvent, handler: (status: YuiNativeStatus) => void): () => void;
 };
 

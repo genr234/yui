@@ -88,6 +88,12 @@ Rails.application.routes.draw do
       get "assets", to: "assets#index"
       get "assets/:id/download", to: "assets#download", as: :asset_download
       patch "assets/:id/status", to: "assets#update_status", as: :asset_status
+      # Save-file backups, one per app id + runtime id (contracts §4 "Native sessions").
+      scope constraints: { app_id: %r{[^/]+}, runtime: %r{[^/]+} }, format: false do
+        get "saves/:app_id/:runtime", to: "saves#show", as: :save
+        get "saves/:app_id/:runtime/download", to: "saves#download", as: :save_download
+        put "saves/:app_id/:runtime", to: "saves#update"
+      end
     end
   end
 

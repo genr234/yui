@@ -137,6 +137,7 @@ export function nativeSpecToWire(appId: string, spec: YuiNativeSpec) {
 		files: (spec.files ?? []).map((file) => ({ path: file.path, content: file.content })),
 		virtual_pads: spec.virtualPads ?? [],
 		audio: spec.audio ?? "none",
+		saves: spec.saves ?? [],
 	};
 }
 
@@ -315,6 +316,11 @@ export function createYuiContext(app: YuiSimpleApp, onRender: () => void): YuiCo
 			async status() {
 				await ensurePermission("native");
 				return nativeStatusFor(app.id, await bridge.send<NativeStatusWire>("native.status"));
+			},
+			async backupSaves() {
+				await ensurePermission("native");
+				const status = await bridge.send<NativeStatusWire>("native.saves.backup", { app_id: app.id });
+				return nativeStatusFor(app.id, status);
 			},
 			on(event, handler) {
 				requireGrantedPermission("native");

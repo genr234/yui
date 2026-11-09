@@ -3,6 +3,9 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
 	"path/filepath"
 	"time"
 
@@ -19,6 +22,7 @@ func NativeCommands() []Command {
 		NativeLaunchCommand{},
 		NativeStopCommand{},
 		NativeStatusCommand{},
+		NativeSavesBackupCommand{},
 	}
 }
 
@@ -38,6 +42,7 @@ func (r *Registry) Native() *native.Manager {
 		DataDir:     filepath.Join(root, "data"),
 		LogDir:      filepath.Join(root, "logs"),
 		Assets:      registryAssets{r: r},
+		SaveRemote:  registrySaves{r: r},
 		VirtualPads: r.dsuResolver(),
 		Focus:       native.SystemFocus{FallbackPID: r.focusFallbackPID},
 		OnStatus: func(st native.Status) {
@@ -112,6 +117,7 @@ type nativeLaunchParams struct {
 	Files       []native.ConfigFile `json:"files"`
 	VirtualPads []int               `json:"virtual_pads"`
 	Audio       string              `json:"audio"`
+	Saves       []string            `json:"saves"`
 }
 
 type NativeLaunchCommand struct{}
@@ -132,6 +138,7 @@ func (NativeLaunchCommand) Handle(r *Registry, params json.RawMessage) (any, err
 		Files:       p.Files,
 		VirtualPads: p.VirtualPads,
 		Audio:       p.Audio,
+		Saves:       p.Saves,
 	})
 	if err != nil {
 		return nil, err
@@ -180,4 +187,70 @@ func (NativeStatusCommand) Handle(r *Registry, _ json.RawMessage) (any, error) {
 		return native.Status{State: native.StateIdle}, nil
 	}
 	return mgr.Status(), nil
+}
+
+// registrySaves adapts the kiosk saves API to native.SaveRemote. Timeouts
+// live in the HTTP client; the account endpoint is shared with the syncer.
+type registrySaves struct{ r *Registry }
+
+func (s registrySaves) remote() *assets.HTTPRemote {
+	s.r.AssetSyncer() // creates the shared endpoint cache
+	s.r.assetsMu.Lock()
+	cache := s.r.assetEndpoint
+	s.r.assetsMu.Unlock()
+	return &assets.HTTPRemote{
+		Endpoint: s.r.assetEndpointFunc(cache),
+		Control:  accountHTTPClient,
+		Transfer: &http.Client{},
+	}
+}
+
+func mapSaveError(err error) error {
+	switch {
+	case errors.Is(err, assets.ErrNoAccount):
+		return native.ErrSavesOffline
+	case errors.Is(err, assets.ErrSaveNewer):
+		return native.ErrSaveRemoteNewer
+	case errors.Is(err, assets.ErrSaveTooLarge):
+		return native.ErrTooLarge
+	}
+	return err
+}
+
+func (s registrySaves) SaveInfo(appID, runtime string) (native.SaveInfo, bool, error) {
+	info, ok, err := s.remote().SaveInfo(context.Background(), appID, runtime)
+	if err != nil || !ok {
+		return native.SaveInfo{}, false, mapSaveError(err)
+	}
+	return native.SaveInfo{SHA256: info.SHA256, Size: info.Size, SavedAt: info.SavedAt, KioskName: info.KioskName}, true, nil
+}
+
+func (s registrySaves) SaveDownload(appID, runtime string) (io.ReadCloser, error) {
+	body, err := s.remote().SaveDownload(context.Background(), appID, runtime)
+	return body, mapSaveError(err)
+}
+
+func (s registrySaves) SaveUpload(appID, runtime string, up native.SaveUpload) error {
+	return mapSaveError(s.remote().SaveUpload(context.Background(), appID, runtime, up.Body, up.Size, up.SHA256, up.SavedAt))
+}
+
+// NativeSavesBackupCommand backs up the declared saves of the app's current or
+// latest session now, instead of waiting for the session to end.
+type NativeSavesBackupCommand struct{}
+
+func (NativeSavesBackupCommand) Name() string { return "native.saves.backup" }
+func (NativeSavesBackupCommand) Handle(r *Registry, params json.RawMessage) (any, error) {
+	var p struct {
+		AppID string `json:"app_id"`
+	}
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, err
+		}
+	}
+	mgr := r.nativeIfStarted()
+	if mgr == nil {
+		return nil, native.ErrNoSaveTarget
+	}
+	return mgr.BackupSaves(p.AppID)
 }
