@@ -4,6 +4,8 @@
   import { ApiError, codeFromPath, friendlyError, getInfo, join, qrTokenFromQuery, simSlotFromQuery, type SessionInfo } from './api'
   import { COLOR_NAMES, colorHex } from './colors'
   import Pad from './Pad.svelte'
+  import AvatarPicker from './AvatarPicker.svelte'
+  import { AVATAR_EMOJIS } from './avatar'
   import { demoGamepad, demoRemote, demoShell, demoTree } from './layout/demo'
   import { unlockAudio } from './platform/sound'
 
@@ -28,6 +30,16 @@
     }
   })()
   let color = ''
+  // A remembered emoji (selfies are never stored on the phone).
+  let avatar: string | null = (() => {
+    if (simSlot) return null
+    try {
+      const saved = localStorage.getItem('yui_pad_avatar')
+      return saved && (AVATAR_EMOJIS as readonly string[]).includes(saved) ? saved : null
+    } catch {
+      return null
+    }
+  })()
   let busy = false
   let error = ''
   let log: string[] = []
@@ -58,11 +70,13 @@
     error = ''
     unlockAudio()
     try {
-      const res = await join(code, name.trim(), color, qrToken)
+      const res = await join(code, name.trim(), color, qrToken, avatar)
       player = res.player
       if (!simSlot) {
         try {
           localStorage.setItem('yui_pad_name', name.trim())
+          if (avatar && (AVATAR_EMOJIS as readonly string[]).includes(avatar)) localStorage.setItem('yui_pad_avatar', avatar)
+          else localStorage.removeItem('yui_pad_avatar')
         } catch {
           /* storage unavailable */
         }
@@ -73,7 +87,7 @@
       if (e instanceof ApiError && e.code === 'kicked') screen = 'kicked'
       else if (e instanceof ApiError && e.status === 404) screen = 'not_found'
       else {
-        if (e instanceof ApiError && e.code === 'validation') await load().catch(() => {})
+        if (e instanceof ApiError && (e.code === 'validation' || e.code === 'validation_failed')) await load().catch(() => {})
         if (!player) screen = 'join'
       }
     } finally {
@@ -136,7 +150,7 @@
       <form class="join" on:submit|preventDefault={submit}>
         <p class="eyebrow">Yui Pad</p>
         <h1>Join {info?.kiosk_name ?? 'the game'}</h1>
-        <p class="muted">Pick a name and a colour.</p>
+        <p class="muted">Pick a name, a colour and an avatar.</p>
 
         <label class="field">
           <span>Your name</span>
@@ -160,6 +174,11 @@
               ></button>
             {/each}
           </div>
+        </div>
+
+        <div class="field" style="--player:{colorHex(color)}">
+          <span>Avatar <small class="muted">optional</small></span>
+          <AvatarPicker bind:value={avatar} disabled={busy} />
         </div>
 
         {#if error}<p class="err" role="alert">{error}</p>{/if}
@@ -220,6 +239,9 @@
     flex-direction: column;
     gap: 8px;
     font-weight: 700;
+  }
+  .field small {
+    font-weight: 600;
   }
   .chips {
     display: grid;
