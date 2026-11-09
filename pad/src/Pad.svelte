@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte'
   import type { ControlMessage, Hello, Node, Player } from '@yui/protocol'
+  import { sketchState } from './controls/sketch'
   import LayoutView from './layout/LayoutView.svelte'
   import HomeSheet from './HomeSheet.svelte'
   import ProfileSheet from './ProfileSheet.svelte'
@@ -117,6 +118,7 @@
         if (msg.version <= layoutVersion) return
         layoutVersion = msg.version
         model.releaseAll()
+        sketchState.newLayout()
         tree = msg.tree
         return
       case 'player':
