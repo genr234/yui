@@ -5,7 +5,7 @@ module Api
     class AssetsController < BaseController
       def index
         touch_current_kiosk!
-        assets = current_account.assets.library.ready.order(:id)
+        assets = current_account.assets.library.listed.order(:id)
         cover_keys = Asset.attached_cover_keys(current_account)
         render json: { assets: assets.map { |asset| asset.as_kiosk_json(base_url: request.base_url, cover_keys: cover_keys) } }
       end
@@ -35,6 +35,22 @@ module Api
         else
           response.headers["Content-Range"] = "bytes #{range.begin}-#{range.end}/#{total}"
           stream_file(path, range.begin, range.size, :partial_content)
+        end
+      end
+
+      # Asks for an on-demand game (an imported one Yui hasn't fetched yet). The kiosk gets
+      # an `assets.reconcile` once it is ready and downloads it as usual.
+      def request_asset
+        asset = current_account.assets.library.find_by(id: params[:id])
+        return render json: { error: "not_found" }, status: :not_found if asset.nil?
+
+        touch_current_kiosk!
+        status = asset.remote? ? LinkedFetch.request(asset) : asset.status
+        case status
+        when "ready" then render json: { state: "ready" }
+        when "fetching", "processing" then render json: { state: "fetching" }, status: :accepted
+        when "remote" then render json: { state: "remote", error: asset.reload.error }, status: :accepted
+        else render json: { error: "not_available", state: status }, status: :conflict
         end
       end
 

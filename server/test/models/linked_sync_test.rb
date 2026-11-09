@@ -17,7 +17,12 @@ class LinkedSyncTest < ActiveSupport::TestCase
     LinkedSync.new(@linked.reload).tap(&:call)
   end
 
-  test "importing a platform creates ready game assets with metadata and a cover" do
+  def fetch(asset)
+    perform_enqueued_jobs(only: LinkedFetchJob) { LinkedFetch.request(asset) }
+    asset.reload
+  end
+
+  test "importing a platform lists games without downloading them" do
     @linked.linked_imports.create!(kind: "platform", remote_id: "1", label: "Super Nintendo")
 
     result = sync.result
@@ -25,32 +30,29 @@ class LinkedSyncTest < ActiveSupport::TestCase
     assert_equal "ok", @linked.reload.status
     assert_nil @linked.last_error
     assert_not_nil @linked.last_synced_at
+    assert_equal 0, @fake.calls.count { |call| call.include?("/content/") }
 
     asset = @account.assets.find_by!(title: "Tiny Quest")
     assert_equal "game", asset.kind
-    assert asset.ready?
+    assert asset.remote?
+    assert_nil asset.sha256
+    assert_not asset.file_path.exist?
     assert_equal "tiny-quest.sfc", asset.filename
     assert_equal 64, asset.byte_size
-    assert_equal Digest::SHA256.hexdigest(@fake.rom_bytes(10)), asset.sha256
-    assert_equal @fake.rom_bytes(10), asset.file_path.binread
     assert_equal "snes", asset.metadata["platform"]
     assert_equal "USA", asset.metadata["region"]
     assert_equal "unknown", asset.metadata["format"]
     assert_equal({ "provider" => "romm", "linked_account_id" => @linked.id, "remote_id" => "10", "file" => "tiny-quest.sfc", "remote_size" => 64 },
       asset.metadata["source"])
-    assert_equal @linked.id, asset.linked_account_id
     assert asset.imported?
 
     cover_url = asset.metadata["cover_url"]
     assert_match %r{\A/covers/linked/#{asset.id}-\h{8}\.png\z}, cover_url
     assert LinkedCover.cached(File.basename(cover_url))
-
-    folder = @account.assets.find_by!(title: "Folder Game")
-    assert_equal "folder-game.zip", folder.filename
-    assert_equal @account.assets.where(linked_account: @linked).count, 2
+    assert_equal "folder-game.zip", @account.assets.find_by!(title: "Folder Game").filename
   end
 
-  test "the kiosk manifest lists imported games with absolute cover urls" do
+  test "the kiosk manifest lists remote games with absolute cover urls and a remote flag" do
     @linked.linked_imports.create!(kind: "rom", remote_id: "12", label: "Blast Test")
     sync
     asset = @account.assets.find_by!(title: "Blast Test")
@@ -58,7 +60,39 @@ class LinkedSyncTest < ActiveSupport::TestCase
     json = asset.as_kiosk_json(base_url: "https://yui.example.test")
     assert_equal "genesis", json[:metadata]["platform"]
     assert_match %r{\Ahttps://yui.example.test/covers/linked/}, json[:metadata]["cover_url"]
-    assert_includes @account.assets.library.ready, asset
+    assert json[:remote]
+    assert_equal "remote", json[:remote_state]
+    assert_includes @account.assets.library.listed, asset
+  end
+
+  test "a request fetches the file, processes it and tells kiosks" do
+    @linked.linked_imports.create!(kind: "rom", remote_id: "10", label: "Tiny Quest")
+    sync
+    asset = @account.assets.first
+
+    assert_difference -> { @kiosk.kiosk_commands.where(command_type: "assets.reconcile").count } do
+      fetch(asset)
+    end
+    assert asset.ready?
+    assert_equal Digest::SHA256.hexdigest(@fake.rom_bytes(10)), asset.sha256
+    assert_equal @fake.rom_bytes(10), asset.file_path.binread
+    assert_equal "snes", asset.metadata["platform"]
+    assert_nil asset.as_kiosk_json[:remote]
+
+    # Asking again for a ready game downloads nothing.
+    assert_no_difference -> { @fake.calls.count { |call| call.include?("/content/") } } do
+      assert_equal "ready", LinkedFetch.request(asset)
+    end
+  end
+
+  test "a request only queues one fetch" do
+    @linked.linked_imports.create!(kind: "rom", remote_id: "10", label: "Tiny Quest")
+    sync
+    asset = @account.assets.first
+    assert_enqueued_jobs 1, only: LinkedFetchJob do
+      assert_equal "fetching", LinkedFetch.request(asset)
+      assert_equal "fetching", LinkedFetch.request(asset.reload)
+    end
   end
 
   test "importing queues a reconcile for the account's kiosks" do
@@ -74,22 +108,31 @@ class LinkedSyncTest < ActiveSupport::TestCase
 
     assert_equal 2, sync.result.added
     ids = @account.assets.pluck(:id).sort
-    again = sync.result
+    again = nil
+    assert_no_difference -> { @kiosk.kiosk_commands.count } do
+      again = sync.result
+    end
     assert_equal [ 0, 0, 0, 0 ], [ again.added, again.updated, again.removed, again.failed ]
     assert_equal ids, @account.assets.pluck(:id).sort
   end
 
-  test "a changed file is re-downloaded and the old asset replaced" do
+  test "a changed file drops the fetched copy and goes back to remote" do
     @linked.linked_imports.create!(kind: "rom", remote_id: "10", label: "Tiny Quest")
     sync
-    old = @account.assets.first
+    asset = fetch(@account.assets.first)
+    path = asset.file_path
+    assert path.exist?
     @fake.instance_variable_get(:@roms).first["fs_size_bytes"] = 60
     @fake.instance_variable_get(:@roms).first["files"][0]["file_size_bytes"] = 60
 
     assert_equal 1, sync.result.updated
-    assert_equal 60, @account.assets.first.byte_size
-    assert_not Asset.exists?(old.id)
-    assert_equal 1, @account.assets.count
+    asset.reload
+    assert asset.remote?
+    assert_equal 60, asset.byte_size
+    assert_nil asset.sha256
+    assert_not path.exist?
+    assert fetch(asset).ready?
+    assert_equal 60, asset.byte_size
   end
 
   test "removing an import deletes its assets at the next sync" do
@@ -97,42 +140,39 @@ class LinkedSyncTest < ActiveSupport::TestCase
     @linked.linked_imports.create!(kind: "rom", remote_id: "12", label: "Blast Test")
     sync
     assert_equal 3, @account.assets.count
-    asset = @account.assets.find_by!(title: "Tiny Quest")
+    asset = fetch(@account.assets.find_by!(title: "Tiny Quest"))
     directory = asset.directory
     cover = LinkedCover.cached(File.basename(asset.metadata["cover_url"]))
     assert directory.directory?
 
     import.destroy!
-    assert_difference -> { @kiosk.kiosk_commands.where(command_type: "assets.reconcile").count }, 2 do
-      assert_equal 2, sync.result.removed
-    end
+    assert_equal 2, sync.result.removed
     assert_equal [ "Blast Test" ], @account.assets.pluck(:title)
     assert_not directory.exist?
     assert_not cover.exist?
   end
 
-  test "a rom that fails does not fail the sync and leaves no partial asset" do
-    @linked.linked_imports.create!(kind: "platform", remote_id: "1", label: "Super Nintendo")
+  test "a failed fetch goes back to remote with the reason and can be asked for again" do
+    @linked.linked_imports.create!(kind: "rom", remote_id: "10", label: "Tiny Quest")
+    sync
     @fake.failing_downloads = [ 10 ]
-
-    result = sync.result
-    assert_equal 1, result.added
-    assert_equal 1, result.failed
-    assert_equal [ "Folder Game" ], @account.assets.pluck(:title)
-    @linked.reload
-    assert_equal "ok", @linked.status
-    assert_match(/1 game couldn't be imported \(Tiny Quest: /, @linked.last_error)
+    asset = fetch(@account.assets.first)
+    assert asset.remote?
+    assert_predicate asset.error, :present?
+    assert_not asset.file_path.exist?
+    assert_equal asset.error, asset.as_kiosk_json[:remote_error]
 
     @fake.failing_downloads = []
-    assert_equal 1, sync.result.added
-    assert_nil @linked.reload.last_error
+    assert fetch(asset).ready?
+    assert_nil asset.error
   end
 
   test "downloads are retried with backoff before giving up" do
     @linked.linked_imports.create!(kind: "rom", remote_id: "10", label: "Tiny Quest")
-    LinkedSync.backoff = [ 0, 0 ]
-    @fake.failing_downloads = [ 10 ]
     sync
+    LinkedFetch.backoff = [ 0, 0 ]
+    @fake.failing_downloads = [ 10 ]
+    fetch(@account.assets.first)
     assert_equal 3, @fake.calls.count { |call| call.include?("/content/") }
   end
 

@@ -83,7 +83,7 @@ class LinkedAccountsControllerTest < ActionDispatch::IntegrationTest
     assert_select "#linked-accounts" do
       assert_select ".status-dot--ok"
       assert_select "strong", /Home RomM/
-      assert_select "small", text: "2 games from 1 platform. 164 Bytes."
+      assert_select "small", text: "2 games from 1 platform. 0 downloaded (0 Bytes); the rest download when a kiosk asks."
       assert_select "a", "Link RomM"
     end
     assert_select "turbo-frame#asset_library" do

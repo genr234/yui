@@ -47,7 +47,8 @@
               <% end %>
             </span>
             <span class="asset-row__actions">
-              <span class="quiet-status quiet-status--<%= asset.status == "ready" ? "on" : asset.status %>"><%= asset.status %></span>
+              <% label = { "remote" => "on #{asset.linked_account&.provider_label || "link"}", "fetching" => "fetching" }[asset.status] || asset.status %>
+              <span class="quiet-status quiet-status--<%= asset.status == "ready" ? "on" : (asset.on_demand? ? "pending" : asset.status) %>" title="<%= "Downloaded when a kiosk asks for it" if asset.remote? %>"><%= label %></span>
               <% if asset.imported? %>
                 <small>Managed by sync</small>
               <% else %>

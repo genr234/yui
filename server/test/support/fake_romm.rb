@@ -130,17 +130,17 @@ module FakeRommTestHelper
     @fake_romm = FakeRomm.new
     @saved_transport = LinkedProviders::HttpClient.transport
     @saved_resolver = LinkedProviders::HttpClient.resolver
-    @saved_backoff = LinkedSync.backoff
+    @saved_backoff = LinkedFetch.backoff
     LinkedProviders::HttpClient.transport = @fake_romm
     LinkedProviders::HttpClient.resolver = ->(_host) { [ PUBLIC_ADDRESS ] }
-    LinkedSync.backoff = []
+    LinkedFetch.backoff = []
     @fake_romm
   end
 
   def remove_fake_romm
     LinkedProviders::HttpClient.transport = @saved_transport
     LinkedProviders::HttpClient.resolver = @saved_resolver
-    LinkedSync.backoff = @saved_backoff
+    LinkedFetch.backoff = @saved_backoff
   end
 
   def link_romm(account, **attributes)

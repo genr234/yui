@@ -98,6 +98,7 @@ Rails.application.routes.draw do
     namespace :kiosk do
       get "assets", to: "assets#index"
       get "assets/:id/download", to: "assets#download", as: :asset_download
+      post "assets/:id/request", to: "assets#request_asset", as: :asset_request
       patch "assets/:id/status", to: "assets#update_status", as: :asset_status
       # Save-file backups, one per app id + runtime id (contracts §4 "Native sessions").
       scope constraints: { app_id: %r{[^/]+}, runtime: %r{[^/]+} }, format: false do

@@ -2,7 +2,10 @@ class Asset < ApplicationRecord
   # Generic kinds only: console- or format-specific details live in `metadata`,
   # filled by AssetAnalyzers (e.g. metadata.platform = "wii").
   KINDS = %w[game runtime media other].freeze
-  STATUSES = %w[uploading processing ready failed].freeze
+  # "remote": an imported game known only by its catalog entry; "fetching": being fetched
+  # from its linked account because a kiosk asked for it (LinkedFetch).
+  STATUSES = %w[uploading processing ready failed remote fetching].freeze
+  ON_DEMAND = %w[remote fetching].freeze
   MAX_FILENAME_BYTES = 200
   # Uploads that stopped receiving data this long ago are deleted by CleanupStaleUploadsJob.
   STALE_UPLOAD_AGE = 7.days
@@ -25,6 +28,8 @@ class Asset < ApplicationRecord
   validates :kind, inclusion: { in: %w[other], message: "must be other for save backups" }, if: :save_key?
 
   scope :ready, -> { where(status: "ready") }
+  # What kiosks see in the manifest: ready files plus games they can ask for.
+  scope :listed, -> { where(status: [ "ready", *ON_DEMAND ]) }
   # Save-file backups (kind "other", keyed by save_key) are fetched through the kiosk saves
   # API, not the asset manifest, so kiosks do not download every other kiosk's saves.
   scope :library, -> { where(save_key: nil) }
@@ -32,7 +37,7 @@ class Asset < ApplicationRecord
   scope :stale_uploads, -> { where(status: "uploading").where(updated_at: ...STALE_UPLOAD_AGE.ago) }
 
   after_destroy_commit :remove_files
-  after_destroy_commit :request_kiosk_reconcile!, if: -> { status == "ready" }
+  after_destroy_commit :request_kiosk_reconcile!, if: -> { status == "ready" || ON_DEMAND.include?(status) }
 
   # Turns an arbitrary client-supplied name into a safe single path segment.
   def self.sanitize_filename(name)
@@ -128,8 +133,14 @@ class Asset < ApplicationRecord
     end
   end
 
+  def on_demand?
+    ON_DEMAND.include?(status)
+  end
+
   # Wire format for the kiosk API (contracts §1). `base_url` makes cover_url absolute
-  # for whoever is asking, so it is right behind any host name.
+  # for whoever is asking, so it is right behind any host name. An on-demand game has no
+  # sha256 yet; `remote` tells the kiosk to list it and fetch it only when asked
+  # (POST assets/:id/request).
   def as_kiosk_json(base_url: nil, cover_keys: {})
     {
       id: id.to_s,
@@ -140,7 +151,13 @@ class Asset < ApplicationRecord
       sha256: sha256,
       metadata: kiosk_metadata(base_url, cover_keys),
       updated_at: updated_at.utc.iso8601
-    }
+    }.tap do |json|
+      if on_demand?
+        json[:remote] = true
+        json[:remote_state] = status
+        json[:remote_error] = error if error.present?
+      end
+    end
   end
 
   private

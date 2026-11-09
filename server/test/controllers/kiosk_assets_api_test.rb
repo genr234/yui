@@ -139,4 +139,33 @@ class KioskAssetsApiTest < ActionDispatch::IntegrationTest
     get "/covers/..%2FRMCE01.png"
     assert_response :not_found
   end
+
+  test "on-demand games are listed with a remote flag and can be requested" do
+    linked = LinkedAccount.new(account: @account, provider: "romm", label: "Home RomM", base_url: "https://romm.example.test")
+    linked.assign_credentials(auth: "password", username: "kim", password: "secret")
+    linked.save!
+    remote = @account.assets.create!(kind: "game", title: "Tiny Quest", filename: "tiny.sfc", byte_size: 64, status: "remote",
+      linked_account: linked, metadata: { "platform" => "snes", "source" => { "remote_id" => "10" } })
+
+    get "/api/kiosk/assets", headers: @auth
+    item = response.parsed_body["assets"].find { |entry| entry["id"] == remote.id.to_s }
+    assert item["remote"]
+    assert_nil item["sha256"]
+
+    get "/api/kiosk/assets/#{remote.id}/download", headers: @auth
+    assert_response :not_found
+
+    assert_enqueued_jobs 1, only: LinkedFetchJob do
+      post "/api/kiosk/assets/#{remote.id}/request", headers: @auth
+    end
+    assert_response :accepted
+    assert_equal "fetching", response.parsed_body["state"]
+
+    post "/api/kiosk/assets/#{@asset.id}/request", headers: @auth
+    assert_response :success
+    assert_equal "ready", response.parsed_body["state"]
+
+    post "/api/kiosk/assets/#{@foreign.id}/request", headers: @auth
+    assert_response :not_found
+  end
 end

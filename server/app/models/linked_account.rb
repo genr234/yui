@@ -79,7 +79,8 @@ class LinkedAccount < ApplicationRecord
 
   # "142 games from 3 platforms, 1 collection. 18.4 GB."
   def summary
-    games = assets.where(status: "ready")
+    games = assets.listed
+    fetched = assets.ready
     counts = linked_imports.group(:kind).count
     parts = { "platform" => "platform", "collection" => "collection", "rom" => "single game" }.filter_map do |kind, noun|
       ApplicationController.helpers.pluralize(counts[kind], noun) if counts[kind].to_i.positive?
@@ -87,7 +88,7 @@ class LinkedAccount < ApplicationRecord
     helpers = ApplicationController.helpers
     text = "#{helpers.pluralize(games.count, "game")}"
     text += " from #{parts.to_sentence}" if parts.any?
-    "#{text}. #{helpers.number_to_human_size(games.sum(:byte_size))}."
+    "#{text}. #{fetched.count} downloaded (#{helpers.number_to_human_size(fetched.sum(:byte_size))}); the rest download when a kiosk asks."
   end
 
   private

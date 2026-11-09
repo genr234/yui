@@ -1,19 +1,15 @@
 require "digest"
 
 # Brings a linked account's chosen imports into the asset library (plan 16, L3 to L5):
-# lists what every import covers, makes one `game` asset per ROM (bytes fetched once into
-# Yui's storage, hashed on the way, then run through the normal analyzer chain), stores the
-# cover, and removes assets that have left every import. One ROM failing never fails the
-# sync; a login or connection problem stops it and is shown on the account.
+# lists what every import covers, makes one catalog-only `game` asset per ROM (status
+# "remote": title, platform and cover, no bytes), and removes assets that have left every
+# import. The ROM itself is fetched only when a kiosk asks for it (LinkedFetch). One ROM
+# failing never fails the sync; a login or connection problem stops it and is shown on
+# the account.
 class LinkedSync
   Result = Struct.new(:added, :updated, :removed, :failed, :errors) do
     def initialize(*) = super(0, 0, 0, 0, [])
   end
-
-  # Seconds to wait between attempts at one ROM. Tests set this to [].
-  cattr_accessor :backoff, default: [ 2, 10 ]
-
-  RETRYABLE = [ LinkedProviders::ConnectionError ].freeze
 
   attr_reader :result
 
@@ -31,6 +27,7 @@ class LinkedSync
     existing = existing_assets
     wanted.each_value { |item| sync_rom(item, existing[item[:remote_id]]) }
     remove_unwanted(existing, wanted)
+    @linked_account.account.then { |account| Asset.request_reconcile_for!(account) } if changed?
     # Games that failed one by one are reported, but the account itself is fine.
     @linked_account.finish_sync!(error: failure_summary, status: "ok")
     true
@@ -80,15 +77,22 @@ class LinkedSync
     @linked_account.assets.index_by { |asset| asset.metadata.dig("source", "remote_id") }
   end
 
+  def changed?
+    (@result.added + @result.updated + @result.removed).positive?
+  end
+
+  # Leftovers from an import that stopped half way (never a game waiting on RomM).
   def clear_unfinished_assets
-    @linked_account.assets.where.not(status: "ready").find_each(&:destroy)
+    @linked_account.assets.where(status: %w[uploading processing failed]).find_each(&:destroy)
   end
 
   def sync_rom(item, current)
-    if current && up_to_date?(current, item)
+    if current.nil?
+      add(item)
+    elsif up_to_date?(current, item)
       refresh(current, item)
     else
-      import_with_retries(item, current)
+      replace(current, item)
     end
   rescue StandardError => error
     record_failure(item, error)
@@ -96,7 +100,7 @@ class LinkedSync
 
   def up_to_date?(asset, item)
     source = asset.metadata["source"].to_h
-    asset.ready? && source["file"] == item[:filename] && source["remote_size"] == item[:size]
+    source["file"] == item[:filename] && source["remote_size"] == item[:size]
   end
 
   # Metadata that can change without new bytes (title, region), and a cover that was missing.
@@ -106,74 +110,40 @@ class LinkedSync
     changed = fields.compact.any? { |key, value| asset.metadata[key] != value }
     return if !changed && asset.title == item[:title]
 
-    asset.update!(title: item[:title], metadata: asset.metadata.merge(fields.compact))
-    asset.request_kiosk_reconcile!
+    asset.update!(title: item[:title].to_s.truncate(200), metadata: asset.metadata.merge(fields.compact))
     @result.updated += 1
   end
 
-  def import_with_retries(item, replacing)
-    attempts = 0
-    begin
-      import(item, replacing)
-    rescue *RETRYABLE => error
-      delay = self.class.backoff[attempts]
-      attempts += 1
-      raise error if delay.nil?
-
-      sleep(delay) if delay.positive?
-      retry
-    end
+  def add(item)
+    asset = @linked_account.account.assets.create!(
+      kind: "game", filename: item[:filename], title: item[:title].to_s.truncate(200), byte_size: item[:size].to_i,
+      status: "remote", linked_account: @linked_account, metadata: base_metadata(item)
+    )
+    asset.update!(metadata: asset.metadata.merge("cover_url" => fetch_cover(asset, item)).compact)
+    @result.added += 1
+  rescue StandardError
+    asset&.destroy
+    raise
   end
 
-  def import(item, replacing)
-    asset = @linked_account.account.assets.create!(
-      kind: "game", filename: item[:filename], title: item[:title].to_s.truncate(200), byte_size: 0,
-      status: "uploading", linked_account: @linked_account, metadata: base_metadata(item)
+  # The file on RomM changed: forget any copy Yui fetched; the next request gets the new one.
+  def replace(asset, item)
+    FileUtils.rm_rf(asset.directory)
+    asset.update!(
+      filename: item[:filename], title: item[:title].to_s.truncate(200), byte_size: item[:size].to_i, sha256: nil,
+      status: "remote", error: nil, metadata: base_metadata(item).merge("cover_url" => asset.metadata["cover_url"]).compact
     )
-    begin
-      store_file(asset, item)
-      asset.update!(metadata: asset.metadata.merge("cover_url" => fetch_cover(asset, item)).compact)
-      ProcessAssetJob.perform_now(asset.id, nil)
-      asset.reload
-      raise LinkedProviders::Error, asset.error.presence || "Yui couldn't process the file" unless asset.ready?
-    rescue StandardError
-      asset.destroy
-      raise
-    end
-    replacing&.destroy
-    replacing ? @result.updated += 1 : @result.added += 1
+    @result.updated += 1
   end
 
   def base_metadata(item)
-    {
+    AssetAnalyzers::GAME_DEFAULTS.merge(
       "source" => {
         "provider" => @linked_account.provider, "linked_account_id" => @linked_account.id,
         "remote_id" => item[:remote_id], "file" => item[:filename], "remote_size" => item[:size]
       },
       "platform" => item[:platform], "region" => item[:region]
-    }.compact
-  end
-
-  # Streams the download to disk, hashing as it goes, within the upload size cap.
-  def store_file(asset, item)
-    asset.create_empty_file!
-    digest = Digest::SHA256.new
-    written = 0
-    max = AssetUploadsController.max_size
-
-    @provider.download(item[:remote_id]) do |source, _filename, size|
-      File.open(asset.file_path, "wb") do |file|
-        source.each_chunk do |chunk|
-          written += chunk.bytesize
-          raise LinkedProviders::Error, "The file is larger than the #{ActiveSupport::NumberHelper.number_to_human_size(max)} limit" if written > max
-
-          digest.update(chunk)
-          file.write(chunk)
-        end
-      end
-      raise LinkedProviders::ConnectionError, "The download stopped early" if size && written != size
-    end
-    asset.update!(byte_size: written, sha256: digest.hexdigest, status: "processing")
+    ).compact
   end
 
   # Returns the public cover path (or the one already stored); never raises.
@@ -203,6 +173,6 @@ class LinkedSync
   def failure_summary
     return if @result.failed.zero?
 
-    "#{ApplicationController.helpers.pluralize(@result.failed, "game")} couldn't be imported (#{@result.errors.first(3).join("; ")})".truncate(1000)
+    "#{ApplicationController.helpers.pluralize(@result.failed, "game")} couldn't be listed (#{@result.errors.first(3).join("; ")})".truncate(1000)
   end
 end
