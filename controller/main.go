@@ -24,6 +24,7 @@ import (
 	"kiosk/controller/internal/singleinstance"
 	"kiosk/controller/internal/status"
 	"kiosk/controller/internal/supervisor"
+	"kiosk/controller/internal/telemetry"
 	"kiosk/controller/internal/updater"
 	"kiosk/controller/internal/version"
 )
@@ -91,6 +92,9 @@ func run() error {
 	}()
 
 	logControllerStartup(cfg)
+	telemetry.OnSnapshot(func(snapshot map[string]any) {
+		snapshot["console_lines_dropped"] = controllerlog.ConsoleDropped()
+	})
 
 	statusWriter := status.New(cfg.StatusPath, version.Version, version.Commit, cfg.ConfigPath, cfg.ChromePath)
 	statusWriter.Write(status.State{

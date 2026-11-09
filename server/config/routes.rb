@@ -22,6 +22,17 @@ Rails.application.routes.draw do
     resources :pairing_codes, only: [ :create ]
     resources :phone_links, only: [ :create, :destroy ]
     resources :kiosk_commands, only: [ :create ]
+    resources :kiosks, only: [ :show ] do
+      member do
+        post :restart_chrome
+        post :update_now
+        post :check_update
+        get :remote
+        post "remote/screenshot", action: :remote_screenshot, as: :remote_screenshot
+        post "remote/input", action: :remote_input, as: :remote_input
+        get "remote/commands/:command_id", action: :remote_command, as: :remote_command
+      end
+    end
     resources :linked_accounts, only: [ :new, :create, :show, :edit, :update, :destroy ] do
       collection { post :test }
       member do
@@ -40,6 +51,7 @@ Rails.application.routes.draw do
       get "sync/pull", to: "sync#pull"
       patch "commands/:id", to: "commands#update"
       post "phone_link_codes", to: "phone_link_codes#create"
+      post "telemetry", to: "telemetry#create"
     end
   end
 

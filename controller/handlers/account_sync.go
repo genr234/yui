@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"kiosk/controller/internal/telemetry"
+	"kiosk/controller/internal/version"
 	"log"
 	"net/http"
 	"net/url"
@@ -85,6 +87,7 @@ func (r *Registry) StartAccountSync(ctx context.Context) {
 	go r.accountLoop(ctx)
 	go r.accountCommandLoop(ctx)
 	r.StartAssetSync(ctx)
+	go telemetry.Run(ctx, r.assetEndpointFunc(&assetEndpointCache{}), version.Version, version.Commit, time.Minute)
 }
 
 func (r *Registry) accountLoop(ctx context.Context) {
@@ -740,7 +743,9 @@ func remoteCommandAllowed(method string) bool {
 		"plugins.sources.add", "plugins.sources.remove", "plugins.sources.refresh",
 		"plugins.install", "plugins.uninstall", "plugins.enable", "plugins.disable",
 		"plugins.permissions.update", "plugins.settings.update",
-		"assets.reconcile":
+		"assets.reconcile",
+		"update.check", "update.apply",
+		"kiosk.status", "kiosk.restartChrome", "kiosk.screenshot", "kiosk.input":
 		return true
 	default:
 		return false

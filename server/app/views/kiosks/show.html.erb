@@ -1,0 +1,72 @@
+<% content_for :title, "#{@kiosk.name} - Yui" %>
+<% health = @kiosk.health.to_h %>
+
+<main class="form-page form-page--wide">
+  <section class="form-card kiosk-page">
+    <%= link_to "← #{@account.name}", account_path(@account), class: "back-link" %>
+    <h1><%= @kiosk.name %></h1>
+    <p class="kiosk-health kiosk-health--<%= @kiosk.healthy? ? "ok" : "warn" %>">
+      <span class="status-dot status-dot--<%= @kiosk.healthy? ? "ok" : "error" %>"></span>
+      <strong><%= @kiosk.chrome_label %></strong>
+      <% if health["chrome_since"].present? && (since = Time.zone.parse(health["chrome_since"].to_s) rescue nil) %>
+        <small>since <%= time_ago_in_words(since) %> ago</small>
+      <% end %>
+    </p>
+    <dl class="kiosk-facts">
+      <div><dt>Last seen</dt><dd><%= @kiosk.last_seen_at ? "#{time_ago_in_words(@kiosk.last_seen_at)} ago" : "never" %></dd></div>
+      <div><dt>Version</dt><dd><code><%= health["commit"].presence&.first(7) || "unknown" %></code></dd></div>
+      <div><dt>Yui running for</dt><dd><%= health["uptime_seconds"] ? distance_of_time_in_words(health["uptime_seconds"].to_i) : "unknown" %></dd></div>
+      <div><dt>Chrome restarts</dt><dd><%= health["chrome_restarts"] || 0 %></dd></div>
+      <% if health["console_lines_dropped"].to_i.positive? %>
+        <div><dt>Console lines dropped</dt><dd><%= health["console_lines_dropped"] %></dd></div>
+      <% end %>
+    </dl>
+
+    <div class="kiosk-actions">
+      <%= link_to "Remote control", remote_account_kiosk_path(@account, @kiosk), class: "button button--primary" %>
+      <%= button_to "Restart Chrome", restart_chrome_account_kiosk_path(@account, @kiosk), class: "button button--dark" %>
+      <%= button_to "Update now", update_now_account_kiosk_path(@account, @kiosk), class: "button button--dark",
+            form: { data: { turbo_confirm: "Install the latest release on #{@kiosk.name}? It restarts Yui if there is an update." } } %>
+      <%= button_to "Check for updates", check_update_account_kiosk_path(@account, @kiosk), class: "button button--ghost" %>
+    </div>
+
+    <% if @commands.any? %>
+      <h2>Recent actions</h2>
+      <ul class="plain-list">
+        <% @commands.each do |command| %>
+          <li>
+            <span>
+              <strong><%= { "update.apply" => "Update now", "update.check" => "Check for updates", "kiosk.restartChrome" => "Restart Chrome" }[command.command_type] || command.command_type %></strong>
+              <small><%= time_ago_in_words(command.created_at) %> ago
+                <% if command.command_type == "update.check" && command.result.is_a?(Hash) %>
+                  · <%= command.result["update_available"] ? "update available (#{command.result["latest_commit"].to_s.first(7)})" : "up to date" %>
+                <% end %>
+                <% if command.error.present? %> · <%= command.error.truncate(160) %><% end %>
+              </small>
+            </span>
+            <span class="quiet-status quiet-status--<%= { "succeeded" => "on", "failed" => "failed" }[command.status] || "pending" %>"><%= command.status %></span>
+          </li>
+        <% end %>
+      </ul>
+    <% end %>
+
+    <h2>Health log</h2>
+    <% if @events.any? %>
+      <ul class="plain-list kiosk-events">
+        <% @events.each do |event| %>
+          <li>
+            <span>
+              <strong><%= event.label %></strong>
+              <small><%= event.occurred_at.strftime("%-d %b %H:%M:%S") %>
+                <% details = event.data.to_h.slice("error", "uptime_seconds", "restart_count", "from", "to", "action") %>
+                <% details.each do |key, value| %> · <%= key.humanize.downcase %>: <%= value.to_s.truncate(120) %><% end %>
+              </small>
+            </span>
+          </li>
+        <% end %>
+      </ul>
+    <% else %>
+      <p class="empty-copy">No reports yet. Kiosks send them once they run this release.</p>
+    <% end %>
+  </section>
+</main>

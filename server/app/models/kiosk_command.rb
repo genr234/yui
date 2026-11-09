@@ -15,6 +15,12 @@ class KioskCommand < ApplicationRecord
     plugins.permissions.update
     plugins.settings.update
     assets.reconcile
+    update.check
+    update.apply
+    kiosk.status
+    kiosk.restartChrome
+    kiosk.screenshot
+    kiosk.input
   ].freeze
 
   STATUSES = %w[pending sent succeeded failed].freeze

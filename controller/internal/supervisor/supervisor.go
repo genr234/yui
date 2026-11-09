@@ -2,6 +2,7 @@ package supervisor
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -11,14 +12,36 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gorilla/websocket"
+
 	"kiosk/controller/internal/config"
 	"kiosk/controller/internal/nativeui"
 	"kiosk/controller/internal/status"
+	"kiosk/controller/internal/telemetry"
 )
 
 type Supervisor struct {
 	cfg    config.Config
 	status *status.Writer
+}
+
+// Watchdog timing: once Chrome has had startupGrace to open its debugging
+// port, it is restarted if the port stays unreachable for hangAfter.
+var (
+	watchdogInterval = 10 * time.Second
+	startupGrace     = 60 * time.Second
+	hangAfter        = 45 * time.Second
+)
+
+var restartRequests = make(chan string, 1)
+
+// RequestChromeRestart asks the running supervisor to kill and restart Chrome
+// (used by the remote "restart Chrome" command). It never blocks.
+func RequestChromeRestart(reason string) {
+	select {
+	case restartRequests <- reason:
+	default:
+	}
 }
 
 func New(cfg config.Config, statusWriter *status.Writer) *Supervisor {
@@ -82,7 +105,12 @@ func (s *Supervisor) Run(ctx context.Context) error {
 			RestartCount: restartCount,
 		})
 
-		err = cmd.Wait()
+		err = s.wait(ctx, cmd)
+		exit := map[string]any{"uptime_seconds": int(time.Since(startedAt).Seconds())}
+		if err != nil {
+			exit["error"] = err.Error()
+		}
+		telemetry.Record("chrome_process_ended", exit)
 		if err == nil {
 			log.Printf("chrome exited")
 			if s.monitorDetachedChrome(ctx, usedPath, restartCount) {
@@ -119,6 +147,55 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	}
 }
 
+// wait returns when Chrome exits. Meanwhile it restarts Chrome when asked to
+// and when its debugging port stops answering (a hung or half-closed browser
+// used to leave the kiosk on the controller console until someone came by).
+func (s *Supervisor) wait(ctx context.Context, cmd *exec.Cmd) error {
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+
+	watch := s.cfg.PlatformEnabled && s.cfg.PlatformDebugPort > 0
+	ticker := time.NewTicker(watchdogInterval)
+	defer ticker.Stop()
+	started := time.Now()
+	lastSeen := time.Time{}
+
+	kill := func(event, reason string) {
+		log.Printf("restarting chrome: %s", reason)
+		s.status.Write(status.State{Event: event, ChromePID: cmd.Process.Pid, LastError: reason})
+		_ = cmd.Process.Kill()
+	}
+
+	for {
+		select {
+		case err := <-done:
+			return err
+		case reason := <-restartRequests:
+			kill("chrome_restart_requested", reason)
+			return <-done
+		case <-ticker.C:
+			if !watch {
+				continue
+			}
+			if isChromeDebugReachable(ctx, s.cfg.PlatformDebugPort) {
+				lastSeen = time.Now()
+				continue
+			}
+			if time.Since(started) < startupGrace {
+				continue
+			}
+			since := lastSeen
+			if since.IsZero() {
+				since = started.Add(startupGrace)
+			}
+			if time.Since(since) >= hangAfter {
+				kill("chrome_hung", fmt.Sprintf("debugging port unreachable for %s", time.Since(since).Round(time.Second)))
+				return <-done
+			}
+		}
+	}
+}
+
 func (s *Supervisor) monitorDetachedChrome(ctx context.Context, usedPath string, restartCount int) bool {
 	if !s.cfg.PlatformEnabled || s.cfg.PlatformDebugPort <= 0 {
 		return false
@@ -141,6 +218,10 @@ func (s *Supervisor) monitorDetachedChrome(ctx context.Context, usedPath string,
 		select {
 		case <-ctx.Done():
 			return true
+		case reason := <-restartRequests:
+			log.Printf("restart requested for detached chrome (%s); closing it", reason)
+			closeBrowser(ctx, s.cfg.PlatformDebugPort)
+			return false
 		case <-ticker.C:
 			if !chromeDebugReachable(ctx, s.cfg.PlatformDebugPort, 0) {
 				log.Printf("detached chrome remote debugging is no longer reachable")
@@ -276,6 +357,35 @@ func isChromeDebugReachable(ctx context.Context, port int) bool {
 	defer resp.Body.Close()
 
 	return resp.StatusCode >= 200 && resp.StatusCode < 300
+}
+
+// closeBrowser asks the Chrome behind the debugging port to quit.
+func closeBrowser(ctx context.Context, port int) {
+	reqCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/json/version", port), nil)
+	if err != nil {
+		return
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	var info struct {
+		WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&info) != nil || info.WebSocketDebuggerURL == "" {
+		return
+	}
+	conn, _, err := websocket.DefaultDialer.DialContext(reqCtx, info.WebSocketDebuggerURL, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+	_ = conn.WriteJSON(map[string]any{"id": 1, "method": "Browser.close"})
+	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_, _, _ = conn.ReadMessage()
 }
 
 func nextDelay(current time.Duration, max time.Duration) time.Duration {

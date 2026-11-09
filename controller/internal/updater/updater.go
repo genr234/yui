@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"kiosk/controller/internal/config"
+	"kiosk/controller/internal/telemetry"
 	"kiosk/controller/internal/version"
 )
 
@@ -82,6 +83,7 @@ func Start(ctx context.Context, cfg config.Config) {
 				}
 				if err := CheckAndApply(ctx, currentCfg); err != nil {
 					log.Printf("auto update check failed: %v", err)
+					telemetry.Record("update_failed", map[string]any{"error": err.Error()})
 				}
 				timer.Reset(interval)
 			}
@@ -158,6 +160,7 @@ func Apply(ctx context.Context, cfg config.Config) (Status, error) {
 	}
 
 	log.Printf("started updater installer pid=%d target=%s", cmd.Process.Pid, target)
+	telemetry.Record("update_started", map[string]any{"from": status.CurrentCommit, "to": status.LatestCommit})
 	go func() {
 		time.Sleep(1200 * time.Millisecond)
 		log.Printf("controller exiting for auto update")

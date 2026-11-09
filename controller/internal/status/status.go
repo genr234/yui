@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"kiosk/controller/internal/telemetry"
 )
 
 type State struct {
@@ -43,6 +45,7 @@ func New(path string, version string, commit string, configPath string, chromePa
 }
 
 func (w *Writer) Write(update State) {
+	recordTelemetry(update)
 	if w == nil || w.path == "" {
 		return
 	}
@@ -67,6 +70,38 @@ func (w *Writer) Write(update State) {
 	}
 	_ = os.WriteFile(w.path, data, 0644)
 	_ = os.WriteFile(diagnosticsPath(w.path), []byte(formatDiagnostics(state)), 0644)
+}
+
+// chromeStates maps status events to the "chrome" field of the telemetry snapshot.
+var chromeStates = map[string]string{
+	"starting_chrome": "starting", "chrome_started": "running", "chrome_detached": "running",
+	"chrome_exited": "restarting", "chrome_start_failed": "start_failed", "chrome_hung": "restarting",
+	"chrome_restart_requested": "restarting", "controller_stopped": "stopped",
+}
+
+func recordTelemetry(update State) {
+	if update.Event == "" {
+		return
+	}
+	data := map[string]any{}
+	if update.ChromePID != 0 {
+		data["pid"] = update.ChromePID
+	}
+	if update.RestartCount != 0 {
+		data["restart_count"] = update.RestartCount
+	}
+	if update.LastError != "" {
+		data["error"] = update.LastError
+	}
+	if update.NextRestartAt != "" {
+		data["next_restart_at"] = update.NextRestartAt
+	}
+	telemetry.Record(update.Event, data)
+	if chrome, ok := chromeStates[update.Event]; ok {
+		telemetry.Set("chrome", chrome)
+		telemetry.Set("chrome_since", time.Now().UTC().Format(time.RFC3339))
+		telemetry.Set("chrome_restarts", update.RestartCount)
+	}
 }
 
 func first(value string, fallback string) string {

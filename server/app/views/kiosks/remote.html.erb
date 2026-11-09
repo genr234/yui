@@ -1,0 +1,31 @@
+<% content_for :title, "Remote: #{@kiosk.name} - Yui" %>
+
+<main class="form-page form-page--wide">
+  <section class="form-card remote-page"
+           data-controller="remote-screen"
+           data-remote-screen-screenshot-url-value="<%= remote_screenshot_account_kiosk_path(@account, @kiosk) %>"
+           data-remote-screen-input-url-value="<%= remote_input_account_kiosk_path(@account, @kiosk) %>"
+           data-remote-screen-command-url-value="<%= remote_command_account_kiosk_path(@account, @kiosk, command_id: "ID") %>">
+    <%= link_to "← #{@kiosk.name}", account_kiosk_path(@account, @kiosk), class: "back-link" %>
+    <h1>Remote control</h1>
+    <p>Tap the picture to tap the kiosk. This shows what Chrome shows; a game running in its own window (like Dolphin) isn't in it.</p>
+    <p class="remote-status" data-remote-screen-target="status">Connecting…</p>
+
+    <div class="remote-screen">
+      <img data-remote-screen-target="image" alt="The kiosk's screen" data-action="click->remote-screen#tap wheel->remote-screen#scroll">
+    </div>
+
+    <div class="remote-tools">
+      <button type="button" class="button button--ghost" data-action="remote-screen#key" data-key="Escape">Esc</button>
+      <button type="button" class="button button--ghost" data-action="remote-screen#key" data-key="Backspace">⌫</button>
+      <button type="button" class="button button--ghost" data-action="remote-screen#key" data-key="Enter">Enter</button>
+      <button type="button" class="button button--ghost" data-action="remote-screen#key" data-key="ArrowUp">↑</button>
+      <button type="button" class="button button--ghost" data-action="remote-screen#key" data-key="ArrowDown">↓</button>
+      <form class="remote-type" data-action="submit->remote-screen#type">
+        <input type="text" maxlength="500" placeholder="Type text on the kiosk" data-remote-screen-target="text">
+        <button type="submit" class="button button--dark">Send</button>
+      </form>
+      <button type="button" class="button button--ghost" data-action="remote-screen#toggle" data-remote-screen-target="pause">Pause</button>
+    </div>
+  </section>
+</main>

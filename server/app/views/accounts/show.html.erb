@@ -59,8 +59,8 @@
             <% @kiosks.each do |kiosk| %>
               <li>
                 <span>
-                  <strong><%= kiosk.name %></strong>
-                  <small><%= kiosk.last_seen_at.present? ? "Last seen #{time_ago_in_words(kiosk.last_seen_at)} ago" : "Never seen" %></small>
+                  <strong><%= link_to kiosk.name, account_kiosk_path(@account, kiosk) %></strong>
+                  <small><%= kiosk.last_seen_at.present? ? "Last seen #{time_ago_in_words(kiosk.last_seen_at)} ago" : "Never seen" %><%= " · #{kiosk.chrome_label}" if kiosk.chrome_state %></small>
                 </span>
                 <span class="quiet-status <%= "quiet-status--on" if kiosk.last_seen_at.present? && kiosk.last_seen_at > 10.minutes.ago %>">
                   <%= kiosk.last_seen_at.present? && kiosk.last_seen_at > 10.minutes.ago ? "Online" : "Idle" %>
