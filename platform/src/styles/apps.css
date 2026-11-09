@@ -171,6 +171,11 @@
 }
 
 .join-chip {
+	border: 0;
+	color: inherit;
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
 	display: flex;
 	align-items: center;
 	gap: 12px;

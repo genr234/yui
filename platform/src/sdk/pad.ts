@@ -11,6 +11,8 @@ export type PadPlayer = {
 	speaker?: boolean;
 	/** "left" or "right" while two speaker phones form a stereo pair; absent for a mono speaker. */
 	speaker_channel?: "left" | "right" | null;
+	/** Playing as a Yui account this session (plan 10); the account itself is never sent. */
+	account_linked?: boolean;
 	connected: boolean;
 	/** Last control round trip in ms and accepted input frames per second (absent until measured). */
 	rtt_ms?: number;

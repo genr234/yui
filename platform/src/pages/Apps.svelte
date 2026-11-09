@@ -299,13 +299,18 @@
               {hero.title || hero.at ? "Resume" : "Open"}
             </button>
             {#if padState.session}
-              <div class="join-chip">
+              <button
+                class="join-chip"
+                type="button"
+                title="Players and session"
+                on:click={() => window.dispatchEvent(new CustomEvent("yui:open-session"))}
+              >
                 <span class="join-copy">
                   <span>Join on your phone</span>
                   <strong>{padState.session.code}</strong>
                 </span>
                 <JoinQr value={padState.session.join_url} label={`QR code to join session ${padState.session.code}`} />
-              </div>
+              </button>
             {/if}
           </div>
         </div>

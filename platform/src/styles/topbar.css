@@ -394,6 +394,13 @@ button.topbar-chip {
 	font-weight: 500;
 }
 
+.session-account {
+	display: inline-flex;
+	vertical-align: -2px;
+	margin-left: 4px;
+	color: var(--yui-blue);
+}
+
 .session-link {
 	font-variant-numeric: tabular-nums;
 }

@@ -4,6 +4,7 @@
 	import CrownIcon from "lucide-svelte/icons/crown";
 	import Volume2Icon from "lucide-svelte/icons/volume-2";
 	import XIcon from "lucide-svelte/icons/x";
+	import UserCheckIcon from "lucide-svelte/icons/user-check";
 	import JoinQr from "./JoinQr.svelte";
 	import { avatarKind, linkQuality, pad, padAction, playerSwatch, type PadPlayer, type PadState } from "../sdk/pad";
 
@@ -33,6 +34,11 @@
 	$: joinHost = session ? hostOf(session.join_url) : "";
 
 	onMount(() => {
+		// The Apps banner's join chip opens this popover.
+		const onOpenSession = () => {
+			if (session) open = true;
+		};
+		window.addEventListener("yui:open-session", onOpenSession);
 		const onPointerDown = (event: PointerEvent) => {
 			if (!open || !wrap) return;
 			if (event.composedPath().includes(wrap)) return;
@@ -46,6 +52,7 @@
 		window.addEventListener("pointerdown", onPointerDown);
 		window.addEventListener("keydown", onKeyDown);
 		return () => {
+			window.removeEventListener("yui:open-session", onOpenSession);
 			window.removeEventListener("pointerdown", onPointerDown);
 			window.removeEventListener("keydown", onKeyDown);
 		};
@@ -203,7 +210,12 @@
 						</span>
 						{#if player}
 							<span class="session-player-name">
-								<strong>{player.name}</strong>
+								<strong>
+									{player.name}
+									{#if player.account_linked}
+										<span class="session-account" title="Playing as their Yui account"><UserCheckIcon size={14} strokeWidth={2.4} /></span>
+									{/if}
+								</strong>
 								<span>
 									{#if !player.connected}Reconnecting…{:else if player.host && player.speaker}Host · sound{channelLetter(player)}{:else if player.host}Host{:else if player.speaker}Sound{channelLetter(player)}{:else}Playing{/if}
 									{#if player.connected && linkQuality(player.rtt_ms)}
