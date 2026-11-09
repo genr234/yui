@@ -30,6 +30,7 @@ type Config struct {
 	AutoUpdateEnabled   bool     `json:"auto_update_enabled"`
 	AutoUpdateRepo      string   `json:"auto_update_repo"`
 	AutoUpdateInterval  int      `json:"auto_update_interval_minutes"`
+	WebPort             int      `json:"web_port"` // web app server port (contracts §6); 0 disables
 	// EventMode turns on demo/kiosk-event behavior: new play sessions open
 	// the lobby, idle sessions end after EventIdleMinutes, and the overlay
 	// shows an attract screen when nobody is playing. Off by default.
@@ -95,6 +96,7 @@ func Default() Config {
 		PlatformHTTPAddr:    "127.0.0.1:7072",
 		PlatformBridgeAddr:  "127.0.0.1:7071",
 		PlatformDebugPort:   9222,
+		WebPort:             26780,
 		AutoUpdateEnabled:   true,
 		AutoUpdateRepo:      "genr234/yui",
 		AutoUpdateInterval:  30,

@@ -468,6 +468,10 @@ func (m *Manager) Stop(appID string, force bool) (Status, error) {
 	return m.Status(), nil
 }
 
+// Runtimes returns the runtime extractor, so other services can mount an
+// extracted runtime asset without extracting it a second time.
+func (m *Manager) Runtimes() *Runtimes { return m.runtimes }
+
 // Close stops any session. Called on controller shutdown.
 func (m *Manager) Close() {
 	_, _ = m.Stop("", false)
