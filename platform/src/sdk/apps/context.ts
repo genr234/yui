@@ -1,5 +1,6 @@
 import { createUiApi } from "./ui";
 import type {
+	YuiAsset,
 	YuiContext,
 	YuiNativeEvent,
 	YuiNativeSpec,
@@ -370,6 +371,27 @@ export function createYuiContext(app: YuiSimpleApp, onRender: () => void): YuiCo
 				await bridge.send("library.remove", { app_id: app.id, ids });
 			},
 		},
+		assets: Object.assign(
+			async (kind: string) => {
+				if (typeof kind !== "string" || !kind) throw new Error("YUI_ASSETS: a kind is required");
+				await ensurePermission(`assets:${kind}`);
+				return (await bridge.send<YuiAsset[] | null>("assets.list", { kind })) ?? [];
+			},
+			{
+				onChange(handler: () => void) {
+					const granted = (app.permissions ?? []).some(
+						(permission) => permission.startsWith("assets:") && isPermissionGranted(app.id, permission),
+					);
+					if (!granted) throw permissionError("assets:<kind>");
+					const off = bridge.on("assets.changed", () => handler());
+					disposables.add(off);
+					return () => {
+						disposables.delete(off);
+						off();
+					};
+				},
+			},
+		),
 		controllers: controllers.api,
 		virtualPads: {
 			attach: (player, options) =>
