@@ -339,6 +339,34 @@ button.topbar-chip {
 	font-weight: 700;
 }
 
+.session-slot.has-avatar {
+	position: relative;
+	padding: 3px;
+}
+
+.session-slot.has-avatar .player-avatar {
+	width: 30px;
+	height: 30px;
+	border-radius: 8px;
+}
+
+.session-slot.has-avatar .player-avatar.emoji {
+	font-size: 19px;
+}
+
+.session-slot-tag {
+	position: absolute;
+	right: -5px;
+	bottom: -5px;
+	padding: 1px 4px;
+	border-radius: 6px;
+	background: rgba(9, 15, 24, 0.86);
+	color: #ffffff;
+	font-size: 9px;
+	font-weight: 800;
+	line-height: 1.2;
+}
+
 .session-player.empty .session-slot {
 	color: var(--yui-muted);
 }
@@ -470,6 +498,26 @@ button.topbar-chip {
 	color: #ffffff;
 	font-size: 12px;
 	font-weight: 700;
+}
+
+.player-square.has-avatar {
+	padding: 3px;
+}
+
+.player-avatar {
+	display: grid;
+	place-items: center;
+	width: 24px;
+	height: 24px;
+	border-radius: 7px;
+	overflow: hidden;
+	object-fit: cover;
+	background: rgba(9, 15, 24, 0.28);
+	line-height: 1;
+}
+
+.player-avatar.emoji {
+	font-size: 15px;
 }
 
 .player-square.open {

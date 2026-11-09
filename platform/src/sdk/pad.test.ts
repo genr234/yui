@@ -23,7 +23,7 @@ mock.module("./bridge", () => ({
 
 const listeners = new Map<string, (data: unknown) => void>();
 
-const { pad, padAction, cursorColor, remoteIntent, linkQuality } = await import("./pad");
+const { pad, padAction, cursorColor, remoteIntent, linkQuality, avatarKind } = await import("./pad");
 
 describe("pad events", () => {
 	test("each phone event has its own bridge event name", () => {
@@ -113,5 +113,31 @@ describe("linkQuality", () => {
 		expect(linkQuality(12)).toBe("good");
 		expect(linkQuality(80)).toBe("ok");
 		expect(linkQuality(400)).toBe("slow");
+	});
+});
+
+describe("avatarKind", () => {
+	test("jpeg and webp data urls are images", () => {
+		expect(avatarKind("data:image/jpeg;base64,/9j/4AAQ")).toEqual({ kind: "image", src: "data:image/jpeg;base64,/9j/4AAQ" });
+		expect(avatarKind("data:image/webp;base64,UklGRg==")).toEqual({ kind: "image", src: "data:image/webp;base64,UklGRg==" });
+	});
+
+	test("an emoji is text", () => {
+		expect(avatarKind("🦊")).toEqual({ kind: "text", text: "🦊" });
+		expect(avatarKind("<img src=x onerror=alert(1)>")?.kind).not.toBe("image");
+	});
+
+	test("other urls, empty and oversized values are no avatar", () => {
+		expect(avatarKind("data:image/svg+xml;base64,PHN2Zz4=")).toBeNull();
+		expect(avatarKind("data:image/png;base64,iVBORw0KGgo=")).toBeNull();
+		expect(avatarKind("javascript:alert(1)")).toBeNull();
+		expect(avatarKind("https://example.com/me.jpg")).toBeNull();
+		expect(avatarKind(" data:image/jpeg;base64,/9j/")).toBeNull();
+		expect(avatarKind("x".repeat(40))).toBeNull();
+		expect(avatarKind("")).toBeNull();
+		expect(avatarKind("  ")).toBeNull();
+		expect(avatarKind(null)).toBeNull();
+		expect(avatarKind(undefined)).toBeNull();
+		expect(avatarKind(42)).toBeNull();
 	});
 });
