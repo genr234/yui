@@ -13,6 +13,7 @@ const allowedPermissions = new Set<YuiPermission>([
 	"library",
 	"virtual-pads",
 	"controllers",
+	"profiles",
 	"audio.speaker",
 	"assets:game",
 	"assets:runtime",
@@ -59,8 +60,7 @@ export function validateSimpleApp(value: unknown): asserts value is YuiSimpleApp
 	}
 	if (app.controllers !== undefined) {
 		validateControllersManifest(app.controllers);
-		if (!app.permissions?.includes("controllers")) {
-			throw new Error("YUI_INVALID_APP: controllers needs the controllers permission");
+		if (!app.permissions?.includes("controllers")) {			throw new Error("YUI_INVALID_APP: controllers needs the controllers permission");
 		}
 	}
 }

@@ -11,6 +11,8 @@ import type { LibraryTitle } from "../library";
 import { getLaunchItem } from "./launch-intent";
 import { createControllersHost, registerControllersHost } from "./controllers";
 import { yuiControllersRuntime } from "./controllers-runtime";
+import { createProfilesHost, registerProfilesHost } from "./profiles";
+import { yuiProfilesRuntime } from "./profiles-runtime";
 import { isPermissionDeclared, isPermissionGranted, requestAppPermission } from "./permissions";
 import { bridge } from "../bridge";
 import {
@@ -189,6 +191,15 @@ export function createYuiContext(app: YuiSimpleApp, onRender: () => void): YuiCo
 		controllersHost.dispose();
 	});
 
+	// ctx.profiles exists only when the manifest declares `profiles`.
+	const profilesHost = isPermissionDeclared(app, "profiles") ? createProfilesHost(app, ensurePermission) : undefined;
+	const profiles = profilesHost
+		? yuiProfilesRuntime({
+				call: (method, args) => profilesHost.call(method, args),
+				players: () => controllers.api.players,
+			})
+		: undefined;
+
 	const ctx: YuiContext = {
 		app: {
 			id: app.id,
@@ -365,6 +376,7 @@ export function createYuiContext(app: YuiSimpleApp, onRender: () => void): YuiCo
 			},
 		},
 		controllers: controllers.api,
+		...(profiles ? { profiles: profiles.api } : {}),
 		virtualPads: {
 			attach: (player, options) =>
 				controllersHost.virtualPads("attach", [typeof player === "string" ? player : player.id, options]) as any,
@@ -398,5 +410,6 @@ export function createYuiContext(app: YuiSimpleApp, onRender: () => void): YuiCo
 		},
 	};
 	registerControllersHost(ctx, controllersHost);
+	if (profilesHost) registerProfilesHost(ctx, profilesHost);
 	return ctx;
 }

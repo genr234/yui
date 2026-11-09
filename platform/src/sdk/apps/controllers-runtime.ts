@@ -49,6 +49,7 @@ export function yuiControllersRuntime(backend: ControllersBackend): ControllersR
 			host: Boolean(player.host),
 			speaker: Boolean(player.speaker),
 			connected: player.connected !== false,
+			accountLinked: Boolean(player.account_linked),
 		};
 	}
 
@@ -93,7 +94,7 @@ export function yuiControllersRuntime(backend: ControllersBackend): ControllersR
 	}
 
 	function playerFor(id: string) {
-		return players.find((p) => p.id === id) ?? { id, slot: null, name: "", color: "", host: false, speaker: false, connected: true };
+		return players.find((p) => p.id === id) ?? { id, slot: null, name: "", color: "", host: false, speaker: false, connected: true, accountLinked: false };
 	}
 
 	function idOf(player: any) {

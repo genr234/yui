@@ -15,6 +15,7 @@ export type YuiPermission =
 	| "library"
 	| "virtual-pads"
 	| "controllers"
+	| "profiles"
 	| "audio.speaker"
 	| string;
 
@@ -87,6 +88,8 @@ export type YuiContext = {
 	native: YuiNativeApi;
 	library: YuiLibraryApi;
 	controllers: YuiControllersApi;
+	/** Only with the `profiles` permission declared. */
+	profiles?: YuiProfilesApi;
 	virtualPads: YuiVirtualPadsApi;
 	/** What the shell opened this app for, e.g. a library title from Jump back in. */
 	launch: { item: YuiLaunchItem | null };
@@ -238,6 +241,8 @@ export type YuiPlayer = {
 	host: boolean;
 	speaker: boolean;
 	connected: boolean;
+	/** Playing as a Yui account this session. Never says which account. */
+	accountLinked: boolean;
 };
 
 export type YuiPlayerRef = YuiPlayer | string;
@@ -285,6 +290,30 @@ export type YuiControllersApi = {
 	sound(player: YuiPlayerRef | "speaker", url: string, options?: { volume?: number }): Promise<unknown>;
 	/** Pad node builders: button, choice, dpad, stick, trackpad, keyboard, list, motion, preset, text, row, column, grid, spacer. */
 	ui: Record<string, (...args: any[]) => YuiPadNode>;
+};
+
+/** Rejection from `ctx.profiles`: `code` is one of these, `version` is the current one on a conflict. */
+export type YuiProfileError = Error & {
+	name: "YuiProfileError";
+	code: "not_linked" | "not_granted" | "version_conflict" | "too_large";
+	version?: number;
+};
+
+export type YuiProfile = {
+	/** Asks the player on their phone to let this app keep a profile. Resolves `{ granted: false }` for a "no" or no answer in 60 s. */
+	request(): Promise<{ granted: boolean }>;
+	/** Rejects with `code: "not_granted"` until the player allowed the app. `data` is null and `version` 0 before the first save. */
+	get(): Promise<{ profileId: string; data: any; version: number }>;
+	/** `version` is the one `get` returned; rejects with `code: "version_conflict"` and the current `version` when it moved. Up to 64 KB of JSON. */
+	set(data: unknown, version: number): Promise<{ version: number }>;
+};
+
+/** Present only when the manifest declares the `profiles` permission. */
+export type YuiProfilesApi = {
+	/** Whether the player plays as a Yui account (false for guests, and before `ctx.controllers.ready()`). */
+	available(player: YuiPlayerRef): boolean;
+	/** The player's profile for this app, or null for a guest. */
+	for(player: YuiPlayerRef): YuiProfile | null;
 };
 
 export type YuiVirtualPadAttachment = {
