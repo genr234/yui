@@ -9,4 +9,7 @@ func TestPadSensitiveIsPublic(t *testing.T) {
 	if publicAuthMethod("pad.kick") {
 		t.Fatal("pad.kick must stay behind the admin PIN")
 	}
+	if publicAuthMethod("pad.account.link_code") {
+		t.Fatal("pad.account.link_code must stay behind the admin PIN")
+	}
 }

@@ -15,6 +15,9 @@ type Player struct {
 	Color     string `json:"color"`
 	Host      bool   `json:"host"`
 	Connected bool   `json:"connected"`
+	// AccountLinked: this player is playing as a Yui account this session.
+	// Never the account itself (plan 10, P5).
+	AccountLinked bool `json:"account_linked"`
 }
 
 // Node is a layout tree node (same shape as ctx.ui).
@@ -89,6 +92,22 @@ type System struct {
 	T      string `json:"t"`
 	Action string `json:"action"`
 	Value  any    `json:"value,omitempty"`
+}
+
+// ProfileRequest (kiosk → pad) asks the phone's player to let a game keep a
+// profile on their Yui account. AppName is shown to the player.
+type ProfileRequest struct {
+	T       string `json:"t"`
+	AppID   string `json:"app_id"`
+	AppName string `json:"app_name"`
+}
+
+// ProfileReply (pad → kiosk) says what the player chose. It only wakes the
+// kiosk: Rails decides whether the grant exists.
+type ProfileReply struct {
+	T       string `json:"t"`
+	AppID   string `json:"app_id"`
+	Granted bool   `json:"granted"`
 }
 
 // Ping and Pong share a shape; ID may be a number or string on the wire.
@@ -270,6 +289,18 @@ func ParseControl(data []byte) (any, error) {
 		}
 		if !systemActions[m.Action] {
 			return nil, wrap(errors.New("bad action"))
+		}
+		return m, nil
+	case "profile_reply":
+		if err := need("app_id", "granted"); err != nil {
+			return nil, wrap(err)
+		}
+		var m ProfileReply
+		if err := decode(data, &m); err != nil {
+			return nil, wrap(err)
+		}
+		if m.AppID == "" {
+			return nil, wrap(errors.New("app_id required"))
 		}
 		return m, nil
 	case "ping", "pong":
