@@ -1131,3 +1131,66 @@ textarea {
 .remote-tools { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; align-items: center; }
 .remote-type { display: flex; gap: 8px; flex: 1 1 260px; margin: 0; }
 .remote-type input { flex: 1; min-width: 0; }
+
+/* Labels: borderless pills with a soft inner glow, like the buttons. */
+.quiet-status,
+.asset-sync__kiosk,
+.source-badge {
+  border: 0;
+  border-radius: 9999px;
+  background: var(--panel);
+  color: var(--muted);
+  font-weight: 500;
+  line-height: 1.2;
+  box-shadow:
+    inset 0 0 0 1px rgb(76 79 105 / 8%),
+    inset 0 1px 0 rgb(255 255 255 / 70%);
+}
+.quiet-status { min-height: 1.5rem; padding: 0.2rem 0.65rem; }
+.asset-sync__kiosk { padding: 0.15rem 0.6rem; }
+.source-badge { padding: 0.1rem 0.5rem; }
+
+.quiet-status--on,
+.quiet-status--succeeded,
+.asset-sync__kiosk--ready {
+  background: #e3f3dc;
+  color: #2f7a1f;
+  box-shadow: inset 0 0 0 1px rgb(64 160 43 / 22%), inset 0 1px 0 rgb(255 255 255 / 70%);
+}
+.quiet-status--failed,
+.asset-sync__kiosk--failed {
+  background: #fde6ea;
+  color: var(--red);
+  box-shadow: inset 0 0 0 1px rgb(210 15 57 / 20%), inset 0 1px 0 rgb(255 255 255 / 70%);
+}
+.quiet-status--pending,
+.quiet-status--sent,
+.quiet-status--uploading,
+.quiet-status--processing,
+.asset-sync__kiosk--queued,
+.asset-sync__kiosk--downloading,
+.asset-sync__kiosk--verifying {
+  background: #e9ecff;
+  color: #5a6fe8;
+  box-shadow: inset 0 0 0 1px rgb(114 135 253 / 26%), inset 0 1px 0 rgb(255 255 255 / 70%);
+}
+
+/* Linked account tabs: secondary pill, active one like a primary button. */
+.linked-tabs__tab {
+  border: 0;
+  background: var(--panel);
+  font-weight: 500;
+  transition: background 160ms ease;
+}
+.linked-tabs__tab:hover { background: #dce0e8; }
+.linked-tabs__tab--on,
+.linked-tabs__tab--on:hover {
+  background: #7287fd;
+  color: #fff;
+  box-shadow:
+    0 1px 2px -0.5px rgb(114 135 253 / 22%),
+    0 4px 6px -2px rgb(114 135 253 / 22%),
+    inset 0 0 4px 1px #7287fd,
+    inset 0 0 4px 2px rgba(255, 255, 255, 0.1),
+    inset 0 0 12px -6px rgba(255, 255, 255, 0.75);
+}
