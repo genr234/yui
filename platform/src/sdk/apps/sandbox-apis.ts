@@ -87,6 +87,7 @@ function yuiExtendContext(ctx) {
     launch: (spec) => rpc("native", "launch", [spec]),
     stop: (options) => rpc("native", "stop", [options]),
     status: () => rpc("native", "status"),
+    backupSaves: () => rpc("native", "backupSaves"),
     on: (event, handler) => yuiSubscribe("native", event, handler)
   };
   ctx.library = {
@@ -140,6 +141,8 @@ export async function handleSandboxApiCall(
 			return ctx.native.stop(first ?? undefined);
 		case "native.status":
 			return ctx.native.status();
+		case "native.backupSaves":
+			return ctx.native.backupSaves();
 		case "native.subscribe": {
 			if (!nativeEvents.has(first)) throw new Error(`unknown native event: ${String(first)}`);
 			const event = first as YuiNativeEvent;

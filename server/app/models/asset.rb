@@ -19,7 +19,14 @@ class Asset < ApplicationRecord
   validates :byte_size, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :sha256, format: { with: /\A\h{64}\z/ }, allow_nil: true
 
+  validates :save_key, uniqueness: { scope: :account_id }, allow_nil: true
+  validates :kind, inclusion: { in: %w[other], message: "must be other for save backups" }, if: :save_key?
+
   scope :ready, -> { where(status: "ready") }
+  # Save-file backups (kind "other", keyed by save_key) are fetched through the kiosk saves
+  # API, not the asset manifest, so kiosks do not download every other kiosk's saves.
+  scope :library, -> { where(save_key: nil) }
+  scope :save_backups, -> { where.not(save_key: nil) }
   scope :stale_uploads, -> { where(status: "uploading").where(updated_at: ...STALE_UPLOAD_AGE.ago) }
 
   after_destroy_commit :remove_files
@@ -42,6 +49,10 @@ class Asset < ApplicationRecord
 
   STATUSES.each do |value|
     define_method(:"#{value}?") { status == value }
+  end
+
+  def save_backup?
+    save_key.present?
   end
 
   def game?

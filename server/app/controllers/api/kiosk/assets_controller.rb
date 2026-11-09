@@ -5,12 +5,12 @@ module Api
     class AssetsController < BaseController
       def index
         touch_current_kiosk!
-        assets = current_account.assets.ready.order(:id)
+        assets = current_account.assets.library.ready.order(:id)
         render json: { assets: assets.map { |asset| asset.as_kiosk_json(base_url: request.base_url) } }
       end
 
       def download
-        asset = current_account.assets.ready.find_by(id: params[:id])
+        asset = current_account.assets.library.ready.find_by(id: params[:id])
         return render json: { error: "not_found" }, status: :not_found if asset.nil?
 
         path = asset.file_path

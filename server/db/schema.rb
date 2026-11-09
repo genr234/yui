@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_09_000100) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_09_000200) do
   create_table "account_state_records", force: :cascade do |t|
     t.integer "account_id", null: false
     t.string "collection", null: false
@@ -70,10 +70,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_09_000100) do
     t.string "filename", null: false
     t.string "kind", null: false
     t.json "metadata", default: {}, null: false
+    t.string "save_key"
     t.string "sha256"
     t.string "status", default: "uploading", null: false
     t.string "title", null: false
     t.datetime "updated_at", null: false
+    t.index ["account_id", "save_key"], name: "index_assets_on_account_id_and_save_key", unique: true, where: "save_key IS NOT NULL"
     t.index ["account_id", "status"], name: "index_assets_on_account_id_and_status"
     t.index ["account_id"], name: "index_assets_on_account_id"
     t.index ["status", "updated_at"], name: "index_assets_on_status_and_updated_at"

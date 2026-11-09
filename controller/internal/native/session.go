@@ -53,6 +53,8 @@ type Status struct {
 	EndedAt     string `json:"ended_at,omitempty"`
 	ExitCode    *int   `json:"exit_code,omitempty"`
 	Error       string `json:"error,omitempty"`
+	// Saves reports save-file backup for sessions that declared save paths.
+	Saves *SaveStatus `json:"saves,omitempty"`
 }
 
 // Active reports whether a session is preparing, running, or stopping.
@@ -76,6 +78,10 @@ type Spec struct {
 	Files       []ConfigFile
 	VirtualPads []int
 	Audio       string
+	// Saves are paths inside the data directory (relative, forward slashes)
+	// that hold the program's save data. They are backed up to the account
+	// when the session ends and restored before a launch.
+	Saves []string
 }
 
 // Info describes a running session to observers.
@@ -109,6 +115,9 @@ type Config struct {
 	Focus       Focuser
 	OnStatus    func(Status)
 	Limits      Limits
+	// SaveRemote backs saves up to the account; nil disables backup.
+	SaveRemote SaveRemote
+	SaveLimits SaveLimits
 	// StopGrace is how long Stop waits after the graceful request before
 	// killing. Default 10 s.
 	StopGrace time.Duration
@@ -130,6 +139,12 @@ type Manager struct {
 	nextObs   int
 
 	emitMu sync.Mutex
+
+	// Save backup: saveMu serialises restore and upload, saveWG tracks
+	// background uploads, lastSaves is what native.saves.backup acts on.
+	saveMu    sync.Mutex
+	saveWG    sync.WaitGroup
+	lastSaves *saveTarget
 }
 
 type session struct {
@@ -140,6 +155,7 @@ type session struct {
 	focusStop     chan struct{}
 	focus         FocusToken
 	logFile       *os.File
+	saves         *saveTarget
 }
 
 // NewManager returns an idle Manager.
@@ -204,6 +220,10 @@ func (m *Manager) Status() Status {
 func (m *Manager) statusLocked() Status {
 	st := m.status
 	st.VirtualPads = append([]int(nil), st.VirtualPads...)
+	if st.Saves != nil {
+		cp := *st.Saves
+		st.Saves = &cp
+	}
 	return st
 }
 
@@ -271,6 +291,15 @@ func (m *Manager) Launch(spec Spec) (Status, error) {
 		focusStop: make(chan struct{}),
 	}
 	m.cur = s
+	if len(spec.Saves) > 0 {
+		s.saves = &saveTarget{
+			sessionID: s.info.ID, appID: spec.AppID, runtime: spec.Runtime,
+			scopeDir: filepath.Join(m.cfg.DataDir, spec.Scope),
+			dataDir:  filepath.Join(m.cfg.DataDir, spec.Scope, spec.AppID),
+			saves:    spec.Saves,
+		}
+	}
+	m.lastSaves = s.saves
 	m.status = Status{
 		State:       StatePreparing,
 		SessionID:   s.info.ID,
@@ -283,7 +312,7 @@ func (m *Manager) Launch(spec Spec) (Status, error) {
 	m.mu.Unlock()
 	m.publish()
 
-	cmd, logFile, assets, err := m.prepare(spec, pads)
+	cmd, logFile, assets, err := m.prepare(spec, pads, s.saves)
 
 	m.mu.Lock()
 	if err == nil && s.stopRequested {
@@ -368,6 +397,11 @@ func (m *Manager) watch(s *session, info Info) {
 	for _, o := range observers {
 		o.SessionEnded(info, final)
 	}
+	// Zip the saves before the session releases the data directory; the
+	// upload continues in the background and never delays the next launch.
+	if s.saves != nil {
+		m.backupAfterExit(*s.saves)
+	}
 
 	m.mu.Lock()
 	if m.cur == s {
@@ -437,9 +471,10 @@ func (m *Manager) Stop(appID string, force bool) (Status, error) {
 // Close stops any session. Called on controller shutdown.
 func (m *Manager) Close() {
 	_, _ = m.Stop("", false)
+	m.waitSaves(15 * time.Second)
 }
 
-func (m *Manager) prepare(spec Spec, pads VirtualPadResolver) (*exec.Cmd, *os.File, []string, error) {
+func (m *Manager) prepare(spec Spec, pads VirtualPadResolver, saves *saveTarget) (*exec.Cmd, *os.File, []string, error) {
 	if m.cfg.Assets == nil {
 		return nil, nil, nil, userErrorf("assets are not available")
 	}
@@ -460,6 +495,10 @@ func (m *Manager) prepare(spec Spec, pads VirtualPadResolver) (*exec.Cmd, *os.Fi
 	dataDir := filepath.Join(m.cfg.DataDir, spec.Scope, spec.AppID)
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		return nil, nil, nil, fmt.Errorf("data directory: %w", err)
+	}
+	if saves != nil {
+		// Never fails the launch; the outcome is in Status.Saves.
+		m.restoreBeforeLaunch(*saves)
 	}
 	var used []string
 	env := TemplateEnv{
@@ -604,6 +643,11 @@ func normalizeSpec(spec *Spec) error {
 		pads = appendUniqueInt(pads, n)
 	}
 	spec.VirtualPads = pads
+	saves, err := normalizeSaves(spec.Saves)
+	if err != nil {
+		return err
+	}
+	spec.Saves = saves
 	switch spec.Audio {
 	case "":
 		spec.Audio = AudioNone
