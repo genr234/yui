@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"io/fs"
 	"log"
 	"net/http"
 	"net/url"
@@ -59,8 +60,9 @@ type rpcResponse struct {
 
 // Start runs the bridge until ctx is cancelled. The returned func blocks
 // after cancellation until a running play session has told Rails it ended,
-// for at most padStopBudget.
-func Start(ctx context.Context, cfg config.Config) (waitStopped func()) {
+// for at most padStopBudget. webBundles holds the embedded dev app bundles at
+// app-web/<app id>/ for the web app server (may be nil).
+func Start(ctx context.Context, cfg config.Config, webBundles fs.FS) (waitStopped func()) {
 	if !cfg.PlatformEnabled {
 		return func() {}
 	}
@@ -68,6 +70,8 @@ func Start(ctx context.Context, cfg config.Config) (waitStopped func()) {
 	r := New(cfg)
 	r.commands.StartPlugins(ctx)
 	r.commands.StartAccountSync(ctx)
+	r.commands.StartSaveSync(ctx)
+	r.commands.StartWebApps(ctx, webBundles)
 	r.commands.BindPadLifecycle(ctx)
 	go r.serve(ctx)
 	return func() { r.commands.WaitPadStopped(padStopBudget) }

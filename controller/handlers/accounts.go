@@ -424,6 +424,7 @@ func (r *Registry) commitAccountSwitch(apply func(*config.Config) error) error {
 		return err
 	}
 	r.triggerAssetReconcile()
+	r.kickSaveFlush()
 	return nil
 }
 

@@ -95,6 +95,8 @@ type Registry struct {
 	haptics hapticLimiter
 	// profiles holds the outstanding profile_request waits (profiles.go).
 	profiles profileWaits
+	// web is the web app server and the app saves service (webapps.go).
+	web webState
 	// profileSendHook replaces the control send in tests.
 	profileSendHook func(playerID string, msg any) error
 }
@@ -162,6 +164,7 @@ func NewRegistry(cfg config.Config) *Registry {
 	r.Register(LibraryCommands()...)
 	r.Register(ControllersCommands()...)
 	r.Register(ProfileCommands()...)
+	r.Register(WebAppsCommands()...)
 	return r
 }
 
@@ -277,6 +280,7 @@ func (r *Registry) ensureStoreLocked() error {
 
 func (r *Registry) Close() error {
 	r.closeNative()
+	r.closeWebApps()
 	if r.plugins != nil {
 		r.plugins.Stop()
 	}
