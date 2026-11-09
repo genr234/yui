@@ -2,12 +2,20 @@ import { defineConfig } from 'vite'
 import { svelte, vitePreprocess } from '@sveltejs/vite-plugin-svelte'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { yuiAppWeb } from './vite-app-web'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 
 export default defineConfig(({ mode }) => ({
   base: mode === 'demo' ? './' : '/',
-  plugins: [svelte({ preprocess: vitePreprocess() })],
+  plugins: [
+    svelte({ preprocess: vitePreprocess() }),
+    yuiAppWeb({
+      appsRoot: resolve(__dirname, '../apps'),
+      embedJs: resolve(__dirname, '../controller/internal/webapps/embed.js'),
+      demoRoot: __dirname,
+    }),
+  ],
   server: {
     cors: true,
     host: '127.0.0.1',

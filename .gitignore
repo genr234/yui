@@ -44,3 +44,6 @@ installer/installer
 
 # Yui Pad build output
 server/public/pad/
+platform/.demo-runtimes/
+platform/.demo-assets/
+controller/static/app-web/

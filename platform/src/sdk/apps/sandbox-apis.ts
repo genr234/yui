@@ -16,7 +16,7 @@ import { yuiControllersRuntime } from "./controllers-runtime";
 import { profileCalls, profilesHostFor } from "./profiles";
 import { yuiProfilesRuntime } from "./profiles-runtime";
 
-export const sandboxApis = ["native", "library", "assets", "controllers", "virtualPads", "profiles"] as const;
+export const sandboxApis = ["native", "library", "assets", "controllers", "virtualPads", "profiles", "web", "embeds", "saves"] as const;
 export type SandboxApi = (typeof sandboxApis)[number];
 
 /**
@@ -113,8 +113,24 @@ function yuiExtendContext(ctx) {
     remove: (ids) => rpc("library", "remove", [ids])
   };
   ctx.assets = Object.assign((kind) => rpc("assets", "list", [kind]), {
+    url: (id) => rpc("assets", "url", [id]),
     onChange: (handler) => yuiSubscribe("assets", "changed", handler)
   });
+  ctx.web = {
+    origin: () => rpc("web", "origin"),
+    runtime: (name) => rpc("web", "runtime", [name])
+  };
+  ctx.embeds = {
+    post: (channel, data) => { rpc("embeds", "post", [channel, data]).catch((error) => console.error(error)); },
+    on: (channel, handler) => yuiSubscribe("embeds", "message:" + channel, handler)
+  };
+  const yuiSavePlayer = (options) => options && options.player !== undefined ? { player: yuiPlayerId(options.player) } : undefined;
+  ctx.saves = {
+    put: (key, data, options) => rpc("saves", "put", [key, data, yuiSavePlayer(options)]),
+    get: (key, options) => rpc("saves", "get", [key, yuiSavePlayer(options)]),
+    list: (options) => rpc("saves", "list", [yuiSavePlayer(options)]),
+    delete: (key, options) => rpc("saves", "delete", [key, yuiSavePlayer(options)])
+  };
   Object.defineProperty(ctx, "controllers", { get: yuiControllersApi, enumerable: true, configurable: true });
   // ctx.profiles exists only when the manifest declares the permission; the
   // host checks it again on every call.
@@ -188,6 +204,29 @@ export async function handleSandboxApiCall(
 			ctx.assets.onChange(() => push("assets", "changed", null));
 			return undefined;
 		}
+		case "assets.url":
+			return ctx.assets.url(first);
+		case "web.origin":
+			return ctx.web.origin();
+		case "web.runtime":
+			return ctx.web.runtime(first);
+		case "embeds.post":
+			ctx.embeds.post(first, second);
+			return undefined;
+		case "embeds.subscribe": {
+			if (typeof first !== "string" || !first.startsWith("message:")) throw new Error(`unknown embeds event: ${String(first)}`);
+			const channel = first.slice("message:".length);
+			ctx.embeds.on(channel, (data) => push("embeds", first, data));
+			return undefined;
+		}
+		case "saves.put":
+			return ctx.saves.put(first, second, args[2] ?? undefined);
+		case "saves.get":
+			return ctx.saves.get(first, second ?? undefined);
+		case "saves.list":
+			return ctx.saves.list(first ?? undefined);
+		case "saves.delete":
+			return ctx.saves.delete(first, second ?? undefined);
 		case "controllers.start": {
 			const host = hostOf(ctx);
 			const state = await host.call("start", []);

@@ -269,6 +269,27 @@ class DemoBridge {
 			"fs.list": [],
 		};
 
+		// Web bundles (plan 11): the vite plugin serves them at /app-web/<app id>/.
+		if (method === "webapps.origin") {
+			return { origin: `${window.location.origin}/app-web/${String(params.app_id)}`, has_bundle: true } as T;
+		}
+		if (method === "webapps.runtime") {
+			const name = String(params.name ?? "");
+			const available = await fetch("/app-web/_demo-runtimes.json").then((r) => r.json()).catch(() => []);
+			if (!Array.isArray(available) || !available.includes(name)) throw new Error("runtime is not available on this kiosk");
+			return { url: `${window.location.origin}/app-web/${String(params.app_id)}/_runtime/${name}/`, version: "demo" } as T;
+		}
+		if (method === "assets.list") {
+			const list = await fetch("/app-web/_demo-assets.json").then((r) => r.json()).catch(() => []);
+			const kind = String(params.kind ?? "");
+			return (Array.isArray(list) ? list : []).filter((asset: any) => !kind || asset.kind === kind).map(({ file: _file, ...asset }: any) => asset) as T;
+		}
+		if (method === "assets.url") {
+			return {
+				url: `${window.location.origin}/app-web/${String(params.app_id)}/_asset/${encodeURIComponent(String(params.asset_id))}`,
+				expires_at: new Date(Date.now() + 12 * 3_600_000).toISOString(),
+			} as T;
+		}
 		if (method === "config.update") {
 			this.config = { ...this.config, ...params };
 			return this.config as T;

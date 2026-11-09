@@ -12,6 +12,7 @@
     rememberEmbedStorage,
   } from "../../sdk/apps/embed-storage";
   import PadJoin from "./PadJoin.svelte";
+  import WebEmbed from "./WebEmbed.svelte";
   import type {
     YuiChildren,
     YuiNode,
@@ -354,7 +355,8 @@
       node &&
       typeof node === "object" &&
       !Array.isArray(node) &&
-      node.type === "embed"
+      node.type === "embed" &&
+      !prop("web")
     ) {
       void loadEmbed(stringProp("url") || stringProp("src"));
     }
@@ -390,7 +392,8 @@
     node &&
     typeof node === "object" &&
     !Array.isArray(node) &&
-    node.type === "embed"
+    node.type === "embed" &&
+    !prop("web")
   ) {
     const source = stringProp("url") || stringProp("src");
     if (source !== embedLoadedSource) {
@@ -398,7 +401,7 @@
     }
   }
 
-  $: if (node && typeof node === "object" && !Array.isArray(node) && node.type === "embed") {
+  $: if (node && typeof node === "object" && !Array.isArray(node) && node.type === "embed" && !prop("web")) {
     syncEmbedBlocker();
   }
 
@@ -562,6 +565,16 @@
     src={stringProp("src")}
     alt={stringProp("alt")}
     style={`width: ${cssSizeProp("width", "auto")}; height: ${cssSizeProp("height", "auto")};`}
+  />
+{:else if node.type === "embed" && prop("web")}
+  <WebEmbed
+    {app}
+    path={stringProp("web", "index.html")}
+    channel={stringProp("channel")}
+    input={booleanProp("input")}
+    fill={booleanProp("fill")}
+    title={stringProp("title")}
+    style={booleanProp("fill") ? "" : embedShellStyle()}
   />
 {:else if node.type === "embed"}
   {#if embedGranted}

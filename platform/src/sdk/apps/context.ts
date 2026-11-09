@@ -13,6 +13,7 @@ import { getLaunchItem } from "./launch-intent";
 import { createControllersHost, registerControllersHost } from "./controllers";
 import { yuiControllersRuntime } from "./controllers-runtime";
 import { createProfilesHost, registerProfilesHost } from "./profiles";
+import { createWebHost, listenForEmbeds, registerWebHost } from "./web";
 import { yuiProfilesRuntime } from "./profiles-runtime";
 import { isPermissionDeclared, isPermissionGranted, requestAppPermission } from "./permissions";
 import { bridge } from "../bridge";
@@ -191,6 +192,15 @@ export function createYuiContext(app: YuiSimpleApp, onRender: () => void): YuiCo
 	disposables.add(() => {
 		controllers.dispose();
 		controllersHost.dispose();
+	});
+
+	// Web bundles, the embed channel, asset URLs and saves (plan 11).
+	const webHost = createWebHost(app, ensurePermission, controllersHost);
+	listenForEmbeds();
+	const offWebHost = registerWebHost(app.id, webHost);
+	disposables.add(() => {
+		offWebHost();
+		webHost.dispose();
 	});
 
 	// ctx.profiles exists only when the manifest declares `profiles`.
@@ -389,6 +399,7 @@ export function createYuiContext(app: YuiSimpleApp, onRender: () => void): YuiCo
 				return (await bridge.send<YuiAsset[] | null>("assets.list", { kind })) ?? [];
 			},
 			{
+				url: (id: string) => webHost.assetUrl(id),
 				onChange(handler: () => void) {
 					const granted = (app.permissions ?? []).some(
 						(permission) => permission.startsWith("assets:") && isPermissionGranted(app.id, permission),
@@ -404,6 +415,22 @@ export function createYuiContext(app: YuiSimpleApp, onRender: () => void): YuiCo
 			},
 		),
 		controllers: controllers.api,
+		web: {
+			origin: () => webHost.origin(),
+			runtime: (name: string) => webHost.runtime(name),
+		},
+		embeds: {
+			post: (channel: string, data: unknown) => webHost.post(channel, data),
+			on: (channel: string, handler: (data: any) => void) => {
+				const off = webHost.on(channel, handler);
+				disposables.add(off);
+				return () => {
+					disposables.delete(off);
+					off();
+				};
+			},
+		},
+		saves: webHost.saves,
 		...(profiles ? { profiles: profiles.api } : {}),
 		virtualPads: {
 			attach: (player, options) =>

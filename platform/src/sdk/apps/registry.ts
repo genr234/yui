@@ -1,3 +1,4 @@
+import { webField } from "./web";
 import { validateSimpleApp } from "./validate";
 import type { YuiDevApp, YuiSimpleApp } from "./types";
 import { bridge } from "../bridge";
@@ -90,6 +91,7 @@ function stringArrayField(source: string, field: string) {
 }
 
 function metadataFromSource(source: string) {
+	const web = webField(source);
 	const app = {
 		schema: stringField(source, "schema"),
 		id: stringField(source, "id"),
@@ -103,6 +105,7 @@ function metadataFromSource(source: string) {
 		category: stringField(source, "category"),
 		tags: stringArrayField(source, "tags"),
 		permissions: stringArrayField(source, "permissions"),
+		...(web !== undefined ? { web } : {}),
 		mount() {},
 	};
 	validateSimpleApp(app);

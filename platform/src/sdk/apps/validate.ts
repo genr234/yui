@@ -15,6 +15,7 @@ const allowedPermissions = new Set<YuiPermission>([
 	"controllers",
 	"profiles",
 	"audio.speaker",
+	"saves",
 	"assets:game",
 	"assets:runtime",
 	"assets:media",
@@ -58,6 +59,7 @@ export function validateSimpleApp(value: unknown): asserts value is YuiSimpleApp
 	if (app.permissions && (!Array.isArray(app.permissions) || app.permissions.some((permission) => !isValidPermission(permission)))) {
 		throw new Error("YUI_INVALID_APP: invalid permission declaration");
 	}
+	if (app.web !== undefined) validateWebManifest(app.web, app.permissions ?? []);
 	if (app.controllers !== undefined) {
 		validateControllersManifest(app.controllers);
 		if (!app.permissions?.includes("controllers")) {			throw new Error("YUI_INVALID_APP: controllers needs the controllers permission");
@@ -184,4 +186,26 @@ export function validateControllersManifest(value: unknown) {
 				controllersError(`${at}: unknown type "${String(control.type)}"`);
 		}
 	});
+}
+
+const runtimeName = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
+
+function validateWebManifest(web: unknown, permissions: string[]) {
+	if (typeof web === "string") {
+		if (!web.trim()) throw new Error("YUI_INVALID_APP: web must name a folder");
+		return;
+	}
+	if (!web || typeof web !== "object" || Array.isArray(web)) throw new Error("YUI_INVALID_APP: web must be a folder path or an object");
+	const { runtimes, sha256 } = web as { runtimes?: unknown; sha256?: unknown };
+	if (runtimes !== undefined) {
+		if (!Array.isArray(runtimes) || runtimes.length > 8 || runtimes.some((name) => typeof name !== "string" || !runtimeName.test(name))) {
+			throw new Error("YUI_INVALID_APP: web.runtimes must be up to 8 runtime names");
+		}
+		if (runtimes.length > 0 && !permissions.includes("assets:runtime")) {
+			throw new Error("YUI_INVALID_APP: web.runtimes needs the assets:runtime permission");
+		}
+	}
+	if (sha256 !== undefined && (typeof sha256 !== "string" || !/^[0-9a-f]{64}$/.test(sha256))) {
+		throw new Error("YUI_INVALID_APP: web.sha256 must be 64 lowercase hex characters");
+	}
 }

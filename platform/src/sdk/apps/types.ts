@@ -55,6 +55,12 @@ export type YuiSimpleApp = {
 	 * while it is open; `keymap` drives an embedded web game with no code.
 	 */
 	controllers?: YuiControllersManifest;
+	/**
+	 * The app's own web page: a `web/` folder next to the app (or `web.zip`
+	 * for installed apps), served on the app's loopback origin. `runtimes`
+	 * lists runtime assets the page may mount under `/_runtime/<name>/`.
+	 */
+	web?: string | { runtimes?: string[]; sha256?: string };
 	mount(ctx: YuiContext): YuiRenderFunction | Promise<YuiRenderFunction | void> | void;
 	install?(ctx: YuiContext): void | Promise<void>;
 	activate?(ctx: YuiContext): void | Promise<void>;
@@ -89,6 +95,12 @@ export type YuiContext = {
 	library: YuiLibraryApi;
 	assets: YuiAssetsApi;
 	controllers: YuiControllersApi;
+	/** The app's own loopback origin and runtime mounts (manifest `web`). */
+	web: YuiWebApi;
+	/** Messages to and from the app's own pages (`ctx.ui.embed({ web, channel })`). */
+	embeds: YuiEmbedsApi;
+	/** Save blobs for the kiosk's account or a player's (permission `saves`). */
+	saves: YuiSavesApi;
 	/** Only with the `profiles` permission declared. */
 	profiles?: YuiProfilesApi;
 	virtualPads: YuiVirtualPadsApi;
@@ -227,6 +239,8 @@ export type YuiAsset = {
 /** `ctx.assets("game")` lists the synced assets of a kind (permission `assets:<kind>`). */
 export type YuiAssetsApi = {
 	(kind: string): Promise<YuiAsset[]>;
+	/** A short-lived URL for a ready asset on the app's own origin (needs `assets:<kind>` and a web bundle). */
+	url(id: string): Promise<string>;
 	/** Runs when the asset list or sync progress changes; re-list to read it. */
 	onChange(handler: () => void): () => void;
 };
@@ -378,4 +392,27 @@ export type YuiVirtualPadsApi = {
 	systemPad(): Promise<{ backend: "dsu"; slot: 0; address: string; buttons: string[] }>;
 	/** Press, release or tap (default) a system pad button by name ("Start", "L1", ...). */
 	press(button: string, action?: "press" | "release" | "tap"): Promise<void>;
+};
+
+export type YuiWebApi = {
+	/** `http://<key>.apps.localhost:<port>`: where the app's web bundle is served. */
+	origin(): Promise<string>;
+	/** Mounts a runtime asset named in `web.runtimes`; resolves its URL (ends with "/"). */
+	runtime(name: string): Promise<string>;
+};
+
+export type YuiEmbedsApi = {
+	post(channel: string, data: unknown): void;
+	on(channel: string, handler: (data: any) => void): () => void;
+};
+
+export type YuiSaveOptions = { player?: YuiPlayerRef };
+export type YuiSaveEntry = { key: string; size: number; updatedAt: string; queued?: boolean };
+
+export type YuiSavesApi = {
+	/** Up to 8 MiB; key `[a-z0-9][a-z0-9._-]{0,79}`; 64 keys per scope. With `player`, needs the player's grant (like ctx.profiles). */
+	put(key: string, data: Uint8Array | ArrayBuffer | string, options?: YuiSaveOptions): Promise<YuiSaveEntry>;
+	get(key: string, options?: YuiSaveOptions): Promise<(YuiSaveEntry & { data: Uint8Array }) | null>;
+	list(options?: YuiSaveOptions): Promise<YuiSaveEntry[]>;
+	delete(key: string, options?: YuiSaveOptions): Promise<void>;
 };
