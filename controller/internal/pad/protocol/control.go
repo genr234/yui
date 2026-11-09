@@ -75,9 +75,12 @@ type Text struct {
 	Text string `json:"text,omitempty"`
 }
 
+// Haptic carries a named pattern or a custom on/off ms pattern, never both.
 type Haptic struct {
-	T       string `json:"t"`
-	Pattern []int  `json:"pattern"`
+	T         string   `json:"t"`
+	Pattern   []int    `json:"pattern,omitempty"`
+	Name      string   `json:"name,omitempty"`
+	Intensity *float64 `json:"intensity,omitempty"`
 }
 
 type Sound struct {
@@ -265,11 +268,14 @@ func ParseControl(data []byte) (any, error) {
 		}
 		return m, nil
 	case "haptic":
-		if err := need("pattern"); err != nil {
-			return nil, wrap(err)
-		}
 		var m Haptic
 		if err := decode(data, &m); err != nil {
+			return nil, wrap(err)
+		}
+		if _, ok := raw["pattern"]; ok && m.Pattern == nil {
+			m.Pattern = []int{} // an explicit [] is invalid, not "no pattern"
+		}
+		if err := m.Validate(); err != nil {
 			return nil, wrap(err)
 		}
 		return m, nil

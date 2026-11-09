@@ -13,6 +13,9 @@
   export let onQuit: () => void
   export let onVolume: (v: number) => void
   export let onSpeaker: () => void
+  /** Vibration on/off for this phone; null hides the switch (no haptics here). */
+  export let vibration: boolean | null = null
+  export let onVibration: (on: boolean) => void = () => {}
   /** Saves a new avatar (null removes it). Rejects when the kiosk refused it. */
   export let onAvatar: (avatar: string | null) => Promise<void>
   /** The Yui account linked to this phone, if any (plan 10). */
@@ -157,6 +160,13 @@
       <span class="pct">{Math.round(volume * 100)}%</span>
     </label>
 
+    {#if vibration !== null}
+      <label class="vibration">
+        <span>Vibration</span>
+        <input type="checkbox" checked={vibration} on:change={(e) => onVibration(e.currentTarget.checked)} />
+      </label>
+    {/if}
+
     {#if player.speaker}
       <p class="speaker-now">This phone is the speaker</p>
     {:else}
@@ -296,6 +306,21 @@
     background: none;
     accent-color: var(--player);
     height: 32px;
+  }
+  .vibration {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-radius: var(--yui-radius-hero);
+    background: var(--yui-chrome-fill);
+    font-weight: 700;
+  }
+  .vibration input {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    accent-color: var(--player);
   }
   .pct {
     min-width: 3.5em;

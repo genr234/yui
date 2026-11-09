@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"sync"
+	"time"
 
 	"kiosk/controller/internal/native"
 	"kiosk/controller/internal/pad/apps"
@@ -229,6 +231,10 @@ func (padAppHapticCommand) Handle(r *Registry, params json.RawMessage) (any, err
 		AppID    string `json:"app_id"`
 		PlayerID string `json:"player_id"`
 		Pattern  []int  `json:"pattern"`
+		// Name and Intensity are the named form; exactly one of Name or
+		// Pattern. PlayerID may be "all" (every ready phone).
+		Name      string   `json:"name"`
+		Intensity *float64 `json:"intensity"`
 	}
 	if err := decodeParams(params, &p); err != nil {
 		return nil, err
@@ -236,19 +242,68 @@ func (padAppHapticCommand) Handle(r *Registry, params json.RawMessage) (any, err
 	if _, err := r.padOwner(p.AppID, p.PlayerID); err != nil {
 		return nil, err
 	}
-	if len(p.Pattern) == 0 || len(p.Pattern) > 16 {
-		return nil, errors.New("pattern needs 1-16 durations")
+	msg := protocol.Haptic{T: "haptic", Name: p.Name, Intensity: p.Intensity}
+	msg.Pattern = p.Pattern
+	if p.Name == "" && msg.Pattern == nil {
+		msg.Pattern = []int{} // neither given: Validate rejects it
 	}
-	for _, ms := range p.Pattern {
-		if ms < 0 || ms > 5000 {
-			return nil, errors.New("pattern durations are 0-5000 ms")
-		}
+	if err := msg.Validate(); err != nil {
+		return nil, err
 	}
 	h, err := r.ctrlHub()
 	if err != nil {
 		return nil, err
 	}
-	return nil, h.Haptic(p.PlayerID, p.Pattern)
+	targets := []string{p.PlayerID}
+	if p.PlayerID == "all" {
+		targets = h.ReadyIDs()
+	}
+	var firstErr error
+	for _, id := range targets {
+		if !r.haptics.allow(id) {
+			continue // too soon after the last one: dropped
+		}
+		if err := h.HapticMsg(id, msg); err != nil && firstErr == nil && p.PlayerID != "all" {
+			firstErr = err
+		}
+	}
+	return nil, firstErr
+}
+
+// hapticMinGap is the shortest time between two haptics to one phone; a game
+// that fires faster loses the extras rather than queueing a buzz storm.
+const hapticMinGap = 50 * time.Millisecond
+
+type hapticLimiter struct {
+	mu   sync.Mutex
+	last map[string]time.Time
+	now  func() time.Time // tests
+}
+
+// allow reports whether a haptic to the player may go out now, and records it.
+func (l *hapticLimiter) allow(playerID string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := time.Now
+	if l.now != nil {
+		now = l.now
+	}
+	t := now()
+	if l.last == nil {
+		l.last = map[string]time.Time{}
+	}
+	if prev, ok := l.last[playerID]; ok && t.Sub(prev) < hapticMinGap {
+		return false
+	}
+	if len(l.last) > 64 { // players come and go; forget the old ones
+		for id, at := range l.last {
+			if t.Sub(at) > time.Second {
+				delete(l.last, id)
+			}
+		}
+	}
+	l.last[playerID] = t
+	return true
 }
 
 // Sound clips are https URLs (the pad's CSP only allows the Yui server) or

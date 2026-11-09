@@ -82,9 +82,21 @@ export interface TextMsg {
   op: TextOp;
   text?: string;
 }
+/** Names every pad resolves; the phone owns the actual timings. */
+export const HAPTIC_NAMES = ["tap", "success", "fail", "hit", "heavy", "heartbeat", "countdown", "win"] as const;
+export type HapticName = (typeof HAPTIC_NAMES)[number];
+/** Custom pattern limits: on/off ms steps. */
+export const HAPTIC_MAX_STEPS = 16;
+export const HAPTIC_MAX_STEP_MS = 1000;
+export const HAPTIC_MAX_TOTAL_MS = 4000;
+
+/** Exactly one of `name` or `pattern` (a bare `pattern` is the original form). */
 export interface Haptic {
   t: "haptic";
-  pattern: number[];
+  pattern?: number[];
+  name?: HapticName;
+  /** 0–1 (default 1); scales the vibration length where the phone can't change strength. */
+  intensity?: number;
 }
 export interface Sound {
   t: "sound";
@@ -328,7 +340,17 @@ export function parseControl(json: string): ControlMessage {
       if (m.text !== undefined && !isStr(m.text)) fail("text: text must be a string");
       break;
     case "haptic":
-      if (!Array.isArray(m.pattern) || !m.pattern.every(isNum)) fail("haptic: pattern must be number[]");
+      if ((m.pattern === undefined) === (m.name === undefined)) fail("haptic: need exactly one of pattern or name");
+      if (m.name !== undefined && (!isStr(m.name) || !(HAPTIC_NAMES as readonly string[]).includes(m.name))) fail("haptic: unknown name");
+      if (m.pattern !== undefined) {
+        const pat = m.pattern;
+        if (!Array.isArray(pat) || !pat.every(isNum)) fail("haptic: pattern must be number[]");
+        const steps = pat as number[];
+        if (steps.length === 0 || steps.length > HAPTIC_MAX_STEPS) fail("haptic: pattern needs 1-16 steps");
+        if (steps.some((n) => n < 0 || n > HAPTIC_MAX_STEP_MS)) fail("haptic: step must be 0-1000 ms");
+        if (steps.reduce((a, b) => a + b, 0) > HAPTIC_MAX_TOTAL_MS) fail("haptic: pattern longer than 4 s");
+      }
+      if (m.intensity !== undefined && (!isNum(m.intensity) || m.intensity < 0 || m.intensity > 1)) fail("haptic: intensity must be 0-1");
       break;
     case "sound":
       if (!isStr(m.url) || m.url === "") fail("sound: url must be a non-empty string");

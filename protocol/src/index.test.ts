@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { avatarImage, decodeInput, encodeInput, hexToBytes, inputToHex, parseControl, seqNewer, INPUT_SIZE } from "./index";
+import { HAPTIC_NAMES, avatarImage, decodeInput, encodeInput, hexToBytes, inputToHex, parseControl, seqNewer, INPUT_SIZE } from "./index";
 
 const fx = join(import.meta.dir, "..", "fixtures");
 const load = (dir: string) =>
@@ -60,6 +60,30 @@ describe("control fixtures", () => {
       expect(() => parseControl(c.raw)).toThrow();
     });
   }
+});
+
+describe("haptic", () => {
+  const ok = (o: object) => parseControl(JSON.stringify({ t: "haptic", ...o }));
+  const bad = (o: object) => expect(() => ok(o)).toThrow();
+  test("legacy bare pattern still parses", () => expect(ok({ pattern: [30, 20, 30] })).toEqual({ t: "haptic", pattern: [30, 20, 30] }));
+  test("every vocabulary name parses, with intensity", () => {
+    for (const name of HAPTIC_NAMES) expect(ok({ name, intensity: 0.5 })).toMatchObject({ name });
+  });
+  test("limits", () => {
+    ok({ pattern: Array(16).fill(250) });
+    bad({ pattern: Array(17).fill(1) });
+    bad({ pattern: [] });
+    bad({ pattern: [1001] });
+    bad({ pattern: [-1] });
+    bad({ pattern: [1000, 1000, 1000, 1000, 1] }); // over 4 s
+  });
+  test("exactly one of name / pattern, known names, intensity range", () => {
+    bad({});
+    bad({ name: "tap", pattern: [10] });
+    bad({ name: "zap" });
+    bad({ name: "tap", intensity: 1.5 });
+    bad({ name: "tap", intensity: -0.1 });
+  });
 });
 
 describe("system sensitive", () => {

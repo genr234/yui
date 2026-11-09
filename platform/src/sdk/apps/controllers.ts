@@ -120,7 +120,13 @@ export function createControllersHost(app: YuiSimpleApp, ensure: Ensure): Contro
 					return undefined;
 				case "haptic":
 					await ensure("controllers");
-					return bridge.send("pad.app.haptic", { app_id: app.id, player_id: playerId(first), pattern: second });
+					return bridge.send("pad.app.haptic", {
+						app_id: app.id,
+						player_id: playerId(first),
+						// A vocabulary name or custom ms steps; the controller validates.
+						...(typeof second === "string" ? { name: second } : { pattern: second }),
+						...(typeof (third as any)?.intensity === "number" ? { intensity: (third as any).intensity } : {}),
+					});
 				case "sound": {
 					await ensure("controllers");
 					let target = playerId(first);

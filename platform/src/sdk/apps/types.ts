@@ -282,6 +282,7 @@ export type YuiPlayer = {
 };
 
 export type YuiPlayerRef = YuiPlayer | string;
+export type YuiHapticName = "tap" | "success" | "fail" | "hit" | "heavy" | "heartbeat" | "countdown" | "win";
 
 /** A pad layout node (contracts §3); ctx.ui text nodes are converted. */
 export type YuiPadNode = YuiNode;
@@ -322,7 +323,12 @@ export type YuiControllersApi = {
 	/** Each phone's layout; re-run when ctx.state or the players change. */
 	layout(fn: (player: YuiPlayer) => YuiPadNode | null | undefined): () => void;
 	on<E extends keyof YuiControllerEvents>(event: E, handler: (data: YuiControllerEvents[E]) => void): () => void;
-	haptic(player: YuiPlayerRef, pattern: number | number[]): Promise<unknown>;
+	/**
+	 * Vibrate a phone (or "all"): a named pattern or custom on/off ms steps
+	 * (<= 16 steps, each <= 1000 ms, <= 4 s). Android only; others ignore it.
+	 * The kiosk drops haptics to one phone sent less than 50 ms apart.
+	 */
+	haptic(player: YuiPlayerRef | "all", pattern: YuiHapticName | number | number[], options?: { intensity?: number }): Promise<unknown>;
 	sound(player: YuiPlayerRef | "speaker", url: string, options?: { volume?: number }): Promise<unknown>;
 	/** Pad node builders: button, choice, dpad, stick, trackpad, keyboard, list, motion, preset, text, row, column, grid, spacer. */
 	ui: Record<string, (...args: any[]) => YuiPadNode>;
