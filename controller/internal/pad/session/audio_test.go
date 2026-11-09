@@ -115,6 +115,9 @@ type audioPhone struct {
 	id      string
 	pc      *webrtc.PeerConnection
 	packets atomic.Int64
+	// Opus TOC bit 2: stereo or mono packets (a stereo pair sends mono).
+	stereoPkts atomic.Int64
+	monoPkts   atomic.Int64
 	offers  atomic.Int64
 	mime    atomic.Value
 
@@ -142,6 +145,11 @@ func newAudioPhone(t *testing.T, f *fakeRails, id string) *audioPhone {
 			}
 			if len(pkt.Payload) > 0 {
 				p.packets.Add(1)
+				if pkt.Payload[0]&0x04 != 0 {
+					p.stereoPkts.Add(1)
+				} else {
+					p.monoPkts.Add(1)
+				}
 			}
 		}
 	})

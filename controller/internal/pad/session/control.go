@@ -44,7 +44,7 @@ func (m *Manager) handleControl(playerID string, raw []byte, gen int, fromCable 
 		// the focus stack, so these two never reach the control handler.
 		switch typed.Action {
 		case "be_speaker":
-			go m.beSpeaker(playerID)
+			go m.beSpeaker(playerID, typed.Channel)
 			return
 		case "volume":
 			m.phoneVolume(playerID, typed.Value)
@@ -66,10 +66,10 @@ func (m *Manager) forwardControl(playerID string, msg any) {
 }
 
 // beSpeaker runs off the data-channel goroutine: it waits for Rails.
-func (m *Manager) beSpeaker(playerID string) {
+func (m *Manager) beSpeaker(playerID, channel string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := m.SetSpeaker(ctx, playerID); err != nil {
+	if err := m.SetSpeakerChannel(ctx, playerID, channel); err != nil {
 		log.Printf("pad session: be_speaker %s: %v", playerID, err)
 	}
 }
@@ -82,7 +82,7 @@ func (m *Manager) phoneVolume(playerID string, value any) {
 		return
 	}
 	m.mu.Lock()
-	allowed := playerID == m.speakerID || playerID == m.audioTo
+	allowed := playerID == m.speakerID || playerID == m.rightID || playerID == m.audioTo || playerID == m.audioRight
 	m.mu.Unlock()
 	if !allowed {
 		return

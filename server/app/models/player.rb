@@ -2,6 +2,8 @@ class Player < ApplicationRecord
   SLOTS = (1..4)
   COLORS = %w[blue red green yellow purple orange pink teal].freeze
   NAME_MAX = 20
+  # Stereo speaker pair (contracts §2); nil is the mono speaker.
+  SPEAKER_CHANNELS = %w[left right].freeze
   SLOT_ATTEMPTS = 5
   # Avatars (contracts §2): one emoji, or a small selfie the pad crops to
   # ~96x96. Kept only while the session runs (PlaySession#end! clears them).
@@ -22,6 +24,7 @@ class Player < ApplicationRecord
 
   validates :name, presence: true, length: { maximum: NAME_MAX }
   validates :color, inclusion: { in: COLORS }
+  validates :speaker_channel, inclusion: { in: SPEAKER_CHANNELS }, allow_nil: true
   validates :slot, inclusion: { in: SLOTS }, allow_nil: true
   validates :token_digest, presence: true
   validate :avatar_is_emoji_or_selfie
@@ -129,6 +132,7 @@ class Player < ApplicationRecord
       color: color,
       host: host,
       speaker: speaker,
+      speaker_channel: speaker_channel,
       account_linked: account_id.present?,
       connected: connected,
       avatar: avatar

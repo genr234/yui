@@ -119,7 +119,11 @@ func (f *fakeRails) member(w http.ResponseWriter, r *http.Request) {
 	}
 	body, _ := io.ReadAll(io.LimitReader(r.Body, 4096))
 	f.mu.Lock()
-	f.calls = append(f.calls, r.Method+" "+r.URL.Path)
+	call := r.Method + " " + r.URL.Path
+	if r.URL.RawQuery != "" {
+		call += "?" + r.URL.RawQuery
+	}
+	f.calls = append(f.calls, call)
 	f.bodies = append(f.bodies, string(body))
 	f.mu.Unlock()
 	switch {

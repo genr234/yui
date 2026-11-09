@@ -17,7 +17,7 @@ import (
 // Speaker phone audio (plan 06): bridge commands and the long-lived
 // session.Audio shared by every play session.
 //
-//	pad.speaker  { player_id }                → pad.players shape
+//	pad.speaker  { player_id, channel? }      → pad.players shape (channel left|right pairs as stereo)
 //	pad.volume   { value: 0..1 }              → audio.status shape
 //	audio.route  { source: auto|app|native }  → audio.status shape
 //	audio.status                              → audio.status shape
@@ -33,13 +33,17 @@ func (padSpeakerCommand) Handle(r *Registry, params json.RawMessage) (any, error
 	if err != nil {
 		return nil, err
 	}
+	var opt struct {
+		Channel string `json:"channel"`
+	}
+	_ = json.Unmarshal(params, &opt)
 	mgr, err := r.activePad()
 	if err != nil {
 		return nil, err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := mgr.SetSpeaker(ctx, id); err != nil {
+	if err := mgr.SetSpeakerChannel(ctx, id, opt.Channel); err != nil {
 		return nil, err
 	}
 	return mgr.Snapshot(), nil

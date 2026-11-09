@@ -55,11 +55,19 @@ type Stats struct {
 // SwitchTarget and SetGain may be called from any goroutine while Run is
 // going.
 type Track struct {
-	enc *opus.Encoder
+	enc  *opus.Encoder
+	opts TrackOptions
 
 	mu     sync.Mutex
 	target SampleWriter
 	reset  bool
+
+	// Stereo pair (SwitchPair): the capture's left and right channels are
+	// encoded as two mono streams, one per phone. The mono encoders exist
+	// only after the first pair; the single-stream path above never uses
+	// them.
+	pairL, pairR SampleWriter
+	monoL, monoR *opus.Encoder
 
 	gainBits atomic.Uint32
 
@@ -67,6 +75,8 @@ type Track struct {
 
 	pcm [FrameLen]float32
 	pkt [opus.MaxPacket]byte
+
+	monoPCM [2][FrameSamples]float32
 }
 
 // NewTrack creates a Track with its own Opus encoder.
@@ -80,7 +90,17 @@ func NewTrack(opts TrackOptions) (*Track, error) {
 	if opts.Application == 0 {
 		opts.Application = opus.AppRestrictedLowDelay
 	}
-	enc, err := opus.NewEncoder(SampleRate, Channels, opts.Application)
+	enc, err := newEncoder(opts, Channels)
+	if err != nil {
+		return nil, err
+	}
+	t := &Track{enc: enc, opts: opts}
+	t.SetGain(1)
+	return t, nil
+}
+
+func newEncoder(opts TrackOptions, channels int) (*opus.Encoder, error) {
+	enc, err := opus.NewEncoder(SampleRate, channels, opts.Application)
 	if err != nil {
 		return nil, err
 	}
@@ -94,21 +114,72 @@ func NewTrack(opts TrackOptions) (*Track, error) {
 			return nil, err
 		}
 	}
-	t := &Track{enc: enc}
-	t.SetGain(1)
-	return t, nil
+	return enc, nil
 }
 
 // SwitchTarget moves the stream to w (the new speaker's track), or stops
 // sending when w is nil. The encoder restarts so the new receiver's decoder
 // starts from a clean state.
+//
+// It also ends a stereo pair: the full stereo mix goes to w.
 func (t *Track) SwitchTarget(w SampleWriter) {
 	t.mu.Lock()
-	if t.target != w {
+	if t.target != w || t.pairL != nil || t.pairR != nil {
 		t.target = w
+		t.pairL, t.pairR = nil, nil
 		t.reset = true
 	}
 	t.mu.Unlock()
+}
+
+// SwitchPair sends the left channel to l and the right channel to r, each
+// as its own mono Opus stream, and stops the single stream. With a nil l or
+// r (or both) it stops sending. SwitchTarget goes back to one stream.
+// Needs a second and third encoder, created on the first pair.
+func (t *Track) SwitchPair(l, r SampleWriter) error {
+	if l == nil || r == nil {
+		t.SwitchTarget(nil)
+		return nil
+	}
+	t.mu.Lock()
+	have := t.monoL != nil
+	t.mu.Unlock()
+	if !have {
+		el, err := newEncoder(t.opts, 1)
+		if err != nil {
+			return err
+		}
+		er, err := newEncoder(t.opts, 1)
+		if err != nil {
+			_ = el.Close()
+			return err
+		}
+		t.mu.Lock()
+		if t.monoL == nil {
+			t.monoL, t.monoR = el, er
+			el, er = nil, nil
+		}
+		t.mu.Unlock()
+		if el != nil {
+			_ = el.Close()
+			_ = er.Close()
+		}
+	}
+	t.mu.Lock()
+	if t.pairL != l || t.pairR != r || t.target != nil {
+		t.target = nil
+		t.pairL, t.pairR = l, r
+		t.reset = true
+	}
+	t.mu.Unlock()
+	return nil
+}
+
+// Pair returns the stereo pair's writers (nil, nil when not paired).
+func (t *Track) Pair() (SampleWriter, SampleWriter) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.pairL, t.pairR
 }
 
 // Target returns the current target.
@@ -153,6 +224,32 @@ func (t *Track) Encode(f *Frame) (media.Sample, error) {
 	return media.Sample{Data: append([]byte(nil), t.pkt[:n]...), Duration: FrameDuration}, nil
 }
 
+// encodePair applies the gain and encodes the left and right channels of one
+// frame as two mono packets. Only Run calls it.
+func (t *Track) encodePair(f *Frame, el, er *opus.Encoder) (media.Sample, media.Sample, error) {
+	g := math.Float32frombits(t.gainBits.Load())
+	for c := 0; c < 2; c++ {
+		for i := 0; i < FrameSamples; i++ {
+			v := f[i*2+c] * g
+			if v > 1 {
+				v = 1
+			} else if v < -1 {
+				v = -1
+			}
+			t.monoPCM[c][i] = v
+		}
+	}
+	var out [2]media.Sample
+	for c, enc := range []*opus.Encoder{el, er} {
+		n, err := enc.EncodeFloat(t.monoPCM[c][:], t.pkt[:])
+		if err != nil {
+			return media.Sample{}, media.Sample{}, err
+		}
+		out[c] = media.Sample{Data: append([]byte(nil), t.pkt[:n]...), Duration: FrameDuration}
+	}
+	return out[0], out[1], nil
+}
+
 // Run encodes frames from c and writes them to the current target until
 // ctx is done or the capture ends. It returns the capture's error, if any.
 func (t *Track) Run(ctx context.Context, c *Capture) error {
@@ -169,8 +266,33 @@ func (t *Track) Run(ctx context.Context, c *Capture) error {
 		}
 		t.mu.Lock()
 		target, reset := t.target, t.reset
+		pl, pr, ml, mr := t.pairL, t.pairR, t.monoL, t.monoR
 		t.reset = false
 		t.mu.Unlock()
+		if pl != nil && pr != nil && ml != nil {
+			if reset {
+				_ = ml.Reset()
+				_ = mr.Reset()
+			}
+			start := time.Now()
+			ls, rs, err := t.encodePair(f, ml, mr)
+			t.encodeNanos.Add(int64(time.Since(start)))
+			if err != nil {
+				return err
+			}
+			for _, w := range []struct {
+				to SampleWriter
+				s  media.Sample
+			}{{pl, ls}, {pr, rs}} {
+				if err := w.to.WriteSample(w.s); err != nil {
+					t.writeErrs.Add(1)
+					continue
+				}
+				t.frames.Add(1)
+				t.bytes.Add(int64(len(w.s.Data)))
+			}
+			continue
+		}
 		if target == nil {
 			t.skipped.Add(1)
 			continue
@@ -205,4 +327,15 @@ func (t *Track) Stats() Stats {
 }
 
 // Close releases the encoder.
-func (t *Track) Close() error { return t.enc.Close() }
+func (t *Track) Close() error {
+	t.mu.Lock()
+	ml, mr := t.monoL, t.monoR
+	t.monoL, t.monoR = nil, nil
+	t.pairL, t.pairR = nil, nil
+	t.mu.Unlock()
+	if ml != nil {
+		_ = ml.Close()
+		_ = mr.Close()
+	}
+	return t.enc.Close()
+}

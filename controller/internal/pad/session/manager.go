@@ -43,6 +43,9 @@ type Config struct {
 type Player struct {
 	protocol.Player
 	Speaker bool `json:"speaker"`
+	// SpeakerChannel is "left" or "right" while two speakers form a stereo
+	// pair; empty for a mono speaker (the whole mix) and for non-speakers.
+	SpeakerChannel string `json:"speaker_channel,omitempty"`
 	// Link health for the overlay (pad.players only): the last control
 	// round trip and accepted input frames per second over the last ping
 	// interval. Absent until measured.
@@ -97,13 +100,21 @@ type Manager struct {
 	// speakerID holds the speaker role as Rails reports it. audioTo is the
 	// player whose track the encoder writes into: the speaker, or the host
 	// while the speaker is not connected, or nobody.
-	speakerID   string
-	audioTo     string
-	audioTarget *webrtc.TrackLocalStaticSample
-	onControl   func(playerID string, msg any)
-	onInput     func(playerID string, state protocol.InputState)
-	onPlayer    func(ev PlayerEvent)
-	cable       *cable
+	//
+	// With a stereo pair speakerID is the left phone and rightID the right
+	// one (both empty or only speakerID set otherwise). audioTo is then the
+	// left phone's player and audioRight the right one's; audioRight is ""
+	// for a single stream.
+	speakerID        string
+	rightID          string
+	audioTo          string
+	audioRight       string
+	audioTarget      *webrtc.TrackLocalStaticSample
+	audioRightTarget *webrtc.TrackLocalStaticSample
+	onControl        func(playerID string, msg any)
+	onInput          func(playerID string, state protocol.InputState)
+	onPlayer         func(ev PlayerEvent)
+	cable            *cable
 }
 
 type playerState struct {
@@ -167,6 +178,7 @@ func (m *Manager) Run(ctx context.Context) error {
 		m.token = ""
 		m.joinURL = ""
 		m.speakerID = ""
+		m.rightID = ""
 		left := sortedPlayers(m.players)
 		m.players = map[string]*playerState{}
 		m.mu.Unlock()
@@ -339,7 +351,16 @@ func (m *Manager) rosterLocked() []Player {
 }
 
 func (m *Manager) withSpeakerLocked(p protocol.Player) Player {
-	return Player{Player: p, Speaker: p.ID != "" && p.ID == m.speakerID}
+	rp := Player{Player: p, Speaker: p.ID != "" && (p.ID == m.speakerID || p.ID == m.rightID)}
+	if m.speakerID != "" && m.rightID != "" {
+		switch p.ID {
+		case m.speakerID:
+			rp.SpeakerChannel = "left"
+		case m.rightID:
+			rp.SpeakerChannel = "right"
+		}
+	}
+	return rp
 }
 
 // Speaker returns the player holding the speaker role ("" when none).
@@ -350,32 +371,80 @@ func (m *Manager) Speaker() string {
 }
 
 // AudioTarget returns the player whose phone gets the sound now: the
-// speaker, or the host while the speaker is away, or "" for nobody.
+// speaker, or the host while the speaker is away, or "" for nobody. With a
+// stereo pair it is the left phone (see AudioRightTarget).
 func (m *Manager) AudioTarget() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.audioTo
 }
 
-// SetSpeaker moves the speaker role to playerID (system be_speaker, or the
-// overlay's pad.speaker). Rails stores it; the sound moves to that phone
-// right away, without renegotiation.
+// AudioRightTarget is the right-channel phone while a stereo pair plays,
+// else "".
+func (m *Manager) AudioRightTarget() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.audioRight
+}
+
+// speakerIDsLocked lists the phones holding a speaker role (left or mono
+// first). m.mu held.
+func (m *Manager) speakerIDsLocked() []string {
+	var ids []string
+	for _, id := range []string{m.speakerID, m.rightID} {
+		if id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+// SetSpeaker moves the speaker role to playerID, alone and mono (system
+// be_speaker, or the overlay's pad.speaker). Rails stores it; the sound moves
+// to that phone right away, without renegotiation.
 func (m *Manager) SetSpeaker(ctx context.Context, playerID string) error {
+	return m.SetSpeakerChannel(ctx, playerID, "")
+}
+
+// SetSpeakerChannel is SetSpeaker with an optional channel: "left" or
+// "right" makes playerID that half of a stereo pair with the current speaker,
+// who plays the other half (a phone already holding the requested channel is
+// dropped as a speaker). Needs another speaker to pair with.
+func (m *Manager) SetSpeakerChannel(ctx context.Context, playerID, channel string) error {
+	if channel != "" && channel != "left" && channel != "right" {
+		return fmt.Errorf("pad session: speaker channel must be left or right, got %q", channel)
+	}
 	id, err := m.sessionID()
 	if err != nil {
 		return err
 	}
 	m.mu.Lock()
 	st := m.players[playerID]
-	prev := m.speakerID
+	before := m.speakerIDsLocked()
+	others := map[string]string{} // other speakers -> current channel
+	for _, pid := range before {
+		if pid != playerID {
+			others[pid] = m.withSpeakerLocked(protocol.Player{ID: pid}).SpeakerChannel
+		}
+	}
+	cur := m.withSpeakerLocked(protocol.Player{ID: playerID}).SpeakerChannel
+	isSpeaker := playerID == m.speakerID || playerID == m.rightID
 	m.mu.Unlock()
 	if st == nil {
 		return fmt.Errorf("pad session: unknown player %s", playerID)
 	}
-	if prev == playerID {
+	if channel == "" && isSpeaker && cur == "" && len(others) == 0 {
 		return nil
 	}
-	if err := m.api.TransferSpeaker(ctx, id, playerID); err != nil {
+	if channel != "" {
+		if len(others) == 0 {
+			return errors.New("pad session: no speaker to pair with")
+		}
+		if cur == channel {
+			return nil
+		}
+	}
+	if err := m.api.TransferSpeaker(ctx, id, playerID, channel); err != nil {
 		return err
 	}
 	m.mu.Lock()
@@ -383,20 +452,48 @@ func (m *Manager) SetSpeaker(ctx context.Context, playerID string) error {
 		m.mu.Unlock()
 		return nil
 	}
-	m.speakerID = playerID
+	m.speakerID, m.rightID = "", ""
+	if channel == "" {
+		m.speakerID = playerID
+	} else {
+		opposite := "left"
+		if channel == "left" {
+			opposite = "right"
+		}
+		partner := ""
+		for pid, ch := range others { // at most two speakers: one other, or two
+			if ch != channel && (partner == "" || ch == opposite) {
+				partner = pid
+			}
+		}
+		holders := map[string]string{channel: playerID, opposite: partner}
+		m.speakerID, m.rightID = holders["left"], holders["right"]
+	}
+	after := m.speakerIDsLocked()
 	var changed []Player
-	for _, pid := range []string{prev, playerID} {
+	seen := map[string]bool{}
+	for _, pid := range append(append([]string{}, before...), after...) {
+		if seen[pid] {
+			continue
+		}
+		seen[pid] = true
 		if st := m.players[pid]; st != nil {
 			changed = append(changed, m.withSpeakerLocked(st.Player))
 		}
 	}
 	m.mu.Unlock()
-	log.Printf("pad session: speaker is now %s", playerID)
+	if channel == "" {
+		log.Printf("pad session: speaker is now %s", playerID)
+	} else {
+		log.Printf("pad session: %s is the %s speaker", playerID, channel)
+	}
 	m.emit()
 	for _, p := range changed {
 		_ = m.pushPlayer(p, false)
 	}
-	m.sendVolume(playerID)
+	for _, pid := range after {
+		m.sendVolume(pid)
+	}
 	return nil
 }
 
@@ -409,9 +506,9 @@ func (m *Manager) SetVolume(v float64) (float64, error) {
 	}
 	v = m.cfg.Audio.SetVolume(v)
 	m.mu.Lock()
-	speaker := m.speakerID
+	speakers := m.speakerIDsLocked()
 	m.mu.Unlock()
-	if speaker != "" {
+	for _, speaker := range speakers {
 		m.sendVolume(speaker)
 	}
 	return v, nil
@@ -443,8 +540,8 @@ func (m *Manager) sendVolume(playerID string) {
 	}
 }
 
-// syncSpeaker points the session audio at the right phone's track and
-// starts or stops the capture with it.
+// syncSpeaker points the session audio at the right phone's track (or the
+// two tracks of a stereo pair) and starts or stops the capture with it.
 func (m *Manager) syncSpeaker() {
 	a := m.cfg.Audio
 	if a == nil {
@@ -455,46 +552,74 @@ func (m *Manager) syncSpeaker() {
 	m.audioMu.Lock()
 	defer m.audioMu.Unlock()
 	m.mu.Lock()
-	to := ""
-	var target *webrtc.TrackLocalStaticSample
+	to, right := "", ""
+	var target, rightTarget *webrtc.TrackLocalStaticSample
 	if m.active {
-		to = m.effectiveSpeakerLocked()
-		if p := m.peers[to]; p != nil && !p.closed.Load() && p.audio != nil {
-			target = p.audio
-		} else {
-			to = ""
+		to, right = m.effectiveSpeakersLocked()
+		target = m.audioTrackLocked(to)
+		if right != "" {
+			rightTarget = m.audioTrackLocked(right)
+		}
+		if target == nil || (right != "" && rightTarget == nil) {
+			if right != "" && target != nil {
+				// The pair's second phone has no peer yet: the first plays
+				// the whole mix until it does.
+				right, rightTarget = "", nil
+			} else {
+				to, right, target, rightTarget = "", "", nil, nil
+			}
 		}
 	}
-	if to == m.audioTo && target == m.audioTarget {
+	if to == m.audioTo && right == m.audioRight && target == m.audioTarget && rightTarget == m.audioRightTarget {
 		m.mu.Unlock()
 		return
 	}
-	m.audioTo = to
-	m.audioTarget = target
+	m.audioTo, m.audioRight = to, right
+	m.audioTarget, m.audioRightTarget = target, rightTarget
 	m.mu.Unlock()
-	if target == nil {
+	switch {
+	case target == nil:
 		a.SetTarget(nil) // an untyped nil: no speaker
-	} else {
-		a.SetTarget(target)
-	}
-	if to == "" {
 		log.Printf("pad session: no speaker phone; audio capture stops")
-	} else {
+	case rightTarget != nil:
+		a.SetPair(target, rightTarget)
+		log.Printf("pad session: stereo sound goes to %s (left) and %s (right)", to, right)
+	default:
+		a.SetTarget(target)
 		log.Printf("pad session: sound goes to %s", to)
 	}
 }
 
-// effectiveSpeakerLocked: the speaker if connected, else the connected host.
-func (m *Manager) effectiveSpeakerLocked() string {
-	if st := m.players[m.speakerID]; st != nil && st.Connected {
-		return m.speakerID
+// audioTrackLocked is the connected player's open Opus track, or nil.
+func (m *Manager) audioTrackLocked(id string) *webrtc.TrackLocalStaticSample {
+	if p := m.peers[id]; p != nil && !p.closed.Load() && p.audio != nil {
+		return p.audio
+	}
+	return nil
+}
+
+// effectiveSpeakersLocked says where the sound goes. A stereo pair with both
+// phones connected is (left, right). Otherwise one phone gets everything:
+// the first connected speaker, else the connected host.
+func (m *Manager) effectiveSpeakersLocked() (string, string) {
+	connected := func(id string) bool {
+		st := m.players[id]
+		return id != "" && st != nil && st.Connected
+	}
+	if connected(m.speakerID) && connected(m.rightID) {
+		return m.speakerID, m.rightID
+	}
+	for _, id := range []string{m.speakerID, m.rightID} {
+		if connected(id) {
+			return id, ""
+		}
 	}
 	for id, st := range m.players {
 		if st.Host && st.Connected {
-			return id
+			return id, ""
 		}
 	}
-	return ""
+	return "", ""
 }
 
 // Watch calls fn after roster changes and after each QR rotation.
@@ -757,14 +882,27 @@ func (m *Manager) applyPlayer(rp Player, event string) {
 }
 
 // noteSpeakerLocked applies one player's speaker flag from Rails. Rails
-// sends the old and the new speaker as separate updates in either order, so
-// a false only clears the role if that player still holds it.
+// sends each changed phone as a separate update in any order, so a false only
+// clears a role if that player still holds it.
 func (m *Manager) noteSpeakerLocked(p Player) {
 	switch {
+	case p.Speaker && p.SpeakerChannel == "right":
+		m.rightID = p.ID
+		if m.speakerID == p.ID {
+			m.speakerID = ""
+		}
 	case p.Speaker:
 		m.speakerID = p.ID
-	case m.speakerID == p.ID:
-		m.speakerID = ""
+		if m.rightID == p.ID {
+			m.rightID = ""
+		}
+	default:
+		if m.speakerID == p.ID {
+			m.speakerID = ""
+		}
+		if m.rightID == p.ID {
+			m.rightID = ""
+		}
 	}
 }
 
@@ -997,9 +1135,13 @@ func (m *Manager) removePlayer(playerID string) {
 	}
 	delete(m.players, playerID)
 	delete(m.pings, playerID)
+	// Rails hands the role to the host (or the other half of a pair goes back
+	// to mono) and says so with player_updated.
 	if m.speakerID == playerID {
-		// Rails hands the role to the host and says so with player_updated.
 		m.speakerID = ""
+	}
+	if m.rightID == playerID {
+		m.rightID = ""
 	}
 	m.mu.Unlock()
 	m.notifyPlayer(PlayerLeft, player)
@@ -1033,7 +1175,7 @@ func (m *Manager) closePeers() {
 
 func (m *Manager) mergePlayersLocked(list []Player) {
 	seen := map[string]bool{}
-	speaker := ""
+	speaker, right := "", ""
 	for _, p := range list {
 		seen[p.ID] = true
 		st := m.players[p.ID]
@@ -1042,7 +1184,10 @@ func (m *Manager) mergePlayersLocked(list []Player) {
 			m.players[p.ID] = st
 		}
 		st.Player = p.Player
-		if p.Speaker && (speaker == "" || p.ID == m.speakerID) {
+		switch {
+		case p.Speaker && p.SpeakerChannel == "right":
+			right = p.ID
+		case p.Speaker && (speaker == "" || p.ID == m.speakerID):
 			speaker = p.ID
 		}
 	}
@@ -1051,7 +1196,7 @@ func (m *Manager) mergePlayersLocked(list []Player) {
 			delete(m.players, id)
 		}
 	}
-	m.speakerID = speaker
+	m.speakerID, m.rightID = speaker, right
 }
 
 func (m *Manager) sendSignal(to, typ string, data any) error {
