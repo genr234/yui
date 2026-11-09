@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Retro Arcade</title>
+<link rel="stylesheet" href="arcade.css">
+</head>
+<body>
+<main id="app" data-phase="lobby">
+  <section id="picker" aria-label="Games">
+    <header class="bar">
+      <h1 class="logo">RETRO<span>ARCADE</span></h1>
+      <p id="hint" class="hint"></p>
+    </header>
+    <nav id="filters" class="filters" aria-label="Systems"></nav>
+    <div id="shelves"></div>
+    <div id="empty" class="empty" hidden></div>
+  </section>
+
+  <section id="stage" aria-label="Game" hidden>
+    <div id="frame-wrap"></div>
+    <div id="badges" class="badges"></div>
+  </section>
+
+  <div id="loading" class="overlay" hidden>
+    <div class="loading-card">
+      <img id="loading-tile" alt="">
+      <p class="loading-title" id="loading-title"></p>
+      <p class="loading-label" id="loading-label">Loading…</p>
+      <div class="bar-track"><div class="bar-fill"></div></div>
+    </div>
+  </div>
+
+  <div id="paused" class="overlay dim" hidden>
+    <div class="paused-card">
+      <div id="paused-avatar" class="avatar big"></div>
+      <p id="paused-text" class="paused-text">Paused</p>
+      <p id="paused-sub" class="paused-sub"></p>
+    </div>
+  </div>
+
+  <div id="countdown" class="overlay countdown" hidden><span id="countdown-n">3</span></div>
+
+  <div id="error" class="overlay dim" hidden>
+    <div class="error-card">
+      <p class="error-title">That didn't work</p>
+      <p id="error-text"></p>
+      <button id="error-back" type="button">Back to games</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+</main>
+<script src="_yui/embed.js"></script>
+<script type="module" src="arcade.js"></script>
+</body>
+</html>

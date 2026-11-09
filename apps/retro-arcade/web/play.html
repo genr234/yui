@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Retro Arcade game</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  #game { width: 100%; height: 100%; }
+  /* Retro Arcade draws all UI itself; none of EmulatorJS's own. */
+  .ejs_menu_bar, .ejs_context_menu, .ejs_virtualGamepad_parent, .ejs_start_button,
+  .ejs_loading_text, .ejs_popup_container, .ejs_settings_parent, .ejs_message,
+  .ejs_game_background, .ejs_error_text { display: none !important; }
+  .ejs_parent { background: #000 !important; }
+  .ejs_canvas { image-rendering: pixelated; }
+  body.smooth .ejs_canvas { image-rendering: auto; }
+</style>
+</head>
+<body>
+<div id="game"></div>
+<script src="play.js"></script>
+</body>
+</html>

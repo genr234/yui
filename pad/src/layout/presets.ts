@@ -97,7 +97,9 @@ function face(o: Opts, size?: string): Node | null {
   }
 }
 
-function stick(o: Opts): Node {
+function stick(o: Opts): Node | null {
+  // `hide: ["LeftStick"]` leaves the stick out (systems with only a d-pad).
+  if (o.hide.has('LeftStick')) return null
   return { type: 'stick', props: { id: `${o.base}.stick`, side: 'left', click_bit: o.hide.has('L3') ? undefined : BIT.L3 } }
 }
 
