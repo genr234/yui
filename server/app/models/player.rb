@@ -3,17 +3,25 @@ class Player < ApplicationRecord
   COLORS = %w[blue red green yellow purple orange pink teal].freeze
   NAME_MAX = 20
   SLOT_ATTEMPTS = 5
+  # Avatars (contracts §2): one emoji, or a small selfie the pad crops to
+  # ~96x96. Kept only while the session runs (PlaySession#end! clears them).
+  AVATAR_EMOJI_MAX_BYTES = 16
+  AVATAR_IMAGE_MAX_BYTES = 12.kilobytes
+  AVATAR_IMAGE_PATTERN = %r{\Adata:image/(jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})\z}
+  AVATAR_EMOJI_PATTERN = /\p{Extended_Pictographic}|\p{Regional_Indicator}/
 
   belongs_to :play_session
 
   scope :active, -> { where(kicked_at: nil) }
 
   normalizes :name, with: ->(name) { name.to_s.strip }
+  normalizes :avatar, with: ->(avatar) { avatar.to_s.strip.presence }
 
   validates :name, presence: true, length: { maximum: NAME_MAX }
   validates :color, inclusion: { in: COLORS }
   validates :slot, inclusion: { in: SLOTS }, allow_nil: true
   validates :token_digest, presence: true
+  validate :avatar_is_emoji_or_selfie
 
   def self.digest_token(token)
     Digest::SHA256.hexdigest(token.to_s)
@@ -27,7 +35,7 @@ class Player < ApplicationRecord
   # spectator (slot nil). The first player becomes host, and the speaker (the
   # phone that plays the kiosk's sound) whenever nobody holds that role.
   # Returns [player, raw token].
-  def self.join!(play_session, name:, color:)
+  def self.join!(play_session, name:, color:, avatar: nil)
     token = issue_token
     attempts = 0
     begin
@@ -35,6 +43,7 @@ class Player < ApplicationRecord
       player = transaction do
         play_session.players.create!(
           name: name,
+          avatar: avatar,
           color: play_session.free_color(color),
           slot: play_session.free_slot,
           host: !play_session.players.active.exists?(host: true),
@@ -101,7 +110,8 @@ class Player < ApplicationRecord
       color: color,
       host: host,
       speaker: speaker,
-      connected: connected
+      connected: connected,
+      avatar: avatar
     }
   end
 
@@ -110,5 +120,40 @@ class Player < ApplicationRecord
     message = { type: "player_updated", player: as_player_json }
     PlaySessionChannel.broadcast_to(play_session, message)
     PlaySessionChannel.broadcast_to(self, message)
+  end
+
+  private
+
+  def avatar_is_emoji_or_selfie
+    return if avatar.nil?
+    return if avatar.start_with?("data:") ? selfie_avatar?(avatar) : emoji_avatar?(avatar)
+
+    errors.add(:avatar, :invalid)
+  end
+
+  # A single grapheme, no ASCII at all (so no letters, digits or markup), that
+  # is or contains a pictograph or a flag.
+  def emoji_avatar?(value)
+    value.bytesize <= AVATAR_EMOJI_MAX_BYTES &&
+      value.grapheme_clusters.length == 1 &&
+      !value.match?(/[\x00-\x7F]/) &&
+      value.match?(AVATAR_EMOJI_PATTERN)
+  end
+
+  # A base64 JPEG or WebP data URL under the size cap whose bytes really are
+  # that format.
+  def selfie_avatar?(value)
+    return false if value.bytesize > AVATAR_IMAGE_MAX_BYTES
+
+    match = AVATAR_IMAGE_PATTERN.match(value)
+    return false unless match
+
+    bytes = Base64.strict_decode64(match[2])
+    case match[1]
+    when "jpeg" then bytes.start_with?("\xFF\xD8\xFF".b)
+    when "webp" then bytes.byteslice(0, 4) == "RIFF" && bytes.byteslice(8, 4) == "WEBP"
+    end
+  rescue ArgumentError
+    false
   end
 end

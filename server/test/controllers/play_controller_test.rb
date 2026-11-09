@@ -75,7 +75,7 @@ class PlayControllerTest < ActionDispatch::IntegrationTest
     assert_equal true, player["host"]
     assert_equal false, player["connected"]
     assert_equal true, player["speaker"]
-    assert_equal %w[color connected host id name slot speaker], player.keys.sort
+    assert_equal %w[avatar color connected host id name slot speaker], player.keys.sort
     assert cookies[:yui_player].present?
   end
 
@@ -122,6 +122,47 @@ class PlayControllerTest < ActionDispatch::IntegrationTest
 
     get "/play/#{@play_session.code}/info"
     assert_nil json["player"]
+  end
+
+  test "join and rejoin accept an avatar and broadcast it" do
+    @play_session.update!(lobby_open: true)
+    join(avatar: "\u{1F98A}")
+    assert_response :success
+    assert_equal "\u{1F98A}", json["player"]["avatar"]
+
+    selfie = jpeg_avatar(bytes: 8.kilobytes)
+    player_id = json["player"]["id"]
+    assert_broadcast_on(PlaySessionChannel.broadcasting_for(@play_session),
+      { type: "player_updated", player: Player.find(player_id).as_player_json.merge(avatar: selfie) }) do
+      join(avatar: selfie)
+    end
+    assert_response :success
+    assert_equal selfie, json["player"]["avatar"]
+
+    # Leaving avatar out keeps it; null clears it.
+    join(name: "Ann")
+    assert_equal selfie, json["player"]["avatar"]
+    join(avatar: nil)
+    assert_nil json["player"]["avatar"]
+
+    get "/play/#{@play_session.code}/info"
+    assert json["player"].key?("avatar")
+  end
+
+  test "a bad or oversized avatar is a 422 validation_failed" do
+    @play_session.update!(lobby_open: true)
+    [ "AB", "<img src=x>", jpeg_avatar(bytes: 13.kilobytes), { "src" => "x" }, [ "\u{1F98A}" ] ].each do |avatar|
+      join(avatar: avatar)
+      assert_response :unprocessable_content
+      assert_equal "validation_failed", json["error"]
+      assert json["details"].key?("avatar")
+    end
+
+    join(avatar: "\u{1F98A}")
+    assert_response :success
+    join(avatar: "javascript:alert(1)")
+    assert_response :unprocessable_content
+    assert json["details"].key?("avatar")
   end
 
   test "validation errors are 422" do

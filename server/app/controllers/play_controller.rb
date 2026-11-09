@@ -84,22 +84,30 @@ class PlayController < ActionController::Base
   end
 
   def first_join
-    player, token = Player.join!(@play_session, name: params[:name], color: params[:color])
+    player, token = Player.join!(@play_session, name: params[:name], color: params[:color], avatar: avatar_param)
     write_player_cookie(player, token)
     render_joined(player)
   rescue ActiveRecord::RecordInvalid => error
     render_invalid(error.record)
   end
 
-  # Rejoin keeps the slot; name and color may change.
+  # Rejoin keeps the slot; name, color and avatar may change (avatar: null clears it).
   def rejoin(player)
     player.name = params[:name] if params.key?(:name)
+    player.avatar = avatar_param if params.key?(:avatar)
     player.color = @play_session.free_color(params[:color], except: player) if params.key?(:color)
     changed = player.changed?
     return render_invalid(player) unless player.save
 
     player.broadcast_updated if changed
     render_joined(player)
+  end
+
+  # An emoji or a selfie data URL (validated by Player). Anything that isn't a
+  # string is passed on as text so it fails validation instead of being cast.
+  def avatar_param
+    value = params[:avatar]
+    value.nil? || value.is_a?(String) ? value : value.to_s
   end
 
   def render_joined(player)

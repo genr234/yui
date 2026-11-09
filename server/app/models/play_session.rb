@@ -106,6 +106,8 @@ class PlaySession < ApplicationRecord
     return unless active?
 
     update!(ended_at: Time.current)
+    # Avatars (selfies especially) live only as long as the session.
+    players.where.not(avatar: nil).update_all(avatar: nil, updated_at: Time.current)
     players.active.find_each do |player|
       PlaySessionChannel.broadcast_to(player, { type: "session_ended" })
       player.disconnect_later

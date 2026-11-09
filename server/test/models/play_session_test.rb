@@ -44,6 +44,18 @@ class PlaySessionTest < ActiveSupport::TestCase
     assert duplicate.errors.of_kind?(:code, :taken)
   end
 
+  test "ending a session clears every player's avatar" do
+    play_session = start_session
+    selfie, = join_player(play_session, name: "Selfie", avatar: jpeg_avatar)
+    emoji, = join_player(play_session, name: "Emoji", avatar: "\u{1F98A}")
+    kicked, = join_player(play_session, name: "Kicked", avatar: jpeg_avatar)
+    play_session.kick!(kicked)
+
+    play_session.end!
+
+    assert_equal [ nil, nil, nil ], [ selfie, emoji, kicked ].map { |player| player.reload.avatar }
+  end
+
   test "an ended session's code can be reused" do
     ended = start_session
     ended.end!
