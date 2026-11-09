@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"math"
 
 	"kiosk/controller/internal/config"
 	"kiosk/controller/internal/nativeui"
@@ -61,6 +62,12 @@ func (ConfigUpdateCommand) Handle(r *Registry, params json.RawMessage) (any, err
 		}
 		if value, ok := patch["auto_update_interval_minutes"].(float64); ok {
 			cfg.AutoUpdateInterval = int(value)
+		}
+		if value, ok := patch["event_mode"].(bool); ok {
+			cfg.EventMode = value
+		}
+		if value, ok := patch["event_idle_minutes"].(float64); ok && value >= 1 {
+			cfg.EventIdleMinutes = int(math.Min(value, 240))
 		}
 		return nil
 	})

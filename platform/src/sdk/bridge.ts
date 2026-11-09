@@ -186,6 +186,8 @@ class DemoBridge {
 		auto_update_enabled: true,
 		auto_update_repo: "yui-platform/yui",
 		auto_update_interval_minutes: 60,
+		event_mode: false,
+		event_idle_minutes: 5,
 	};
 
 	async send<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
@@ -292,6 +294,15 @@ class DemoBridge {
 		if (method === "storage.delete") this.values.delete(String(params.key));
 		if (method === "pad.session.end") {
 			this.padState = { session: null, players: [] };
+			this.emitPad();
+			return this.padState as T;
+		}
+		if (method === "pad.session.start" && this.config.event_mode) {
+			// Event mode: the lobby opens by itself and nobody is in it yet.
+			this.padState = {
+				session: { code: "KQXM", join_url: "https://yui.example/play/KQXM?t=OT56FOOG", lobby_open: true },
+				players: [],
+			};
 			this.emitPad();
 			return this.padState as T;
 		}

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
+  import AttractScreen from "./components/AttractScreen.svelte";
   import OnScreenKeyboard from "./components/OnScreenKeyboard.svelte";
   import PadCursor from "./components/PadCursor.svelte";
   import FederatedStoreModal from "./components/FederatedStoreModal.svelte";
@@ -27,7 +28,16 @@
   import PlusIcon from "lucide-svelte/icons/plus";
   import RefreshCwIcon from "lucide-svelte/icons/refresh-cw";
   import SmartphoneIcon from "lucide-svelte/icons/smartphone";
-  import { pad, padKeyboard, remoteIntent } from "./sdk/pad";
+  import { pad, padKeyboard, remoteIntent, type PadState } from "./sdk/pad";
+  import {
+    createAttract,
+    pickShowcase,
+    stepAttract,
+    touched,
+    type ShowcaseEntry,
+  } from "./attract";
+  import { loadLibraryRecent } from "./sdk/library";
+  import type { YuiDevApp } from "./sdk/apps";
   import { resetControllersFocus } from "./sdk/apps/controllers";
   import { loadApps } from "./apps";
   import { resolveSubtitle } from "@/pages/subtitle";
@@ -85,6 +95,39 @@
   let accountStatus: AccountStatus | null = null;
   let sidebarTheme: SidebarThemeSettings = { enabled: true, images: [] };
   const demoMode = import.meta.env.VITE_YUI_DEMO === "true";
+
+  // Event mode's attract screen (src/attract.ts).
+  let attract = createAttract(Date.now());
+  let attractEntries: ShowcaseEntry<YuiDevApp>[] = [];
+  let attractPad: PadState = { session: null, players: [] };
+  $: eventMode = config?.event_mode === true;
+
+  function touchAttract() {
+    if (attract.shown || eventMode) attract = touched(attract, Date.now());
+  }
+
+  async function loadAttractEntries() {
+    const [titles, apps] = await Promise.all([
+      loadLibraryRecent(24),
+      loadApps().catch(() => [] as YuiDevApp[]),
+    ]);
+    attractEntries = pickShowcase(titles, apps);
+  }
+
+  function tickAttract() {
+    const wasShown = attract.shown;
+    const step = stepAttract(attract, {
+      now: Date.now(),
+      eventMode,
+      hasSession: attractPad.session !== null,
+      connectedPlayers: attractPad.players.filter((p) => p.connected).length,
+      busy: authVisible || permissionPrompt !== null,
+    });
+    attract = step.state;
+    if (attract.shown && !wasShown) void loadAttractEntries();
+    // A real QR needs a real session; the controller opens its lobby.
+    if (step.startSession) void pad.run("start");
+  }
 
   let extensions: YuiPluginExtensions = { pages: [], actions: [], css: [] };
 
@@ -168,7 +211,26 @@
       }
     });
     const offPadKeyboard = pad.onKeyboard((active) => padKeyboard.set(active));
+    // Event mode: any touch, key or phone action dismisses the attract screen.
+    const attractEvents = ["pointerdown", "pointermove", "keydown", "touchstart", "wheel"];
+    for (const name of attractEvents) {
+      window.addEventListener(name, touchAttract, { capture: true, passive: true });
+    }
+    const onConfigChanged = (event: Event) => {
+      const next = (event as CustomEvent<unknown>).detail;
+      if (next) config = next;
+    };
+    window.addEventListener("yui:config-changed", onConfigChanged);
+    void pad.state().then((state) => (attractPad = state));
+    const offAttractPad = pad.onState((state) => (attractPad = state));
+    const attractTimer = window.setInterval(tickAttract, 1000);
     return () => {
+      for (const name of attractEvents) {
+        window.removeEventListener(name, touchAttract, { capture: true });
+      }
+      window.removeEventListener("yui:config-changed", onConfigChanged);
+      offAttractPad();
+      window.clearInterval(attractTimer);
       offPadHome();
       offPadRemote();
       offPadKeyboard();
@@ -873,5 +935,11 @@
 
   <OnScreenKeyboard />
 {/if}
+
+<AttractScreen
+  shown={attract.shown}
+  session={attractPad.session}
+  entries={attractEntries}
+/>
 
 <PadCursor />
