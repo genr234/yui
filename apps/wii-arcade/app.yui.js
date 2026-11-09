@@ -696,6 +696,9 @@ function dolphinFiles(options = {}) {
  * Command line: -u user dir, -b no Qt window, -e the game (an asset
  * template), -s a save state to continue from (slot 1 of that game).
  */
+/** Game saves (Wii NAND title data, GameCube memory cards) and save states, relative to {{dataDir}}. */
+const DOLPHIN_SAVES = [`${DOLPHIN_USER_DIR}/Wii/title`, `${DOLPHIN_USER_DIR}/GC`, `${DOLPHIN_USER_DIR}/StateSaves`];
+
 function dolphinArgs(options) {
 	const args = ["-u", `{{dataDir}}/${DOLPHIN_USER_DIR}`, "-b"];
 	if (options.stateFor) {
@@ -719,6 +722,8 @@ function dolphinSpec(options) {
 		files: dolphinFiles(options),
 		virtualPads: [0, 1, 2, 3],
 		audio: "speaker",
+		// Backed up to the account when the session stops, restored on the next kiosk.
+		saves: DOLPHIN_SAVES,
 	};
 }
 
