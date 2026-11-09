@@ -11,6 +11,7 @@ set -euo pipefail
 archive=${1:?usage: build-runtime.sh <EmulatorJS .7z> <out.zip> [cores...]}
 out=${2:?usage: build-runtime.sh <EmulatorJS .7z> <out.zip> [cores...]}
 shift 2
+case "$out" in /*) ;; *) out="$PWD/$out" ;; esac
 cores=("$@")
 if [ ${#cores[@]} -eq 0 ]; then
   cores=(fceumm snes9x gambatte mgba genesis_plus_gx smsplus mednafen_pce stella2014 handy)
@@ -35,5 +36,5 @@ for core in "${cores[@]}"; do
   [ -f "$data/cores/reports/$core.json" ] && cp "$data/cores/reports/$core.json" "$stage/cores/reports/"
 done
 rm -f "$out"
-(cd "$stage" && zip -qr -X "$OLDPWD/$out" .)
+(cd "$stage" && zip -qr -X "$out" .)
 echo "wrote $out ($(du -h "$out" | cut -f1)) with cores: ${cores[*]}"
