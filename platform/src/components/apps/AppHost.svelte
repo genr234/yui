@@ -12,6 +12,10 @@
     sandboxApiSource,
     type SandboxApi,
   } from "../../sdk/apps/sandbox-apis";
+  import {
+    controllersHostFor,
+    keymapNeedsRegion,
+  } from "../../sdk/apps/controllers";
   import YuiNodeView from "./YuiNodeView.svelte";
 
   export let devApp: YuiDevApp;
@@ -19,6 +23,7 @@
 
   type SandboxMessage =
     | { type: "ready" }
+    | { type: "manifest"; controllers?: unknown }
     | { type: "render"; node: YuiChildren }
     | { type: "error"; error: string }
     | {
@@ -50,6 +55,9 @@
   let readyTimer: number | undefined;
   let mountTimer: number | undefined;
   let loadAttempt = 0;
+  let hostElement: HTMLElement | undefined;
+  let regionTimer: number | undefined;
+  let focusedFrame: HTMLIFrameElement | null = null;
 
   const sandboxHtml = `<!doctype html>
 <html>
@@ -189,11 +197,13 @@ function state(initial) {
     set(target, key, value) {
       target[key] = value;
       scheduleRender();
+      yuiStateChanged();
       return true;
     },
     deleteProperty(target, key) {
       delete target[key];
       scheduleRender();
+      yuiStateChanged();
       return true;
     }
   });
@@ -300,6 +310,13 @@ function contextFor(app) {
 async function mount(source) {
   try {
     app = await loadSimpleApp(source);
+    let controllers;
+    try {
+      controllers = app.controllers === undefined ? undefined : JSON.parse(JSON.stringify(app.controllers));
+    } catch {
+      controllers = { invalid: true };
+    }
+    post({ type: "manifest", controllers });
     const mounted = await Promise.race([
       app.mount(contextFor(app)),
       timeout(1500, "app mount timed out")
@@ -422,6 +439,8 @@ post({ type: "ready" });
   }
 
   async function mountApp() {
+    window.clearInterval(regionTimer);
+    focusedFrame = null;
     loading = true;
     error = "";
     node = undefined;
@@ -576,6 +595,10 @@ post({ type: "ready" });
       sendMountToSandbox();
       return;
     }
+    if (message.type === "manifest") {
+      void declareControllers(message.controllers);
+      return;
+    }
     if (message.type === "render") {
       node = message.node;
       loading = false;
@@ -603,6 +626,47 @@ post({ type: "ready" });
     }
   }
 
+  /**
+   * An app that declares `controllers` takes the phones while it is open
+   * (the hub's app layer). A keymap with an absolute trackpad also tracks the
+   * embedded game's frame, and keyboard keymaps focus that frame so keys
+   * sent to the page reach the game.
+   */
+  async function declareControllers(value: unknown) {
+    const host = ctx ? controllersHostFor(ctx) : undefined;
+    if (!host || value === undefined) return;
+    try {
+      if (!(await host.declare(value))) return;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.startsWith("YUI_INVALID_APP")) {
+        error = message;
+        loading = false;
+        clearLoadTimers();
+      } else {
+        console.warn(`[${devApp.id}] controllers:`, message);
+      }
+      return;
+    }
+    const keymap = host.keymap();
+    if (!keymap) return;
+    const track = keymapNeedsRegion(keymap);
+    window.clearInterval(regionTimer);
+    const measure = () => {
+      const frame = hostElement?.querySelector<HTMLIFrameElement>("iframe.yui-app-embed") ?? null;
+      if (frame && frame !== focusedFrame) {
+        focusedFrame = frame;
+        frame.addEventListener("load", () => frame.focus());
+        frame.focus();
+      }
+      if (!track) return;
+      const rect = frame?.getBoundingClientRect();
+      host.setRegion(rect && rect.width > 0 && rect.height > 0 ? { x: rect.left, y: rect.top, w: rect.width, h: rect.height } : null);
+    };
+    measure();
+    regionTimer = window.setInterval(measure, 500);
+  }
+
   function handleAppEvent(handlerId: string, args: unknown[]) {
     sendToSandbox({ type: "event", handlerId, args });
   }
@@ -617,6 +681,7 @@ post({ type: "ready" });
 
   onDestroy(() => {
     clearLoadTimers();
+    window.clearInterval(regionTimer);
     sendToSandbox({ type: "dispose" });
     ctx?.dispose();
     window.removeEventListener(
@@ -628,7 +693,7 @@ post({ type: "ready" });
 
 <svelte:window on:message={handleSandboxMessage} />
 
-<section class="simple-app-host" aria-label={devApp.name}>
+<section class="simple-app-host" aria-label={devApp.name} bind:this={hostElement}>
   <div use:createSandbox></div>
   {#if loading}
     <div class="yui-app-loading">loading {devApp.name}</div>

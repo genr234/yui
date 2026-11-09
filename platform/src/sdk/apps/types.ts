@@ -49,6 +49,11 @@ export type YuiSimpleApp = {
 	tags?: string[];
 	permissions?: YuiPermission[];
 	runtime?: string;
+	/**
+	 * Phone controllers. Declaring this (even `{}`) gives the app the phones
+	 * while it is open; `keymap` drives an embedded web game with no code.
+	 */
+	controllers?: YuiControllersManifest;
 	mount(ctx: YuiContext): YuiRenderFunction | Promise<YuiRenderFunction | void> | void;
 	install?(ctx: YuiContext): void | Promise<void>;
 	activate?(ctx: YuiContext): void | Promise<void>;
@@ -81,6 +86,8 @@ export type YuiContext = {
 	fullscreen: YuiFullscreenApi;
 	native: YuiNativeApi;
 	library: YuiLibraryApi;
+	controllers: YuiControllersApi;
+	virtualPads: YuiVirtualPadsApi;
 	/** What the shell opened this app for, e.g. a library title from Jump back in. */
 	launch: { item: YuiLaunchItem | null };
 	log: Console;
@@ -198,4 +205,106 @@ export type YuiDevApp = {
 	installedAt?: string;
 	app: YuiSimpleApp;
 	source: string;
+};
+
+export type YuiKeymapDirection = "up" | "down" | "left" | "right";
+
+/** Key names: Enter, Space, Tab, Escape, Backspace, Delete, Home, End, PageUp, PageDown, ArrowUp/Down/Left/Right, or one letter or digit. */
+export type YuiKeymapKey = string;
+
+export type YuiKeymapControl =
+	| { type: "swipe"; keys: Partial<Record<YuiKeymapDirection, YuiKeymapKey>>; tap?: YuiKeymapKey; label?: string }
+	| { type: "dpad"; keys: Partial<Record<YuiKeymapDirection, YuiKeymapKey>>; label?: string }
+	| { type: "button"; label: string; key?: YuiKeymapKey; mouse?: "left" }
+	| { type: "trackpad"; mode: "absolute"; mouse: "drag"; label?: string }
+	| { type: "trackpad"; mode?: "relative"; label?: string };
+
+export type YuiKeymap = {
+	/** "host" (default): only the host plays; "all": every phone does. */
+	players?: "host" | "all";
+	controls: YuiKeymapControl[];
+};
+
+export type YuiControllersManifest = {
+	keymap?: YuiKeymap;
+};
+
+/** A phone in the play session. */
+export type YuiPlayer = {
+	id: string;
+	slot: number | null;
+	name: string;
+	color: string;
+	host: boolean;
+	speaker: boolean;
+	connected: boolean;
+};
+
+export type YuiPlayerRef = YuiPlayer | string;
+
+/** A pad layout node (contracts §3); ctx.ui text nodes are converted. */
+export type YuiPadNode = YuiNode;
+
+export type YuiControllerEvents = {
+	/** A control event: `tap` on a button or choice, `submit` on a keyboard, ... */
+	event: { player: YuiPlayer; control: string; kind: string; value?: unknown };
+	/** A whole input frame (buttons bitmask, sticks, motion, pointer). */
+	input: {
+		player: YuiPlayer;
+		buttons: number;
+		lx: number;
+		ly: number;
+		rx: number;
+		ry: number;
+		accel: number[];
+		gyro: number[];
+		px: number;
+		py: number;
+		seq: number;
+		tMs: number;
+	};
+	text: { player: YuiPlayer; op: "insert" | "backspace" | "enter"; text?: string };
+	/** A Home-sheet action: resume, quit, save_state, load_state, ... */
+	system: { player: YuiPlayer; action: string; value?: unknown };
+	join: YuiPlayer;
+	leave: YuiPlayer;
+	players: YuiPlayer[];
+};
+
+export type YuiControllersApi = {
+	readonly players: YuiPlayer[];
+	/** The play session's join code, or null. The QR is drawn by `joinCard()`. */
+	readonly session: { code: string } | null;
+	ready(): Promise<void>;
+	player(id: string): YuiPlayer | null;
+	joinCard(props?: { size?: number }): YuiNode;
+	/** Each phone's layout; re-run when ctx.state or the players change. */
+	layout(fn: (player: YuiPlayer) => YuiPadNode | null | undefined): () => void;
+	on<E extends keyof YuiControllerEvents>(event: E, handler: (data: YuiControllerEvents[E]) => void): () => void;
+	haptic(player: YuiPlayerRef, pattern: number | number[]): Promise<unknown>;
+	sound(player: YuiPlayerRef | "speaker", url: string, options?: { volume?: number }): Promise<unknown>;
+	/** Pad node builders: button, choice, dpad, stick, trackpad, keyboard, list, motion, preset, text, row, column, grid, spacer. */
+	ui: Record<string, (...args: any[]) => YuiPadNode>;
+};
+
+export type YuiVirtualPadAttachment = {
+	player_id: string;
+	backend: "dsu";
+	slot: number;
+	pointer_stick?: boolean;
+	/** "host:port/slot", the same value {{virtualPad:<slot>}} expands to. */
+	address: string;
+};
+
+export type YuiVirtualPadsApi = {
+	attach(
+		player: YuiPlayerRef,
+		options: { backend?: "dsu"; slot: number; pointerStick?: boolean },
+	): Promise<YuiVirtualPadAttachment>;
+	detach(player: YuiPlayerRef): Promise<void>;
+	list(): Promise<YuiVirtualPadAttachment[]>;
+	/** The pad whose buttons the app binds to its program's hotkeys ({{systemPad}}). */
+	systemPad(): Promise<{ backend: "dsu"; slot: 0; address: string; buttons: string[] }>;
+	/** Press, release or tap (default) a system pad button by name ("Start", "L1", ...). */
+	press(button: string, action?: "press" | "release" | "tap"): Promise<void>;
 };

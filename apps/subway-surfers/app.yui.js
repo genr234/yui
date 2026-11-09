@@ -6,8 +6,25 @@ export default {
   icon: "https://img.poki-cdn.com/cdn-cgi/image/q=78,scq=50,width=80,height=44,fit=cover,f=png/c4dc286c30b8fbde45a0b5d4fe6f2146/subway-surfers-logo.png",
   category: "Games",
   description: "Run and jump through the subway tunnels!",
-  permissions: ["embed:https://ubg77.github.io", "fullscreen"],
-  
+  permissions: ["embed:https://ubg77.github.io", "fullscreen", "controllers"],
+
+  // Playable from a phone with no app code: swipes and the d-pad become
+  // arrow keys in the game; a tap is Space (hoverboard).
+  controllers: {
+    keymap: {
+      players: "host",
+      controls: [
+        {
+          type: "swipe",
+          label: "Swipe to dodge, jump and roll",
+          keys: { up: "ArrowUp", down: "ArrowDown", left: "ArrowLeft", right: "ArrowRight" },
+          tap: "Space",
+        },
+        { type: "dpad", keys: { up: "ArrowUp", down: "ArrowDown", left: "ArrowLeft", right: "ArrowRight" } },
+      ],
+    },
+  },
+
   mount(ctx) {
     return () =>
       ctx.ui.column({ gap: 12, grow: true }, [

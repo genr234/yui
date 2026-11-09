@@ -28,6 +28,7 @@
   import RefreshCwIcon from "lucide-svelte/icons/refresh-cw";
   import SmartphoneIcon from "lucide-svelte/icons/smartphone";
   import { pad, padKeyboard, remoteIntent } from "./sdk/pad";
+  import { resetControllersFocus } from "./sdk/apps/controllers";
   import { loadApps } from "./apps";
   import { resolveSubtitle } from "@/pages/subtitle";
   import {
@@ -123,6 +124,8 @@
 
   onMount(() => {
     sidebarTheme = loadSidebarTheme();
+    // An app layer left from before this overlay loaded no longer has an app.
+    void resetControllersFocus();
     void refresh();
     if (demoMode) showShell();
     const offFullscreen = (event: Event) => {

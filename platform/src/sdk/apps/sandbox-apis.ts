@@ -1,6 +1,6 @@
 /**
  * ctx APIs that cross the app sandbox boundary generically: `ctx.native`,
- * `ctx.library`, and `ctx.launch`.
+ * `ctx.library`, `ctx.launch`, `ctx.controllers` and `ctx.virtualPads`.
  *
  * Apps run in a sandboxed iframe (AppHost). `sandboxApiSource` is spliced
  * into the sandbox script and adds the APIs to the sandbox's ctx as RPC
@@ -10,23 +10,55 @@
  * without touching AppHost again.
  */
 import type { YuiContext, YuiNativeEvent } from "./types";
+import { controllersHostFor, type ControllersHost } from "./controllers";
+import { yuiControllersRuntime } from "./controllers-runtime";
 
-export const sandboxApis = ["native", "library"] as const;
+export const sandboxApis = ["native", "library", "controllers", "virtualPads"] as const;
 export type SandboxApi = (typeof sandboxApis)[number];
 
 /**
- * Runs inside the sandbox script, which defines `rpc` and `disposables`.
- * `yuiExtendContext(ctx)` adds the APIs to a ctx object and returns it.
+ * Runs inside the sandbox script, which defines `rpc`, `disposables` and
+ * `scheduleRender`. `yuiExtendContext(ctx)` adds the APIs to a ctx object
+ * and returns it; the sandbox's ctx.state calls `yuiStateChanged()` so
+ * controller layouts follow state like the app's view does.
  */
-export const sandboxApiSource = String.raw`
+export const sandboxApiSource =
+	"const yuiControllersRuntime = (" +
+	yuiControllersRuntime.toString() +
+	");\n" +
+	String.raw`
 let yuiLaunchItem = null;
 const yuiPushHandlers = new Map();
+let yuiControllers = null;
+
+function yuiStateChanged() {
+  if (yuiControllers) yuiControllers.stateChanged();
+}
+
+function yuiControllersApi() {
+  if (!yuiControllers) {
+    yuiControllers = yuiControllersRuntime({
+      call: (method, args) => rpc("controllers", method, args || []),
+      changed: () => { if (typeof scheduleRender === "function") scheduleRender(); }
+    });
+    disposables.add(() => { yuiControllers && yuiControllers.dispose(); yuiControllers = null; });
+  }
+  return yuiControllers.api;
+}
+
+function yuiPlayerId(player) {
+  return typeof player === "string" ? player : player && player.id;
+}
 
 window.addEventListener("message", (event) => {
   const message = event.data;
   if (!message || message.yuiAppHost !== true || message.type !== "push") return;
   if (message.api === "launch" && message.event === "item") {
     yuiLaunchItem = message.data ?? null;
+    return;
+  }
+  if (message.api === "controllers") {
+    if (yuiControllers) yuiControllers.push(message.event, message.data);
     return;
   }
   const set = yuiPushHandlers.get(message.api + ":" + message.event);
@@ -63,6 +95,14 @@ function yuiExtendContext(ctx) {
     list: () => rpc("library", "list"),
     remove: (ids) => rpc("library", "remove", [ids])
   };
+  Object.defineProperty(ctx, "controllers", { get: yuiControllersApi, enumerable: true, configurable: true });
+  ctx.virtualPads = {
+    attach: (player, options) => rpc("virtualPads", "attach", [yuiPlayerId(player), options]),
+    detach: (player) => rpc("virtualPads", "detach", [yuiPlayerId(player)]),
+    list: () => rpc("virtualPads", "list"),
+    systemPad: () => rpc("virtualPads", "systemPad"),
+    press: (button, action) => rpc("virtualPads", "press", [button, action || "tap"])
+  };
   ctx.launch = { item: yuiLaunchItem };
   return ctx;
 }
@@ -74,6 +114,16 @@ export const notASandboxApi = Symbol("notASandboxApi");
 type Push = (api: string, event: string, data: unknown) => void;
 
 const nativeEvents = new Set<YuiNativeEvent>(["status", "started", "exited", "crashed"]);
+const controllerCalls = new Set(["layouts", "frames", "haptic", "sound"]);
+const virtualPadCalls = new Set(["attach", "detach", "list", "systemPad", "press"]);
+/** One sandbox per host ctx receives controller pushes; a reloaded sandbox replaces it. */
+const sandboxPushes = new WeakMap<ControllersHost, () => void>();
+
+function hostOf(ctx: YuiContext) {
+	const host = controllersHostFor(ctx);
+	if (!host) throw new Error("YUI_CONTROLLERS: not available");
+	return host;
+}
 
 export async function handleSandboxApiCall(
 	ctx: YuiContext,
@@ -104,7 +154,19 @@ export async function handleSandboxApiCall(
 			return ctx.library.list();
 		case "library.remove":
 			return ctx.library.remove(first);
+		case "controllers.start": {
+			const host = hostOf(ctx);
+			const state = await host.call("start", []);
+			sandboxPushes.get(host)?.();
+			sandboxPushes.set(
+				host,
+				host.addPush((event, data) => push("controllers", event, data)),
+			);
+			return state;
+		}
 		default:
+			if (api === "controllers" && controllerCalls.has(method)) return hostOf(ctx).call(method, args);
+			if (api === "virtualPads" && virtualPadCalls.has(method)) return hostOf(ctx).virtualPads(method, args);
 			return notASandboxApi;
 	}
 }

@@ -6,8 +6,17 @@ export default {
   icon: "https://img.poki-cdn.com/cdn-cgi/image/q=78,scq=50,width=80,height=44,fit=cover,f=png/c4dc286c30b8fbde45a0b5d4fe6f2146/fruit-ninja-logo.png",
   category: "Games",
   description: "slice and dice some fruit, it's fun!",
-  permissions: ["embed:https://www.coolmathgames.com", "fullscreen"],
-  
+  permissions: ["embed:https://www.coolmathgames.com", "fullscreen", "controllers"],
+
+  // Playable from a phone with no app code: the phone is a touch surface
+  // mapped onto the game's frame, and dragging is a left-button mouse drag.
+  controllers: {
+    keymap: {
+      players: "host",
+      controls: [{ type: "trackpad", mode: "absolute", mouse: "drag", label: "Swipe to slice" }],
+    },
+  },
+
   mount(ctx) {
     return () =>
       ctx.ui.column({ gap: 12, grow: true }, [
