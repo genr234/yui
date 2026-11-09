@@ -75,7 +75,7 @@ class PlayControllerTest < ActionDispatch::IntegrationTest
     assert_equal true, player["host"]
     assert_equal false, player["connected"]
     assert_equal true, player["speaker"]
-    assert_equal %w[color connected host id name slot speaker], player.keys.sort
+    assert_equal %w[account_linked color connected host id name slot speaker], player.keys.sort
     assert cookies[:yui_player].present?
   end
 

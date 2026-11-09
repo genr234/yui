@@ -14,6 +14,7 @@
 #   * the player cookie being SameSite=Lax (never sent on cross-site POSTs).
 class PlayController < ActionController::Base
   PLAYER_COOKIE = :yui_player
+  ACCOUNT_COOKIE = :yui_account
   COOKIE_LIFETIME = 1.day
   class_attribute :pad_index, default: Rails.public_path.join("pad", "index.html")
 
@@ -41,7 +42,9 @@ class PlayController < ActionController::Base
 
   def info
     player = cookie_player
+    link = cookie_link
     render json: {
+      account_name: link&.account&.name,
       code: @play_session.code,
       kiosk_name: @play_session.kiosk.name,
       lobby_open: @play_session.lobby_open,
@@ -102,7 +105,16 @@ class PlayController < ActionController::Base
     render_joined(player)
   end
 
+  # `use_account`: play as the phone's linked account (plan 10). Absent leaves
+  # the choice as it was; a phone without a live link always joins as a guest.
+  def apply_account_choice(player)
+    return unless params.key?(:use_account)
+
+    player.use_account!(ActiveModel::Type::Boolean.new.cast(params[:use_account]) ? cookie_link : nil)
+  end
+
   def render_joined(player)
+    apply_account_choice(player)
     render json: {
       player: player.as_player_json,
       session: { id: @play_session.id.to_s, code: @play_session.code }
@@ -120,6 +132,26 @@ class PlayController < ActionController::Base
     return if player.kicked? && !include_kicked
 
     player
+  end
+
+  # The phone's live account link (plan 10), or nil.
+  def cookie_link
+    PhoneLink.from_cookie(cookies.signed[account_cookie_name])
+  end
+
+  def account_cookie_name
+    n = PadSim.slot(params[:sim])
+    n ? :"yui_account_sim#{n}" : ACCOUNT_COOKIE
+  end
+
+  def write_account_cookie(link, token)
+    cookies.signed[account_cookie_name] = {
+      value: PhoneLink.cookie_value(link, token),
+      expires: PhoneLink::COOKIE_LIFETIME.from_now,
+      httponly: true,
+      same_site: :lax,
+      secure: Rails.env.production?
+    }
   end
 
   # `yui_player`, or a per-pad cookie for /sim iframes (development and test only, see PadSim).

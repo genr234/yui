@@ -20,6 +20,7 @@ Rails.application.routes.draw do
       delete "recent_operations", to: "accounts#clear_recent_operations"
     end
     resources :pairing_codes, only: [ :create ]
+    resources :phone_links, only: [ :create, :destroy ]
     resources :kiosk_commands, only: [ :create ]
   end
 
@@ -29,6 +30,7 @@ Rails.application.routes.draw do
       post "sync/push", to: "sync#push"
       get "sync/pull", to: "sync#pull"
       patch "commands/:id", to: "commands#update"
+      post "phone_link_codes", to: "phone_link_codes#create"
     end
   end
 
@@ -41,6 +43,10 @@ Rails.application.routes.draw do
           post "players/:player_id/kick", to: "players#kick", as: :kick_player
           post "players/:player_id/host", to: "players#host", as: :host_player
           post "players/:player_id/speaker", to: "players#speaker", as: :speaker_player
+          get "players/:player_id/profiles/:app_id", to: "profiles#show", as: :player_profile,
+            constraints: { app_id: /[A-Za-z0-9._-]+/ }, format: false
+          put "players/:player_id/profiles/:app_id", to: "profiles#update",
+            constraints: { app_id: /[A-Za-z0-9._-]+/ }, format: false
         end
       end
     end
@@ -50,6 +56,12 @@ Rails.application.routes.draw do
     get "info", action: :info, as: :play_info
     post "join", action: :join, as: :play_join
     get "ice", action: :ice, as: :play_ice
+    post "account", to: "play/accounts#create", as: :play_account
+    patch "account", to: "play/accounts#update"
+    delete "account", to: "play/accounts#destroy"
+    post "profile_grants", to: "play/accounts#grant", as: :play_profile_grants
+    delete "profile_grants/:app_id", to: "play/accounts#revoke_grant", as: :play_profile_grant,
+      constraints: { app_id: /[A-Za-z0-9._-]+/ }, format: false
   end
   # Pad simulator: four pads in iframes (development and test only, never production).
   get "sim", to: "pad_sim#show", as: :pad_sim if Rails.env.local?

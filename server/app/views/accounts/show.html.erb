@@ -29,6 +29,28 @@
       <%= button_to "Create pairing code", account_pairing_codes_path(@account), method: :post, class: "button button--primary" %>
     </section>
 
+    <section class="project-section project-section--pairing">
+      <div>
+        <h2>Phones</h2>
+        <% if @phone_links.any? %>
+          <ul class="plain-list">
+            <% @phone_links.each do |link| %>
+              <li>
+                <span>
+                  <strong><%= link.label.presence || "Phone" %></strong>
+                  <small>Last used <%= link.last_used_at ? time_ago_in_words(link.last_used_at) + " ago" : "never" %></small>
+                </span>
+                <%= button_to "Revoke", account_phone_link_path(@account, link), method: :delete, class: "button button--ghost" %>
+              </li>
+            <% end %>
+          </ul>
+        <% else %>
+          <p>No phones play as this account yet.</p>
+        <% end %>
+      </div>
+      <%= button_to "Link a phone", account_phone_links_path(@account), method: :post, class: "button button--primary" %>
+    </section>
+
     <section class="project-grid" aria-label="Account workspace">
       <article class="project-cell">
         <h2>Kiosks</h2>

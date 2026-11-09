@@ -5,6 +5,9 @@ class Player < ApplicationRecord
   SLOT_ATTEMPTS = 5
 
   belongs_to :play_session
+  # Set while the player plays as a Yui account (plan 10); never sent to the kiosk.
+  belongs_to :account, optional: true
+  belongs_to :phone_link, optional: true
 
   scope :active, -> { where(kicked_at: nil) }
 
@@ -69,6 +72,22 @@ class Player < ApplicationRecord
     kicked_at.present?
   end
 
+  # Plays as the link's account this session, or as a guest with nil.
+  # Announces the change to the kiosk and the phone.
+  def use_account!(link)
+    account = link&.live? ? link.account : nil
+    return if account_id == account&.id && phone_link_id == link&.id
+
+    update!(account: account, phone_link: account ? link : nil)
+    link&.touch(:last_used_at) if account
+    broadcast_updated
+  end
+
+  # The account the kiosk may use profiles for: linked, link still live.
+  def profile_account
+    account if account && phone_link&.live?
+  end
+
   # Usable for signaling: not kicked and the session is still running.
   def playable?
     !kicked? && play_session.active?
@@ -101,6 +120,7 @@ class Player < ApplicationRecord
       color: color,
       host: host,
       speaker: speaker,
+      account_linked: account_id.present?,
       connected: connected
     }
   end

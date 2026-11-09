@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_08_200000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_09_000100) do
   create_table "account_state_records", force: :cascade do |t|
     t.integer "account_id", null: false
     t.string "collection", null: false
@@ -145,6 +145,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_200000) do
     t.string "code_digest", null: false
     t.datetime "created_at", null: false
     t.datetime "expires_at", null: false
+    t.string "purpose", default: "kiosk", null: false
     t.datetime "updated_at", null: false
     t.datetime "used_at"
     t.index ["account_id"], name: "index_pairing_codes_on_account_id"
@@ -164,6 +165,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_200000) do
     t.index ["webauthn_id"], name: "index_passkey_credentials_on_webauthn_id", unique: true
   end
 
+  create_table "phone_links", force: :cascade do |t|
+    t.integer "account_id", null: false
+    t.datetime "created_at", null: false
+    t.string "label"
+    t.datetime "last_used_at"
+    t.datetime "revoked_at"
+    t.string "token_digest", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_phone_links_on_account_id"
+    t.index ["token_digest"], name: "index_phone_links_on_token_digest", unique: true
+  end
+
   create_table "play_sessions", force: :cascade do |t|
     t.string "code", null: false
     t.datetime "created_at", null: false
@@ -177,7 +190,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_200000) do
     t.index ["kiosk_id"], name: "index_play_sessions_on_kiosk_id"
   end
 
+  create_table "player_profiles", force: :cascade do |t|
+    t.integer "account_id", null: false
+    t.string "app_id", null: false
+    t.datetime "created_at", null: false
+    t.text "data"
+    t.datetime "updated_at", null: false
+    t.integer "version", default: 0, null: false
+    t.index ["account_id", "app_id"], name: "index_player_profiles_on_account_id_and_app_id", unique: true
+    t.index ["account_id"], name: "index_player_profiles_on_account_id"
+  end
+
   create_table "players", force: :cascade do |t|
+    t.integer "account_id"
     t.string "color", null: false
     t.boolean "connected", default: false, null: false
     t.string "connection_nonce"
@@ -186,14 +211,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_200000) do
     t.datetime "kicked_at"
     t.datetime "last_seen_at"
     t.string "name", null: false
+    t.integer "phone_link_id"
     t.integer "play_session_id", null: false
     t.integer "slot"
     t.boolean "speaker", default: false, null: false
     t.string "token_digest", null: false
     t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_players_on_account_id"
+    t.index ["phone_link_id"], name: "index_players_on_phone_link_id"
     t.index ["play_session_id", "slot"], name: "index_players_on_session_active_slot", unique: true, where: "slot IS NOT NULL AND kicked_at IS NULL"
     t.index ["play_session_id"], name: "index_players_on_play_session_id"
     t.index ["token_digest"], name: "index_players_on_token_digest", unique: true
+  end
+
+  create_table "profile_grants", force: :cascade do |t|
+    t.integer "account_id", null: false
+    t.string "app_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "app_id"], name: "index_profile_grants_on_account_id_and_app_id", unique: true
+    t.index ["account_id"], name: "index_profile_grants_on_account_id"
   end
 
   create_table "users", force: :cascade do |t|
@@ -216,6 +253,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_200000) do
   add_foreign_key "kiosks", "accounts"
   add_foreign_key "pairing_codes", "accounts"
   add_foreign_key "passkey_credentials", "users"
+  add_foreign_key "phone_links", "accounts"
   add_foreign_key "play_sessions", "kiosks"
+  add_foreign_key "player_profiles", "accounts"
+  add_foreign_key "players", "accounts"
+  add_foreign_key "players", "phone_links"
   add_foreign_key "players", "play_sessions"
+  add_foreign_key "profile_grants", "accounts"
 end

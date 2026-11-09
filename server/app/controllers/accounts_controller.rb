@@ -35,6 +35,7 @@ class AccountsController < ApplicationController
   def show
     @pairing_codes = @account.pairing_codes.order(created_at: :desc).limit(10)
     @kiosks = @account.kiosks.order(:name)
+    @phone_links = @account.phone_links.live.order(last_used_at: :desc)
     @state_records = @account.account_state_records.order(:collection, :record_id)
     @assets = @account.assets.includes(:kiosk_assets).order(created_at: :desc)
     @operations = @account.kiosk_operations
