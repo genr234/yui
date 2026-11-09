@@ -14,8 +14,14 @@ module PlaySessionTestHelper
     play_session
   end
 
-  def join_player(play_session, name: "Ann", color: "blue")
-    Player.join!(play_session, name: name, color: color)
+  def join_player(play_session, name: "Ann", color: "blue", avatar: nil)
+    Player.join!(play_session, name: name, color: color, avatar: avatar)
+  end
+
+  # A data URL whose bytes start like a JPEG, padded to about `bytes` long.
+  def jpeg_avatar(bytes: 600)
+    payload = "\xFF\xD8\xFF\xE0".b + SecureRandom.random_bytes([ bytes * 3 / 4 - 4, 0 ].max)
+    "data:image/jpeg;base64,#{Base64.strict_encode64(payload)}"
   end
 
   # Signs a cookie value the way the app's cookie jar does.

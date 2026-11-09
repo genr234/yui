@@ -3,9 +3,12 @@
   import type { ControlMessage, Hello, Node, Player } from '@yui/protocol'
   import LayoutView from './layout/LayoutView.svelte'
   import HomeSheet from './HomeSheet.svelte'
+  import ProfileSheet from './ProfileSheet.svelte'
+  import { enqueueAsk, type ProfileAsk } from './account'
+  import Avatar from './Avatar.svelte'
   import SimGyro from './SimGyro.svelte'
   import { colorHex } from './colors'
-  import { cableUrl, getIce, simSlotFromQuery } from './api'
+  import { cableUrl, forgetAccount, getIce, grantProfile, linkAccount, simSlotFromQuery, updateAvatar, useAccount } from './api'
   import { InputModel } from './input/model'
   import { InputLoop } from './input/loop'
   import { MotionController } from './input/motion'
@@ -32,6 +35,8 @@
   export let code: string
   export let player: Player
   export let kioskName = ''
+  /** The Yui account linked to this phone, if any (plan 10). */
+  export let accountName: string | null = null
   /** Local layout preview (dev `?demo=layout`): no session, events go to `onDemoEvent`. */
   export let demoTree: Node | null = null
   export let onDemoEvent: (line: string) => void = () => {}
@@ -115,6 +120,11 @@
       case 'sound':
         playSound(msg.url, msg.volume ?? 1)
         return
+      case 'profile_request':
+        // Only a player who plays as an account can be asked; others say no at once.
+        if (!player.account_linked) send({ t: 'profile_reply', app_id: msg.app_id, granted: false })
+        else asks = enqueueAsk(asks, { app_id: msg.app_id, app_name: msg.app_name })
+        return
       case 'system':
         if (msg.action === 'sensitive') sensitive = msg.value === true
         else if (msg.action === 'resume') homeOpen = false
@@ -126,6 +136,71 @@
         }
         return
     }
+  }
+
+  // ------------------------------------------------------ profile requests
+  let asks: ProfileAsk[] = []
+  let askBusy = false
+
+  function reply(app_id: string, granted: boolean) {
+    send({ t: 'profile_reply', app_id, granted })
+  }
+
+  /** Answers every waiting ask with no (the player left the account, or the session ended). */
+  function declineAll() {
+    for (const a of asks) reply(a.app_id, false)
+    asks = []
+  }
+
+  async function answerAsk(allow: boolean) {
+    const ask = asks[0]
+    if (!ask || askBusy) return
+    askBusy = true
+    let granted = false
+    if (allow) {
+      try {
+        if (!demoTree) await grantProfile(code, ask.app_id)
+        granted = true
+      } catch {
+        granted = false
+      }
+    }
+    // The queue may have been cleared while the request was in flight.
+    if (asks[0]?.app_id === ask.app_id) {
+      asks = asks.slice(1)
+      reply(ask.app_id, granted)
+    }
+    askBusy = false
+  }
+
+  // ---------------------------------------------------------------- account
+  function applyAccount(a: { account_name: string | null; account_linked: boolean }) {
+    accountName = a.account_name ?? (a.account_linked ? accountName : null)
+    player = { ...player, account_linked: a.account_linked }
+  }
+  // Leaving the account (here or from the kiosk) answers every waiting game with no.
+  $: if (!player.account_linked && asks.length > 0) declineAll()
+  async function accountUse(use: boolean) {
+    if (demoTree) return applyAccount({ account_name: accountName, account_linked: use })
+    applyAccount(await useAccount(code, use))
+  }
+  async function accountForget() {
+    if (demoTree) return applyAccount({ account_name: null, account_linked: false })
+    const a = await forgetAccount(code)
+    accountName = null
+    applyAccount(a)
+  }
+  async function accountLink(link_code: string) {
+    applyAccount(await linkAccount(code, link_code))
+  }
+
+  /** Home sheet: rejoin with a new avatar (Rails broadcasts it to the kiosk). */
+  async function changeAvatar(avatar: string | null) {
+    if (demoTree) {
+      player = { ...player, avatar }
+      return
+    }
+    player = (await updateAvatar(code, avatar)).player
   }
 
   function startSession() {
@@ -151,6 +226,7 @@
             model.releaseAll()
             loop.setEnabled(false)
             motion.stop()
+            asks = []
             onEnd(s)
           }
         },
@@ -290,7 +366,9 @@
 
 <div class="pad" class:landscape style="--player:{swatch}">
   <header>
-    <span class="slot">{player.slot ? `P${player.slot}` : 'Spectator'}</span>
+    <span class="slot" class:with-avatar={!!player.avatar}
+      ><Avatar avatar={player.avatar} size={26} />{player.slot ? `P${player.slot}` : 'Spectator'}</span
+    >
     <span class="name">{player.name}</span>
     {#if player.speaker}
       <span class="speaker-badge" title="This phone plays the sound" aria-label="Speaker">
@@ -320,6 +398,9 @@
       {/if}
     {:else}
       <section class="waiting">
+        {#if player.avatar}
+          <div class="big-avatar"><Avatar avatar={player.avatar} size={112} /></div>
+        {/if}
         <div class="badge">{player.slot ? `P${player.slot}` : '—'}</div>
         <h1>{conn === 'online' || conn === 'fallback' ? "You're in" : connLabel + '…'}</h1>
         <p class="muted">
@@ -352,7 +433,15 @@
       onQuit={quit}
       onVolume={changeVolume}
       onSpeaker={() => send({ t: 'system', action: 'be_speaker' })}
+      onAvatar={changeAvatar}
+      {accountName}
+      onAccountUse={accountUse}
+      onAccountForget={accountForget}
+      onAccountLink={accountLink}
     />
+  {/if}
+  {#if asks.length > 0 && player.account_linked}
+    <ProfileSheet ask={asks[0]} account={accountName} busy={askBusy} onAnswer={answerAsk} />
   {/if}
 </div>
 
@@ -378,11 +467,17 @@
     background: rgba(13, 24, 37, 0.6);
   }
   .slot {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     padding: 6px 12px;
     border-radius: var(--yui-radius-badge);
     background: var(--player);
     color: #fff;
     font-weight: 800;
+  }
+  .slot.with-avatar {
+    padding: 3px 12px 3px 3px;
   }
   .name {
     flex: 1;
@@ -524,6 +619,13 @@
     text-align: center;
     max-width: 480px;
     margin: 0 auto;
+  }
+  .big-avatar {
+    padding: 6px;
+    border-radius: 50%;
+    background: var(--player);
+    box-shadow: 0 var(--yui-lip) 0 rgba(0, 0, 0, 0.35);
+    margin-bottom: -4px;
   }
   .badge {
     min-width: 168px;

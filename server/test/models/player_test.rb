@@ -209,4 +209,47 @@ class PlayerTest < ActiveSupport::TestCase
     assert player.mark_disconnected!("new")
     assert_not player.reload.connected
   end
+
+  test "avatar is an emoji or a small jpeg or webp selfie" do
+    play_session = start_session
+    webp = "data:image/webp;base64,#{Base64.strict_encode64("RIFF\x00\x00\x00\x00WEBPVP8 ".b)}"
+
+    [ nil, "\u{1F98A}", "\u{1F1EF}\u{1F1F5}", "\u2764\uFE0F", "\u{1F44B}\u{1F3FD}", jpeg_avatar, webp ].each do |avatar|
+      player, = join_player(play_session, avatar: avatar)
+      if avatar.nil?
+        assert_nil player.avatar
+      else
+        assert_equal avatar, player.avatar
+      end
+      play_session.kick!(player)
+    end
+
+    assert_nil join_player(play_session, avatar: "  ").first.avatar
+  end
+
+  test "rejects avatars that aren't one emoji or a capped jpeg or webp data url" do
+    play_session = start_session
+    png = "data:image/png;base64,#{Base64.strict_encode64("\x89PNG\r\n".b)}"
+    not_jpeg = "data:image/jpeg;base64,#{Base64.strict_encode64("<svg onload=alert(1)>")}"
+    svg = "data:image/svg+xml;base64,#{Base64.strict_encode64("<svg/>")}"
+    invalid = [
+      "A", "1", "AB", "<b>", "\u{1F98A}\u{1F98A}", "\u{1F98A}x", "\u00E9", "\u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u200D\u{1F466}",
+      png, svg, not_jpeg, "data:image/jpeg;base64,not base64!", "data:image/jpeg,raw",
+      "javascript:alert(1)", jpeg_avatar(bytes: Player::AVATAR_IMAGE_MAX_BYTES + 100)
+    ]
+    invalid.each do |avatar|
+      error = assert_raises(ActiveRecord::RecordInvalid, "accepted #{avatar[0, 40].inspect}") do
+        join_player(play_session, avatar: avatar)
+      end
+      assert error.record.errors.key?(:avatar)
+    end
+  end
+
+  test "the player json carries the avatar" do
+    player, = join_player(start_session, avatar: "\u{1F98A}")
+    assert_equal "\u{1F98A}", player.as_player_json[:avatar]
+    player.update!(avatar: nil)
+    assert player.as_player_json.key?(:avatar)
+    assert_nil player.as_player_json[:avatar]
+  end
 end

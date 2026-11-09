@@ -15,6 +15,21 @@ export interface Player {
   connected: boolean;
   /** This phone plays the kiosk's audio (contracts §2). Absent on older kiosks. */
   speaker?: boolean;
+  /**
+   * An emoji, or a selfie as a `data:image/jpeg|webp;base64,` URL (contracts §2).
+   * Render it as an image only when `avatarImage` returns a URL; otherwise as text.
+   */
+  avatar?: string | null;
+  /** This player plays as a Yui account this session (plan 10). Never says which account. */
+  account_linked?: boolean;
+}
+
+const AVATAR_IMAGE_PREFIXES = ["data:image/jpeg;base64,", "data:image/webp;base64,"];
+
+/** The avatar's image URL when it is a JPEG/WebP data URL, otherwise null (show it as text). */
+export function avatarImage(avatar: string | null | undefined): string | null {
+  if (typeof avatar !== "string") return null;
+  return AVATAR_IMAGE_PREFIXES.some((prefix) => avatar.startsWith(prefix)) ? avatar : null;
 }
 
 export interface IceServer {
@@ -85,6 +100,18 @@ export interface System {
   action: SystemAction;
   value?: unknown;
 }
+/** kiosk -> pad: a game asks to keep a profile for this player (plan 10). */
+export interface ProfileRequest {
+  t: "profile_request";
+  app_id: string;
+  app_name: string;
+}
+/** pad -> kiosk: the player's answer to `profile_request`. */
+export interface ProfileReply {
+  t: "profile_reply";
+  app_id: string;
+  granted: boolean;
+}
 export interface Ping {
   t: "ping";
   id: number | string;
@@ -106,6 +133,8 @@ export type ControlMessage =
   | Sound
   | PlayerMsg
   | System
+  | ProfileRequest
+  | ProfileReply
   | Ping
   | Pong;
 
@@ -242,6 +271,8 @@ function checkPlayer(p: unknown, where: string): void {
   if (!isStr(p.color)) fail(`${where}: player.color must be a string`);
   if (!isBool(p.host)) fail(`${where}: player.host must be a boolean`);
   if (!isBool(p.connected)) fail(`${where}: player.connected must be a boolean`);
+  if (!(p.avatar === undefined || p.avatar === null || isStr(p.avatar))) fail(`${where}: player.avatar must be a string or null`);
+  if (!(p.account_linked === undefined || isBool(p.account_linked))) fail(`${where}: player.account_linked must be a boolean`);
 }
 
 function checkNode(n: unknown, depth = 0): void {
@@ -308,6 +339,14 @@ export function parseControl(json: string): ControlMessage {
       break;
     case "system":
       if (!isStr(m.action) || !SYSTEM_ACTIONS.includes(m.action)) fail("system: bad action");
+      break;
+    case "profile_request":
+      if (!isStr(m.app_id) || m.app_id === "") fail("profile_request: app_id must be a non-empty string");
+      if (!isStr(m.app_name)) fail("profile_request: app_name must be a string");
+      break;
+    case "profile_reply":
+      if (!isStr(m.app_id) || m.app_id === "") fail("profile_reply: app_id must be a non-empty string");
+      if (!isBool(m.granted)) fail("profile_reply: granted must be a boolean");
       break;
     case "ping":
     case "pong":

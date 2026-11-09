@@ -5,7 +5,7 @@
 	import Volume2Icon from "lucide-svelte/icons/volume-2";
 	import XIcon from "lucide-svelte/icons/x";
 	import JoinQr from "./JoinQr.svelte";
-	import { linkQuality, pad, padAction, playerSwatch, type PadPlayer, type PadState } from "../sdk/pad";
+	import { avatarKind, linkQuality, pad, padAction, playerSwatch, type PadPlayer, type PadState } from "../sdk/pad";
 
 	/** Session and roster, owned by the top bar. */
 	export let padState: PadState = { session: null, players: [] };
@@ -120,15 +120,23 @@
 			<span class="session-squares" aria-hidden="true">
 				{#each slots as slot}
 					{@const player = playerBySlot.get(slot)}
+					{@const avatar = player ? avatarKind(player.avatar) : null}
 					<span
 						class="player-square"
 						class:open={!player}
 						class:away={player && !player.connected}
 						class:arrive={player && arrived[player.id]}
+						class:has-avatar={avatar}
 						title={squareTitle(slot)}
 						style={player ? `background: ${swatch(player)}` : ""}
 					>
-						P{slot}
+						{#if avatar?.kind === "image"}
+							<img class="player-avatar" src={avatar.src} alt="" draggable="false" />
+						{:else if avatar}
+							<span class="player-avatar emoji">{avatar.text}</span>
+						{:else}
+							P{slot}
+						{/if}
 					</span>
 				{/each}
 			</span>
@@ -169,8 +177,19 @@
 			<ul class="session-players" aria-label="Players">
 				{#each slots as slot}
 					{@const player = playerBySlot.get(slot)}
+					{@const avatar = player ? avatarKind(player.avatar) : null}
 					<li class="session-player" class:empty={!player}>
-						<span class="session-slot" style={player ? `background: ${swatch(player)}` : ""}>P{slot}</span>
+						<span class="session-slot" class:has-avatar={avatar} style={player ? `background: ${swatch(player)}` : ""}>
+							{#if avatar?.kind === "image"}
+								<img class="player-avatar" src={avatar.src} alt="" draggable="false" />
+								<span class="session-slot-tag">P{slot}</span>
+							{:else if avatar}
+								<span class="player-avatar emoji">{avatar.text}</span>
+								<span class="session-slot-tag">P{slot}</span>
+							{:else}
+								P{slot}
+							{/if}
+						</span>
 						{#if player}
 							<span class="session-player-name">
 								<strong>{player.name}</strong>

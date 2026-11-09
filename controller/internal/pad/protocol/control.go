@@ -18,6 +18,9 @@ type Player struct {
 	// AccountLinked: this player is playing as a Yui account this session.
 	// Never the account itself (plan 10, P5).
 	AccountLinked bool `json:"account_linked"`
+	// Avatar is an emoji or a small data:image/jpeg|webp;base64 selfie
+	// (contracts §2). Rails clears it when the session ends.
+	Avatar string `json:"avatar,omitempty"`
 }
 
 // Node is a layout tree node (same shape as ctx.ui).
@@ -150,6 +153,12 @@ func checkPlayer(raw map[string]json.RawMessage, key string) error {
 	for _, k := range []string{"id", "slot", "name", "color", "host", "connected"} {
 		if _, ok := f[k]; !ok {
 			return fmt.Errorf("%s.%s missing", key, k)
+		}
+	}
+	// account_linked is a bool when present (null is not a bool).
+	if v, ok := f["account_linked"]; ok {
+		if t := bytes.TrimSpace(v); !bytes.Equal(t, []byte("true")) && !bytes.Equal(t, []byte("false")) {
+			return fmt.Errorf("%s.account_linked must be a boolean", key)
 		}
 	}
 	var pl Player
@@ -289,6 +298,18 @@ func ParseControl(data []byte) (any, error) {
 		}
 		if !systemActions[m.Action] {
 			return nil, wrap(errors.New("bad action"))
+		}
+		return m, nil
+	case "profile_request":
+		if err := need("app_id", "app_name"); err != nil {
+			return nil, wrap(err)
+		}
+		var m ProfileRequest
+		if err := decode(data, &m); err != nil {
+			return nil, wrap(err)
+		}
+		if m.AppID == "" {
+			return nil, wrap(errors.New("app_id required"))
 		}
 		return m, nil
 	case "profile_reply":

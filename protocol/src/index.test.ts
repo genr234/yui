@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { decodeInput, encodeInput, hexToBytes, inputToHex, parseControl, seqNewer, INPUT_SIZE } from "./index";
+import { avatarImage, decodeInput, encodeInput, hexToBytes, inputToHex, parseControl, seqNewer, INPUT_SIZE } from "./index";
 
 const fx = join(import.meta.dir, "..", "fixtures");
 const load = (dir: string) =>
@@ -67,5 +67,29 @@ describe("system sensitive", () => {
   test("kiosk can flag a sensitive surface", () => {
     const m = parseControl('{"t":"system","action":"sensitive","value":true}');
     expect(m).toEqual({ t: "system", action: "sensitive", value: true });
+  });
+});
+
+describe("profile messages (plan 10)", () => {
+  test("request and reply parse", () => {
+    expect(parseControl('{"t":"profile_request","app_id":"a.b","app_name":"Game"}')).toEqual({ t: "profile_request", app_id: "a.b", app_name: "Game" });
+    expect(parseControl('{"t":"profile_reply","app_id":"a.b","granted":false}')).toEqual({ t: "profile_reply", app_id: "a.b", granted: false });
+  });
+  test("rejects bad shapes", () => {
+    expect(() => parseControl('{"t":"profile_request","app_id":"a.b"}')).toThrow();
+    expect(() => parseControl('{"t":"profile_reply","app_id":5,"granted":true}')).toThrow();
+  });
+});
+
+describe("avatarImage", () => {
+  test("only jpeg and webp base64 data urls are images", () => {
+    expect(avatarImage("data:image/jpeg;base64,/9j/4AAQ")).toBe("data:image/jpeg;base64,/9j/4AAQ");
+    expect(avatarImage("data:image/webp;base64,UklGRg==")).toBe("data:image/webp;base64,UklGRg==");
+    expect(avatarImage("data:image/svg+xml;base64,PHN2Zy8+")).toBeNull();
+    expect(avatarImage("javascript:alert(1)")).toBeNull();
+    expect(avatarImage(" data:image/jpeg;base64,/9j/")).toBeNull();
+    expect(avatarImage("🦊")).toBeNull();
+    expect(avatarImage(null)).toBeNull();
+    expect(avatarImage(undefined)).toBeNull();
   });
 });

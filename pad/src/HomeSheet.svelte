@@ -1,6 +1,10 @@
 <script lang="ts">
   import type { Player } from '@yui/protocol'
   import { colorHex } from './colors'
+  import Avatar from './Avatar.svelte'
+  import AvatarPicker from './AvatarPicker.svelte'
+  import CodeEntry from './CodeEntry.svelte'
+  import { friendlyError } from './api'
 
   export let player: Player
   export let kioskName = ''
@@ -9,9 +13,77 @@
   export let onQuit: () => void
   export let onVolume: (v: number) => void
   export let onSpeaker: () => void
+  /** Saves a new avatar (null removes it). Rejects when the kiosk refused it. */
+  export let onAvatar: (avatar: string | null) => Promise<void>
+  /** The Yui account linked to this phone, if any (plan 10). */
+  export let accountName: string | null = null
+  /** Play as the account (true) or as a guest (false) this session. Rejects on failure. */
+  export let onAccountUse: (use: boolean) => Promise<void> = async () => {}
+  /** Forget the link on this phone. */
+  export let onAccountForget: () => Promise<void> = async () => {}
+  /** Redeem a phone code. */
+  export let onAccountLink: (code: string) => Promise<void> = async () => {}
 
   let confirmQuit = false
   let speakerAsked = false
+  let editingAvatar = false
+  let draftAvatar: string | null = null
+  let savingAvatar = false
+  let avatarError = ''
+
+  function editAvatar() {
+    draftAvatar = player.avatar ?? null
+    avatarError = ''
+    editingAvatar = true
+  }
+
+  async function saveAvatar() {
+    savingAvatar = true
+    avatarError = ''
+    try {
+      await onAvatar(draftAvatar)
+      editingAvatar = false
+    } catch {
+      avatarError = "Couldn't save that avatar. Try again."
+    } finally {
+      savingAvatar = false
+    }
+  }
+
+  let accountBusy = false
+  let accountError = ''
+  let confirmForget = false
+  let enteringCode = false
+
+  $: usingAccount = player.account_linked === true
+  $: label = accountName || 'your Yui account'
+
+  async function account(fn: () => Promise<void>): Promise<boolean> {
+    accountBusy = true
+    accountError = ''
+    try {
+      await fn()
+      return true
+    } catch (e) {
+      accountError = friendlyError(e)
+      return false
+    } finally {
+      accountBusy = false
+    }
+  }
+
+  function forget() {
+    if (!confirmForget) {
+      confirmForget = true
+      return
+    }
+    confirmForget = false
+    void account(onAccountForget)
+  }
+
+  async function link(code: string) {
+    if (await account(() => onAccountLink(code))) enteringCode = false
+  }
 
   function quit() {
     if (!confirmQuit) {
@@ -26,14 +98,51 @@
 <div class="scrim" role="presentation" on:click|self={onResume}>
   <div class="sheet" role="dialog" aria-modal="true" aria-label="Home" style="--player:{colorHex(player.color)}">
     <header>
-      <span class="slot">{player.slot ? `P${player.slot}` : 'Spectator'}</span>
+      <span class="slot" class:with-avatar={!!player.avatar}
+        ><Avatar avatar={player.avatar} size={40} />{player.slot ? `P${player.slot}` : 'Spectator'}</span
+      >
       <div class="who">
         <strong>{player.name}</strong>
         <span class="muted">{kioskName || 'Yui'}{player.host ? ' · host' : ''}</span>
       </div>
+      {#if !editingAvatar}
+        <button class="link" type="button" on:click={editAvatar}>{player.avatar ? 'Change avatar' : 'Add avatar'}</button>
+      {/if}
     </header>
 
+    {#if editingAvatar}
+      <section class="avatar-edit" aria-label="Avatar">
+        <AvatarPicker bind:value={draftAvatar} disabled={savingAvatar} />
+        {#if avatarError}<p class="err" role="alert">{avatarError}</p>{/if}
+        <div class="avatar-actions">
+          <button class="secondary" type="button" disabled={savingAvatar} on:click={() => (editingAvatar = false)}>Cancel</button>
+          <button class="primary" type="button" disabled={savingAvatar || draftAvatar === (player.avatar ?? null)} on:click={saveAvatar}
+            >{savingAvatar ? 'Saving…' : 'Save avatar'}</button
+          >
+        </div>
+      </section>
+    {/if}
+
     <button class="primary big" on:click={onResume}>Resume</button>
+
+    <section class="account" aria-label="Yui account">
+      {#if enteringCode}
+        <CodeEntry busy={accountBusy} error={accountError} onSubmit={link} onCancel={() => ((enteringCode = false), (accountError = ''))} />
+      {:else if usingAccount || accountName}
+        <p class="account-line">
+          <strong>{usingAccount ? `${label} · playing as your account` : `${label}`}</strong>
+        </p>
+        {#if usingAccount}
+          <button class="secondary" type="button" disabled={accountBusy} on:click={() => account(() => onAccountUse(false))}>Stop using it here</button>
+        {:else}
+          <button class="secondary" type="button" disabled={accountBusy} on:click={() => account(() => onAccountUse(true))}>Play as {label}</button>
+        {/if}
+        <button class="secondary danger" type="button" disabled={accountBusy} on:click={forget}>{confirmForget ? 'Tap again to forget this phone' : 'Forget this phone'}</button>
+      {:else}
+        <button class="secondary" type="button" on:click={() => (enteringCode = true)}>Use my Yui account</button>
+      {/if}
+      {#if accountError && !enteringCode}<p class="err" role="alert">{accountError}</p>{/if}
+    </section>
 
     <label class="volume">
       <span>Volume</span>
@@ -105,6 +214,10 @@
     gap: 14px;
   }
   .slot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
     min-width: 64px;
     padding: 10px 14px;
     border-radius: var(--yui-radius-card);
@@ -114,10 +227,41 @@
     font-weight: 800;
     text-align: center;
   }
+  .slot.with-avatar {
+    padding: 4px 14px 4px 4px;
+  }
   .who {
+    flex: 1;
     display: flex;
     flex-direction: column;
     min-width: 0;
+  }
+  .link {
+    flex: 0 0 auto;
+    border: 0;
+    background: none;
+    color: var(--yui-blue-soft);
+    font: inherit;
+    font-weight: 700;
+    font-size: 0.9rem;
+  }
+  .avatar-edit {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px;
+    border-radius: var(--yui-radius-hero);
+    background: var(--yui-chrome-fill);
+  }
+  .avatar-actions {
+    display: grid;
+    grid-template-columns: 1fr 1.4fr;
+    gap: 10px;
+  }
+  .err {
+    margin: 0;
+    color: #ff9a9a;
+    font-weight: 600;
   }
   .who strong {
     font-size: 1.2rem;
@@ -157,6 +301,17 @@
     min-width: 3.5em;
     text-align: right;
     color: var(--muted);
+  }
+  .account {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .account-line {
+    margin: 0;
+    padding: 0 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .danger {
     color: #ff9a9a;
