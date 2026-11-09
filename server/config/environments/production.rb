@@ -85,4 +85,11 @@ Rails.application.configure do
 
   # Skip DNS rebinding protection for the default health check endpoint.
   config.host_authorization = { exclude: ->(request) { request.path == "/up" } }
+
+  # Action Cable's same-origin check compares Origin with the URL Rails sees,
+  # which behind a TLS-terminating proxy (Nest's gateway) is not the public
+  # one. Allow the public origin explicitly so kiosks and the pad connect.
+  if (public_host = ENV["RAILS_HOST"].presence)
+    config.action_cable.allowed_request_origins = [ "https://#{public_host}" ]
+  end
 end
