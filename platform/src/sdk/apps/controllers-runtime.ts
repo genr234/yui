@@ -248,8 +248,34 @@ export function yuiControllersRuntime(backend: ControllersBackend): ControllersR
 				set?.delete(handler);
 			};
 		},
-		haptic(player: any, pattern: number | number[]) {
-			return backend.call("haptic", [idOf(player), Array.isArray(pattern) ? pattern : [pattern]]);
+		/**
+		 * Vibrate one phone or "all". `pattern` is a vocabulary name, or custom
+		 * on/off ms steps (<= 16 steps, each <= 1000 ms, <= 4 s in all); a bare
+		 * number is one pulse. The phone resolves names, so timings can differ
+		 * per platform; iOS and phones with vibration off ignore it. The kiosk
+		 * drops haptics sent to one phone less than 50 ms apart.
+		 */
+		haptic(player: any, pattern: string | number | number[], options?: { intensity?: number }) {
+			const names = ["tap", "success", "fail", "hit", "heavy", "heartbeat", "countdown", "win"];
+			const target = player === "all" ? "all" : idOf(player);
+			let wire: string | number[];
+			if (typeof pattern === "string") {
+				if (names.indexOf(pattern) < 0) return Promise.reject(new Error(`YUI_CONTROLLERS: unknown haptic ${pattern} (${names.join(", ")})`));
+				wire = pattern;
+			} else {
+				wire = Array.isArray(pattern) ? pattern : [pattern];
+				let total = 0;
+				for (const ms of wire) {
+					if (typeof ms !== "number" || !(ms >= 0 && ms <= 1000)) return Promise.reject(new Error("YUI_CONTROLLERS: haptic steps are numbers 0-1000 ms"));
+					total += ms;
+				}
+				if (wire.length < 1 || wire.length > 16 || total > 4000) return Promise.reject(new Error("YUI_CONTROLLERS: haptic patterns are 1-16 steps and at most 4 s"));
+			}
+			const intensity = options?.intensity;
+			if (intensity !== undefined && !(typeof intensity === "number" && intensity >= 0 && intensity <= 1)) {
+				return Promise.reject(new Error("YUI_CONTROLLERS: haptic intensity is 0-1"));
+			}
+			return backend.call("haptic", intensity === undefined ? [target, wire] : [target, wire, { intensity }]);
 		},
 		sound(player: any, url: string, options?: { volume?: number }) {
 			const target = player === "speaker" ? "speaker" : idOf(player);

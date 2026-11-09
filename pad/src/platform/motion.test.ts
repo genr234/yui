@@ -186,7 +186,7 @@ describe('haptics and sound', () => {
   })
 
   test('patterns are sanitised', () => {
-    expect(cleanPattern([10, -5, 'x', 99999, NaN])).toEqual([10, 0, 5000])
+    expect(cleanPattern([10, -5, 'x', 99999, NaN])).toEqual([10, 0, 1000])
   })
 
   test('sounds only from this server or data:', () => {

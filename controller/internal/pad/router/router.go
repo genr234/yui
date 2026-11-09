@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"sync"
 
@@ -234,6 +235,18 @@ func (r *Router) Haptic(playerID string, pattern []int) error {
 	}
 	return r.send(playerID, protocol.Haptic{T: "haptic", Pattern: pattern})
 }
+
+// HapticMsg sends a validated haptic message (named or custom pattern).
+func (r *Router) HapticMsg(playerID string, h protocol.Haptic) error {
+	h.T = "haptic"
+	if err := h.Validate(); err != nil {
+		return fmt.Errorf("pad: haptic: %w", err)
+	}
+	return r.send(playerID, h)
+}
+
+// ReadyIDs lists the ready players' ids.
+func (r *Router) ReadyIDs() []string { return r.readyIDs() }
 
 // IsHost reports whether a ready player is the host.
 func (r *Router) IsHost(playerID string) bool {

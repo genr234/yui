@@ -91,6 +91,8 @@ type Registry struct {
 	ctrlMu     sync.Mutex
 	ctrl       *apps.Controller
 	ctrlRouter *router.Router
+	// haptics rate-limits pad.app.haptic per player (controllers.go).
+	haptics hapticLimiter
 	// profiles holds the outstanding profile_request waits (profiles.go).
 	profiles profileWaits
 	// profileSendHook replaces the control send in tests.

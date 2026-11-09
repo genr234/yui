@@ -199,6 +199,22 @@ describe("ctx.controllers runtime", () => {
 		await ctx.controllers.haptic("p1", 30);
 		expect(rpcs).toContainEqual(["virtualPads", "attach", ["p1", { slot: 1 }]]);
 		expect(rpcs).toContainEqual(["controllers", "haptic", ["p1", [30]]]);
+
+		await ctx.controllers.haptic("p1", "win");
+		await ctx.controllers.haptic("all", "hit", { intensity: 0.25 });
+		await ctx.controllers.haptic(p1, [10, 20, 10]);
+		expect(rpcs).toContainEqual(["controllers", "haptic", ["p1", "win"]]);
+		expect(rpcs).toContainEqual(["controllers", "haptic", ["all", "hit", { intensity: 0.25 }]]);
+		expect(rpcs).toContainEqual(["controllers", "haptic", ["p1", [10, 20, 10]]]);
+
+		// Bad input never reaches the kiosk.
+		const before = rpcs.length;
+		await expect(ctx.controllers.haptic("p1", "zap" as any)).rejects.toThrow(/unknown haptic/);
+		await expect(ctx.controllers.haptic("p1", [1001])).rejects.toThrow(/0-1000/);
+		await expect(ctx.controllers.haptic("p1", Array(17).fill(1))).rejects.toThrow(/16 steps/);
+		await expect(ctx.controllers.haptic("p1", [1000, 1000, 1000, 1000, 1])).rejects.toThrow(/4 s/);
+		await expect(ctx.controllers.haptic("p1", "tap", { intensity: 2 })).rejects.toThrow(/intensity/);
+		expect(rpcs.length).toBe(before);
 	});
 });
 
@@ -251,6 +267,14 @@ describe("controllers host", () => {
 		await host.call("layouts", [{ p1: { type: "text" } }]);
 		expect(sent.at(-1)).toEqual({ method: "pad.app.layout", params: { app_id: "dev.example.quiz", layouts: { p1: { type: "text" } } } });
 		host.dispose();
+	});
+
+	test("haptic sends a name, a custom pattern or intensity to the bridge", async () => {
+		const host = createControllersHost(app, allow);
+		await host.call("haptic", ["p1", "success", { intensity: 0.5 }]);
+		expect(sent.at(-1)).toEqual({ method: "pad.app.haptic", params: { app_id: "dev.example.quiz", player_id: "p1", name: "success", intensity: 0.5 } });
+		await host.call("haptic", ["all", [40, 60, 40]]);
+		expect(sent.at(-1)).toEqual({ method: "pad.app.haptic", params: { app_id: "dev.example.quiz", player_id: "all", pattern: [40, 60, 40] } });
 	});
 
 	test("sound to the speaker resolves the speaker phone", async () => {

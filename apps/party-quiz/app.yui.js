@@ -58,9 +58,14 @@ export default {
     const question = () => questions[state.round];
     const answeredCount = () => Object.keys(state.answers).length;
 
+    // Haptics are a nicety (Android phones only, and the kiosk may drop them):
+    // never wait on them or let them fail a round.
+    const buzz = (who, name) => pad.haptic(who, name).catch(() => {});
+
     function startRound() {
       state.answers = {};
       state.phase = "question";
+      buzz("all", "countdown"); // a new question is up
     }
 
     function reveal() {
@@ -69,9 +74,9 @@ export default {
       for (const [id, choice] of Object.entries(state.answers)) {
         if (choice === right) {
           scores[id] = (scores[id] ?? 0) + 1;
-          pad.haptic(id, [40, 60, 40]).catch(() => {});
+          buzz(id, "success");
         } else {
-          pad.haptic(id, [200]).catch(() => {});
+          buzz(id, "fail");
         }
       }
       state.scores = scores;
@@ -116,6 +121,8 @@ export default {
     function next() {
       if (state.round + 1 >= questions.length) {
         state.phase = "done";
+        const top = Math.max(0, ...pad.players.map((p) => state.scores[p.id] ?? 0));
+        for (const p of pad.players) buzz(p.id, top > 0 && (state.scores[p.id] ?? 0) === top ? "win" : "tap");
         saveBests();
         ctx.library.played("classic", { progress: 1, resume: { round: 0 } }).catch(() => {});
         return;

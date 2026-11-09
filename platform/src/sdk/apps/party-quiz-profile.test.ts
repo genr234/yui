@@ -4,6 +4,7 @@ import quiz from "../../../../apps/party-quiz/app.yui.js";
 /** Party Quiz keeps a linked player's best score in their profile and never blocks guests. */
 function setup(profileFor: (id: string) => any) {
 	const handlers = new Map<string, (data: any) => void>();
+	const buzzes: Array<[string, string]> = [];
 	let layout: ((p: any) => any) | undefined;
 	const players = [
 		{ id: "linked", name: "Ada", host: true },
@@ -16,7 +17,7 @@ function setup(profileFor: (id: string) => any) {
 			ui,
 			layout: (fn: any) => (layout = fn),
 			on: (event: string, fn: any) => handlers.set(event, fn),
-			haptic: async () => {},
+			haptic: async (who: string, name: string) => void buzzes.push([who, name]),
 			joinCard: () => null,
 		},
 		profiles: { for: profileFor },
@@ -29,7 +30,7 @@ function setup(profileFor: (id: string) => any) {
 	quiz.mount(ctx);
 	const tap = (id: string, control: string, value?: unknown) =>
 		handlers.get("event")!({ player: players.find((p) => p.id === id), control, kind: "tap", value });
-	return { tap, layout: () => layout! , players };
+	return { tap, layout: () => layout!, players, buzzes };
 }
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -42,6 +43,31 @@ function playThrough(env: ReturnType<typeof setup>) {
 		env.tap("linked", "next");
 	}
 }
+
+describe("party quiz haptics", () => {
+	test("countdown on a new question, success/fail on reveal, win for the top scorer", async () => {
+		const env = setup(() => null);
+		env.tap("linked", "start");
+		expect(env.buzzes).toEqual([["all", "countdown"]]);
+		env.buzzes.length = 0;
+		env.tap("linked", "answer", 0); // the host answers too
+		env.tap("guest", "answer", 3);
+		env.tap("linked", "reveal");
+		const names = Object.fromEntries(env.buzzes);
+		expect([names.linked, names.guest].sort()).toEqual(["fail", "success"]);
+		env.buzzes.length = 0;
+		for (let round = 0; round < 5; round++) {
+			if (round > 0) {
+				env.tap("guest", "answer", 0);
+				env.tap("linked", "reveal");
+			}
+			env.tap("linked", "next");
+		}
+		const last = env.buzzes.slice(-2);
+		expect(last.map(([, n]) => n).sort()).toContain("tap"); // someone trails the winner
+		expect(last.map(([, n]) => n)).toContain("win");
+	});
+});
 
 describe("party quiz profiles", () => {
 	test("asks a linked player once, saves their best, and skips guests", async () => {

@@ -27,7 +27,7 @@
     requestMotionPermission,
     saveCalibration,
   } from './platform/motion'
-  import { hapticsSupported, playPattern, pressTick } from './platform/haptics'
+  import { hapticsSupported, playHaptic, pressTick, setVibrationEnabled, vibrationEnabled } from './platform/haptics'
   import { playSound, setMasterVolume, unlockAudio } from './platform/sound'
   import { keepAwake, wakeLockSupported } from './platform/wakelock'
   import { attachSpeakerStream, playSpeaker, speakerBlocked } from './platform/speaker'
@@ -64,6 +64,12 @@
   let homeOpen = false
   let volume = loadVolume()
   setMasterVolume(volume)
+  let vibration = vibrationEnabled()
+  function changeVibration(on: boolean) {
+    vibration = on
+    setVibrationEnabled(on)
+    if (on) pressTick() // a small buzz to show it works
+  }
 
   function hello(): Hello {
     return {
@@ -115,7 +121,7 @@
         player = msg.player
         return
       case 'haptic':
-        playPattern(msg.pattern)
+        playHaptic(msg)
         return
       case 'sound':
         playSound(msg.url, msg.volume ?? 1)
@@ -432,6 +438,8 @@
       onResume={resume}
       onQuit={quit}
       onVolume={changeVolume}
+      vibration={hapticsSupported() ? vibration : null}
+      onVibration={changeVibration}
       onSpeaker={() => send({ t: 'system', action: 'be_speaker' })}
       onAvatar={changeAvatar}
       {accountName}
