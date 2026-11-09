@@ -19,7 +19,11 @@ key=${NEST_KEY:-$HOME/.ssh/nest_ed25519}
 domain=""
 if [ "${1:-}" = "--domain" ]; then domain=${2:?--domain needs a host name}; fi
 
-ssh_nest() { ssh -o BatchMode=yes -o IdentitiesOnly=yes -i "$key" "$host" "$@" 2> >(grep -v "post-quantum\|pq.html\|upgraded\|store now" >&2); }
+# One shared connection for every step: Nest's gateway is slow to accept many
+# back-to-back logins.
+control="/tmp/ydn-%C"
+ssh_opts=(-o BatchMode=yes -o IdentitiesOnly=yes -i "$key" -o ControlMaster=auto -o "ControlPath=$control" -o ControlPersist=120 -o ServerAliveInterval=15)
+ssh_nest() { ssh "${ssh_opts[@]}" "$host" "$@" 2> >(grep -v "post-quantum\|pq.html\|upgraded\|store now" >&2); }
 
 sha=$(git rev-parse --short HEAD)
 if ! git diff --quiet HEAD -- . ; then echo "note: deploying $sha; uncommitted server changes are not included" >&2; fi
@@ -35,8 +39,11 @@ trap 'rm -rf "$build"' EXIT
 [ -f "$build/server/public/pad/index.html" ] || { echo "pad build produced no index.html" >&2; exit 1; }
 
 echo "==> uploading $sha"
-git archive --format=tar HEAD . | ssh_nest "set -e; rm -rf /srv/yui/releases/$sha; mkdir -p /srv/yui/releases/$sha && tar -x -C /srv/yui/releases/$sha"
-tar -C "$build/server/public" -cf - pad | ssh_nest "tar -x -C /srv/yui/releases/$sha/public"
+# One archive, one login: the code at HEAD plus the pad build under public/pad.
+bundle_tar="$build/release.tar"
+git archive --format=tar -o "$bundle_tar" HEAD .
+COPYFILE_DISABLE=1 tar --no-xattrs -rf "$bundle_tar" -C "$build/server" public/pad
+ssh_nest "set -e; rm -rf /srv/yui/releases/$sha; mkdir -p /srv/yui/releases/$sha && tar -x -C /srv/yui/releases/$sha" < "$bundle_tar"
 
 echo "==> installing on the box"
 ssh_nest bash -s -- "$sha" "$domain" <<'REMOTE'
@@ -75,7 +82,7 @@ ENV
 fi
 if [ -n "$domain" ]; then
   sed -i -e "s|^RAILS_HOST=.*|RAILS_HOST=$domain|" \
-         -e "s|^RAILS_ALLOWED_HOSTS=.*|RAILS_ALLOWED_HOSTS=$domain|" \
+         -e "s|^RAILS_ALLOWED_HOSTS=.*|RAILS_ALLOWED_HOSTS=$domain,$(ip -4 -o addr show eth0 | awk '{print $4}' | cut -d/ -f1)|" \
          -e "s|^WEBAUTHN_ALLOWED_ORIGINS=.*|WEBAUTHN_ALLOWED_ORIGINS=https://$domain|" \
          -e "s|^WEBAUTHN_RP_ID=.*|WEBAUTHN_RP_ID=$domain|" "$env"
   echo "domain set to $domain"
