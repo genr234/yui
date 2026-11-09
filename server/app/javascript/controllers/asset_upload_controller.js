@@ -1,7 +1,10 @@
 import { Controller } from "@hotwired/stimulus"
 import { Upload } from "tus-js-client"
 
-const CHUNK_SIZE = 50 * 1024 * 1024
+// Hack Club Nest's gateway buffers each request body and gives up after 30 s,
+// so a chunk must upload well within that even on a slow home connection:
+// 4 MB is about 6 s at 0.75 MB/s and still fits at 0.15 MB/s.
+const CHUNK_SIZE = 4 * 1024 * 1024
 const RETRY_DELAYS = [ 0, 1000, 3000, 5000, 10000, 20000, 30000, 60000 ]
 
 // Resumable asset upload over tus. tus-js-client remembers each upload in localStorage
