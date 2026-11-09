@@ -6,7 +6,7 @@ export default {
   icon: "❓",
   category: "Games",
   description: "A quick quiz for the room. Every phone gets its own buttons, in its own order.",
-  permissions: ["controllers", "library"],
+  permissions: ["controllers", "library", "profiles"],
 
   // Declaring controllers gives this app the phones while it is open.
   controllers: {},
@@ -27,6 +27,7 @@ export default {
       round: 0,
       answers: {}, // player id → option index
       scores: {}, // player id → points
+      best: {}, // player id → best score, for players who let the quiz use their Yui account
     });
 
     // One title in Jump back in; opening it from there resumes the round.
@@ -77,9 +78,45 @@ export default {
       state.phase = "reveal";
     }
 
+    // Linked players keep their best score in their Yui account profile.
+    // Asked once per player, on the first finish; guests and anyone who says
+    // no just play on, and nothing here ever blocks the round.
+    const asked = new Set();
+    async function saveBest(player) {
+      const profile = ctx.profiles?.for(player.id);
+      if (!profile) return;
+      const score = state.scores[player.id] ?? 0;
+      if (!asked.has(player.id)) {
+        asked.add(player.id);
+        const { granted } = await profile.request();
+        if (!granted) return;
+      }
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const { data, version } = await profile.get();
+        const best = Math.max(score, Number(data?.best) || 0);
+        try {
+          await profile.set({ ...(data ?? {}), best }, version);
+        } catch (error) {
+          if (error?.code === "version_conflict") continue; // another kiosk saved: re-read and merge
+          throw error;
+        }
+        state.best = { ...state.best, [player.id]: best };
+        return;
+      }
+    }
+    function saveBests() {
+      for (const player of pad.players) {
+        saveBest(player).catch((error) => {
+          // not_granted / not_linked: the player chose not to, or left the account.
+          if (error?.code !== "not_granted" && error?.code !== "not_linked") ctx.log.warn("profile:", error);
+        });
+      }
+    }
+
     function next() {
       if (state.round + 1 >= questions.length) {
         state.phase = "done";
+        saveBests();
         ctx.library.played("classic", { progress: 1, resume: { round: 0 } }).catch(() => {});
         return;
       }
@@ -91,6 +128,7 @@ export default {
     function restart() {
       state.round = 0;
       state.scores = {};
+      state.best = {};
       publish();
       startRound();
     }
@@ -141,6 +179,7 @@ export default {
         default:
           return ui.column({ gap: 16 }, [
             ui.text(`You scored ${state.scores[player.id] ?? 0}`, { size: "large", align: "center" }),
+            state.best[player.id] !== undefined ? ui.text(`Your best: ${state.best[player.id]}`, { align: "center" }) : null,
             hostButton("restart", "Play again"),
           ]);
       }

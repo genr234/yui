@@ -114,7 +114,7 @@ function yuiExtendContext(ctx) {
   Object.defineProperty(ctx, "controllers", { get: yuiControllersApi, enumerable: true, configurable: true });
   // ctx.profiles exists only when the manifest declares the permission; the
   // host checks it again on every call.
-  if (app && Array.isArray(app.permissions) && app.permissions.includes("profiles")) {
+  if (typeof app !== "undefined" && app && Array.isArray(app.permissions) && app.permissions.includes("profiles")) {
     Object.defineProperty(ctx, "profiles", { get: yuiProfilesApi, enumerable: true, configurable: true });
   }
   ctx.virtualPads = {

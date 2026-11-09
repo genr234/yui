@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createEventDispatcher, onMount } from "svelte";
+  import { createEventDispatcher, onDestroy, onMount } from "svelte";
   import ChevronRightIcon from "lucide-svelte/icons/chevron-right";
   import ArrowLeftIcon from "lucide-svelte/icons/arrow-left";
   import DownloadIcon from "lucide-svelte/icons/download";
@@ -587,6 +587,41 @@
     );
   }
 
+  // Link a phone (plan 10): a one-time code a phone redeems to play as this
+  // account. The controller keeps pad.account.link_code behind the PIN.
+  let linkCode = "";
+  let linkExpiresAt = 0;
+  let linkBusy = false;
+  let linkError = "";
+  let linkNow = Date.now();
+  let linkTimer: ReturnType<typeof setInterval> | undefined;
+  $: linkSecondsLeft = Math.max(0, Math.ceil((linkExpiresAt - linkNow) / 1000));
+
+  async function makeLinkCode() {
+    linkBusy = true;
+    linkError = "";
+    try {
+      const result = await bridge.send<{ code: string; expires_at: string }>(
+        "pad.account.link_code",
+      );
+      linkCode = String(result.code);
+      linkExpiresAt = Date.parse(result.expires_at) || Date.now() + 10 * 60_000;
+      linkNow = Date.now();
+      clearInterval(linkTimer);
+      linkTimer = setInterval(() => {
+        linkNow = Date.now();
+        if (linkNow >= linkExpiresAt) clearInterval(linkTimer);
+      }, 1000);
+    } catch (error) {
+      linkCode = "";
+      linkError = error instanceof Error ? error.message : String(error);
+    } finally {
+      linkBusy = false;
+    }
+  }
+
+  onDestroy(() => clearInterval(linkTimer));
+
   async function syncAccount() {
     await runAccountAction(
       "sync",
@@ -776,6 +811,45 @@
               Sync
             </button>
           </div>
+          <div class="settings-row static settings-actions-row">
+            <span>
+              <span>Link a phone</span>
+              <small>
+                {linkError ||
+                  "Let a player use this Yui account from their phone, so games can save their progress."}
+              </small>
+            </span>
+            <button
+              class="settings-inline-button"
+              disabled={!accountStatus?.connected ||
+                accountStatus?.needs_pairing ||
+                linkBusy}
+              type="button"
+              on:click={makeLinkCode}
+            >
+              Link a phone
+            </button>
+          </div>
+          {#if linkCode}
+            <div class="link-code-card" aria-live="polite">
+              <div class="link-code" aria-label="Phone link code">
+                {linkCode.slice(0, 3)} {linkCode.slice(3)}
+              </div>
+              <small class="link-code-expiry">
+                {#if linkSecondsLeft > 0}
+                  Expires in {Math.floor(linkSecondsLeft / 60)}:{String(
+                    linkSecondsLeft % 60,
+                  ).padStart(2, "0")}. Works once.
+                {:else}
+                  This code has expired. Make a new one.
+                {/if}
+              </small>
+              <small>
+                On your phone, in the player screen, choose "Use my Yui
+                account" and type this code.
+              </small>
+            </div>
+          {/if}
         </section>
 
         <section class="settings-group">

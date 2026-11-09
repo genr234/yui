@@ -299,7 +299,7 @@ class DemoBridge {
 			this.padState = {
 				session: { code: "KQXM", join_url: "https://yui.example/play/KQXM?t=OT56FOOG", lobby_open: false },
 				players: [
-					{ id: "p1", slot: 1, name: "Riccardo", color: "blue", host: true, speaker: true, connected: true, rtt_ms: 18, input_hz: 60 },
+					{ id: "p1", slot: 1, name: "Riccardo", color: "blue", host: true, speaker: true, connected: true, account_linked: true, rtt_ms: 18, input_hz: 60 },
 					{ id: "p2", slot: 2, name: "Sam", color: "purple", host: false, connected: true, rtt_ms: 94, input_hz: 58.5, avatar: "🦊" },
 					{ id: "p3", slot: 3, name: "Ada", color: "green", host: false, connected: false },
 				],
@@ -323,6 +323,13 @@ class DemoBridge {
 			};
 			this.emitPad();
 		}
+		if (method === "pad.account.link_code") {
+			return {
+				code: String(100000 + Math.floor(Math.random() * 900000)),
+				expires_at: new Date(Date.now() + 10 * 60_000).toISOString(),
+			} as T;
+		}
+		if (method.startsWith("pad.profile.")) return this.demoProfile(method, params) as Promise<T>;
 		if (method.startsWith("pad.") && method !== "pad.sensitive" && method !== "pad.volume") {
 			return this.padState as T;
 		}
@@ -347,6 +354,41 @@ class DemoBridge {
 		if (method in responses) return responses[method] as T;
 
 		return undefined as T;
+	}
+
+	private profileGrants = new Set<string>();
+	private profileData = new Map<string, { data: unknown; version: number }>();
+
+	/**
+	 * Demo only: in-memory per-player profiles. A request is "allowed on the
+	 * phone" after a short delay; the demo's linked player is p1.
+	 */
+	private async demoProfile(method: string, params: Record<string, unknown>): Promise<unknown> {
+		const playerId = String(params.player_id ?? "");
+		const key = `${playerId}\u0000${String(params.app_id ?? "")}`;
+		const player = this.padState.players.find((p) => p.id === playerId);
+		if (!player?.account_linked) throw new Error("not_linked: this player is not playing as a Yui account");
+		if (method === "pad.profile.request") {
+			if (!this.profileGrants.has(key)) await new Promise((resolve) => window.setTimeout(resolve, 900));
+			this.profileGrants.add(key);
+			return { granted: true };
+		}
+		if (!this.profileGrants.has(key)) {
+			throw new Error("not_granted: this player has not allowed this game to use their profile");
+		}
+		const current = this.profileData.get(key) ?? { data: null, version: 0 };
+		if (method === "pad.profile.get") {
+			return { profile_id: `demo-${playerId}`, data: current.data, version: current.version };
+		}
+		if (method === "pad.profile.set") {
+			if (params.version !== current.version) {
+				throw new Error(`version_conflict: current version ${current.version}`);
+			}
+			if (JSON.stringify(params.data ?? null).length > 64 * 1024) throw new Error("too_large: a profile can hold at most 64 KB");
+			this.profileData.set(key, { data: params.data ?? null, version: current.version + 1 });
+			return { version: current.version + 1 };
+		}
+		throw new Error(`unknown method: ${method}`);
 	}
 
 	private focusedApp = "";

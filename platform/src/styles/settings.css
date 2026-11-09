@@ -442,6 +442,27 @@
 	grid-template-columns: minmax(0, 1fr) auto;
 }
 
+.link-code-card {
+	display: grid;
+	gap: 6px;
+	justify-items: center;
+	padding: 16px 12px 18px;
+	text-align: center;
+	color: var(--yui-muted);
+}
+
+.link-code {
+	color: var(--yui-text, inherit);
+	font-size: 44px;
+	font-weight: 700;
+	letter-spacing: 0.14em;
+	font-variant-numeric: tabular-nums;
+}
+
+.link-code-expiry {
+	font-weight: 600;
+}
+
 .sidebar-theme-upload {
 	position: relative;
 	cursor: pointer;
