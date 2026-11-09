@@ -86,6 +86,7 @@ export type YuiContext = {
 	fullscreen: YuiFullscreenApi;
 	native: YuiNativeApi;
 	library: YuiLibraryApi;
+	assets: YuiAssetsApi;
 	controllers: YuiControllersApi;
 	virtualPads: YuiVirtualPadsApi;
 	/** What the shell opened this app for, e.g. a library title from Jump back in. */
@@ -190,6 +191,25 @@ export type YuiLibraryApi = {
 	played(id: string, options?: { progress?: number; resume?: unknown }): Promise<LibraryTitle>;
 	list(): Promise<LibraryTitle[]>;
 	remove(ids: string[]): Promise<void>;
+};
+
+/** A synced asset (contracts §1). Never carries a file path. */
+export type YuiAsset = {
+	id: string;
+	kind: string;
+	title: string;
+	/** What the server's analyzers or the upload form recorded, e.g. `platform`, `cover_url`, `runtime`, `version`. */
+	metadata: Record<string, any>;
+	state: "queued" | "downloading" | "paused" | "verifying" | "ready" | "failed" | string;
+	bytes_done: number;
+	byte_size: number;
+};
+
+/** `ctx.assets("game")` lists the synced assets of a kind (permission `assets:<kind>`). */
+export type YuiAssetsApi = {
+	(kind: string): Promise<YuiAsset[]>;
+	/** Runs when the asset list or sync progress changes; re-list to read it. */
+	onChange(handler: () => void): () => void;
 };
 
 export type YuiDevApp = {

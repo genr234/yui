@@ -1,6 +1,6 @@
 /**
  * ctx APIs that cross the app sandbox boundary generically: `ctx.native`,
- * `ctx.library`, `ctx.launch`, `ctx.controllers` and `ctx.virtualPads`.
+ * `ctx.library`, `ctx.assets`, `ctx.launch`, `ctx.controllers` and `ctx.virtualPads`.
  *
  * Apps run in a sandboxed iframe (AppHost). `sandboxApiSource` is spliced
  * into the sandbox script and adds the APIs to the sandbox's ctx as RPC
@@ -13,7 +13,7 @@ import type { YuiContext, YuiNativeEvent } from "./types";
 import { controllersHostFor, type ControllersHost } from "./controllers";
 import { yuiControllersRuntime } from "./controllers-runtime";
 
-export const sandboxApis = ["native", "library", "controllers", "virtualPads"] as const;
+export const sandboxApis = ["native", "library", "assets", "controllers", "virtualPads"] as const;
 export type SandboxApi = (typeof sandboxApis)[number];
 
 /**
@@ -95,6 +95,9 @@ function yuiExtendContext(ctx) {
     list: () => rpc("library", "list"),
     remove: (ids) => rpc("library", "remove", [ids])
   };
+  ctx.assets = Object.assign((kind) => rpc("assets", "list", [kind]), {
+    onChange: (handler) => yuiSubscribe("assets", "changed", handler)
+  });
   Object.defineProperty(ctx, "controllers", { get: yuiControllersApi, enumerable: true, configurable: true });
   ctx.virtualPads = {
     attach: (player, options) => rpc("virtualPads", "attach", [yuiPlayerId(player), options]),
@@ -154,6 +157,13 @@ export async function handleSandboxApiCall(
 			return ctx.library.list();
 		case "library.remove":
 			return ctx.library.remove(first);
+		case "assets.list":
+			return ctx.assets(first);
+		case "assets.subscribe": {
+			if (first !== "changed") throw new Error(`unknown assets event: ${String(first)}`);
+			ctx.assets.onChange(() => push("assets", "changed", null));
+			return undefined;
+		}
 		case "controllers.start": {
 			const host = hostOf(ctx);
 			const state = await host.call("start", []);
