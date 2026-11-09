@@ -9,6 +9,7 @@ class Account < ApplicationRecord
   has_many :phone_links, dependent: :destroy
   has_many :profile_grants, dependent: :destroy
   has_many :player_profiles, dependent: :destroy
+  has_many :app_saves, class_name: "AppSave", dependent: :destroy
 
   validates :name, presence: true
   validates :profile_image_url, length: { maximum: 2048 }, allow_blank: true

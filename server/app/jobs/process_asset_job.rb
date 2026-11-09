@@ -18,6 +18,7 @@ class ProcessAssetJob < ApplicationJob
 
     asset.sha256 = sha256_of(path)
     analyze_game(asset, path, base_url) if asset.game?
+    analyze_media(asset, path, base_url) if asset.kind == "media"
     asset.status = "ready"
     asset.error = nil
     asset.save!
@@ -45,6 +46,14 @@ class ProcessAssetJob < ApplicationJob
     asset.metadata = asset.metadata.to_h.merge(AssetAnalyzers::GAME_DEFAULTS).merge(result&.metadata || {})
     # The uploader's own title wins; otherwise use what the analyzer found.
     asset.title = result.title if result&.title && asset.title == default_title(asset)
+  end
+
+  def analyze_media(asset, path, base_url)
+    result = AssetAnalyzers.analyze_media(path, base_url)
+    return if result.nil?
+
+    asset.metadata = asset.metadata.to_h.merge(result.metadata)
+    asset.title = result.title if result.title && asset.title == default_title(asset)
   end
 
   def default_title(asset)

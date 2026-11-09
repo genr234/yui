@@ -11,11 +11,23 @@ module AssetAnalyzers
   GAME_DEFAULTS = { "platform" => nil, "format" => "unknown" }.freeze
 
   def self.for_games
-    [ NintendoDisc ]
+    [ NintendoDisc, RomCartridge ]
+  end
+
+  def self.for_media
+    [ AudioTags ]
   end
 
   def self.analyze_game(path, base_url)
-    for_games.each do |analyzer|
+    first_result(for_games, path, base_url)
+  end
+
+  def self.analyze_media(path, base_url)
+    first_result(for_media, path, base_url)
+  end
+
+  def self.first_result(analyzers, path, base_url)
+    analyzers.each do |analyzer|
       result = analyzer.call(path, base_url)
       return result if result
     end

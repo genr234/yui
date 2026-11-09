@@ -74,7 +74,7 @@ Rails.application.routes.draw do
 
   # Asset library (Phase 4): browser list/delete, tus uploads, public covers, kiosk API.
   resources :accounts, only: [] do
-    resources :assets, only: [ :index, :destroy ]
+    resources :assets, only: [ :index, :update, :destroy ]
     match "uploads", to: "asset_uploads#options", via: :options
     post "uploads", to: "asset_uploads#create", as: :asset_uploads
     get "uploads/:id", to: "asset_uploads#show", as: :asset_upload
@@ -82,6 +82,7 @@ Rails.application.routes.draw do
     delete "uploads/:id", to: "asset_uploads#destroy"
     match "uploads/:id", to: "asset_uploads#options", via: :options
   end
+  get "media_covers/:key", to: "media_covers#show", as: :media_cover, format: false, constraints: { key: /\h{32}\.(png|jpg|gif|webp)/ }
   get "covers/:game_id.png", to: "covers#show", as: :cover, format: false, constraints: { game_id: /[A-Z0-9]{6}/ }
   namespace :api do
     namespace :kiosk do
@@ -93,6 +94,13 @@ Rails.application.routes.draw do
         get "saves/:app_id/:runtime", to: "saves#show", as: :save
         get "saves/:app_id/:runtime/download", to: "saves#download", as: :save_download
         put "saves/:app_id/:runtime", to: "saves#update"
+      end
+      # App save blobs (contracts §6 "App saves"); `?player_id=` selects the player scope.
+      scope constraints: { app_id: %r{[^/]+}, key: %r{[^/]+} }, format: false do
+        get "app_saves/:app_id", to: "app_saves#index", as: :app_saves
+        get "app_saves/:app_id/:key", to: "app_saves#show", as: :app_save
+        put "app_saves/:app_id/:key", to: "app_saves#update"
+        delete "app_saves/:app_id/:key", to: "app_saves#destroy"
       end
     end
   end

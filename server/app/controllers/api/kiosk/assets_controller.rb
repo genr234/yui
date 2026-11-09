@@ -6,7 +6,8 @@ module Api
       def index
         touch_current_kiosk!
         assets = current_account.assets.library.ready.order(:id)
-        render json: { assets: assets.map { |asset| asset.as_kiosk_json(base_url: request.base_url) } }
+        cover_keys = Asset.attached_cover_keys(current_account)
+        render json: { assets: assets.map { |asset| asset.as_kiosk_json(base_url: request.base_url, cover_keys: cover_keys) } }
       end
 
       def download

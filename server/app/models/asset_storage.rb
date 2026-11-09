@@ -13,4 +13,15 @@ module AssetStorage
   def self.covers_dir
     Pathname(root).join("covers")
   end
+
+  # storage/media_covers/<key>.<ext>: art embedded in audio files, and images an admin
+  # attached to a game.
+  def self.media_covers_dir
+    Pathname(root).join("media_covers")
+  end
+
+  # storage/app_saves/<account_id>/<save id>: app save blobs.
+  def self.app_saves_dir
+    Pathname(root).join("app_saves")
+  end
 end
