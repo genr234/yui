@@ -24,8 +24,19 @@ ssh_nest() { ssh -o BatchMode=yes -o IdentitiesOnly=yes -i "$key" "$host" "$@" 2
 sha=$(git rev-parse --short HEAD)
 if ! git diff --quiet HEAD -- . ; then echo "note: deploying $sha; uncommitted server changes are not included" >&2; fi
 
+# The phone pad (pad/) builds into server/public/pad, which git ignores, so
+# build it here from the same commit and ship it with the release.
+echo "==> building the pad"
+build=$(mktemp -d)
+trap 'rm -rf "$build"' EXIT
+(cd .. && git archive --format=tar HEAD protocol pad) | tar -x -C "$build"
+(cd "$build/protocol" && bun install --frozen-lockfile >/dev/null)
+(cd "$build/pad" && bun install --frozen-lockfile >/dev/null && bun run build >/dev/null)
+[ -f "$build/server/public/pad/index.html" ] || { echo "pad build produced no index.html" >&2; exit 1; }
+
 echo "==> uploading $sha"
-git archive --format=tar HEAD . | ssh_nest "set -e; mkdir -p /srv/yui/releases/$sha && tar -x -C /srv/yui/releases/$sha"
+git archive --format=tar HEAD . | ssh_nest "set -e; rm -rf /srv/yui/releases/$sha; mkdir -p /srv/yui/releases/$sha && tar -x -C /srv/yui/releases/$sha"
+tar -C "$build/server/public" -cf - pad | ssh_nest "tar -x -C /srv/yui/releases/$sha/public"
 
 echo "==> installing on the box"
 ssh_nest bash -s -- "$sha" "$domain" <<'REMOTE'
