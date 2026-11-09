@@ -3,10 +3,12 @@
   import type { ControlMessage, Hello, Node, Player } from '@yui/protocol'
   import LayoutView from './layout/LayoutView.svelte'
   import HomeSheet from './HomeSheet.svelte'
+  import ProfileSheet from './ProfileSheet.svelte'
+  import { enqueueAsk, type ProfileAsk } from './account'
   import Avatar from './Avatar.svelte'
   import SimGyro from './SimGyro.svelte'
   import { colorHex } from './colors'
-  import { cableUrl, getIce, simSlotFromQuery, updateAvatar } from './api'
+  import { cableUrl, forgetAccount, getIce, grantProfile, linkAccount, simSlotFromQuery, updateAvatar, useAccount } from './api'
   import { InputModel } from './input/model'
   import { InputLoop } from './input/loop'
   import { MotionController } from './input/motion'
@@ -33,6 +35,8 @@
   export let code: string
   export let player: Player
   export let kioskName = ''
+  /** The Yui account linked to this phone, if any (plan 10). */
+  export let accountName: string | null = null
   /** Local layout preview (dev `?demo=layout`): no session, events go to `onDemoEvent`. */
   export let demoTree: Node | null = null
   export let onDemoEvent: (line: string) => void = () => {}
@@ -116,6 +120,11 @@
       case 'sound':
         playSound(msg.url, msg.volume ?? 1)
         return
+      case 'profile_request':
+        // Only a player who plays as an account can be asked; others say no at once.
+        if (!player.account_linked) send({ t: 'profile_reply', app_id: msg.app_id, granted: false })
+        else asks = enqueueAsk(asks, { app_id: msg.app_id, app_name: msg.app_name })
+        return
       case 'system':
         if (msg.action === 'sensitive') sensitive = msg.value === true
         else if (msg.action === 'resume') homeOpen = false
@@ -127,6 +136,62 @@
         }
         return
     }
+  }
+
+  // ------------------------------------------------------ profile requests
+  let asks: ProfileAsk[] = []
+  let askBusy = false
+
+  function reply(app_id: string, granted: boolean) {
+    send({ t: 'profile_reply', app_id, granted })
+  }
+
+  /** Answers every waiting ask with no (the player left the account, or the session ended). */
+  function declineAll() {
+    for (const a of asks) reply(a.app_id, false)
+    asks = []
+  }
+
+  async function answerAsk(allow: boolean) {
+    const ask = asks[0]
+    if (!ask || askBusy) return
+    askBusy = true
+    let granted = false
+    if (allow) {
+      try {
+        if (!demoTree) await grantProfile(code, ask.app_id)
+        granted = true
+      } catch {
+        granted = false
+      }
+    }
+    // The queue may have been cleared while the request was in flight.
+    if (asks[0]?.app_id === ask.app_id) {
+      asks = asks.slice(1)
+      reply(ask.app_id, granted)
+    }
+    askBusy = false
+  }
+
+  // ---------------------------------------------------------------- account
+  function applyAccount(a: { account_name: string | null; account_linked: boolean }) {
+    accountName = a.account_name ?? (a.account_linked ? accountName : null)
+    player = { ...player, account_linked: a.account_linked }
+  }
+  // Leaving the account (here or from the kiosk) answers every waiting game with no.
+  $: if (!player.account_linked && asks.length > 0) declineAll()
+  async function accountUse(use: boolean) {
+    if (demoTree) return applyAccount({ account_name: accountName, account_linked: use })
+    applyAccount(await useAccount(code, use))
+  }
+  async function accountForget() {
+    if (demoTree) return applyAccount({ account_name: null, account_linked: false })
+    const a = await forgetAccount(code)
+    accountName = null
+    applyAccount(a)
+  }
+  async function accountLink(link_code: string) {
+    applyAccount(await linkAccount(code, link_code))
   }
 
   /** Home sheet: rejoin with a new avatar (Rails broadcasts it to the kiosk). */
@@ -161,6 +226,7 @@
             model.releaseAll()
             loop.setEnabled(false)
             motion.stop()
+            asks = []
             onEnd(s)
           }
         },
@@ -368,7 +434,14 @@
       onVolume={changeVolume}
       onSpeaker={() => send({ t: 'system', action: 'be_speaker' })}
       onAvatar={changeAvatar}
+      {accountName}
+      onAccountUse={accountUse}
+      onAccountForget={accountForget}
+      onAccountLink={accountLink}
     />
+  {/if}
+  {#if asks.length > 0 && player.account_linked}
+    <ProfileSheet ask={asks[0]} account={accountName} busy={askBusy} onAnswer={answerAsk} />
   {/if}
 </div>
 

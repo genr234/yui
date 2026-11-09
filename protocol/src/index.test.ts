@@ -70,6 +70,17 @@ describe("system sensitive", () => {
   });
 });
 
+describe("profile messages (plan 10)", () => {
+  test("request and reply parse", () => {
+    expect(parseControl('{"t":"profile_request","app_id":"a.b","app_name":"Game"}')).toEqual({ t: "profile_request", app_id: "a.b", app_name: "Game" });
+    expect(parseControl('{"t":"profile_reply","app_id":"a.b","granted":false}')).toEqual({ t: "profile_reply", app_id: "a.b", granted: false });
+  });
+  test("rejects bad shapes", () => {
+    expect(() => parseControl('{"t":"profile_request","app_id":"a.b"}')).toThrow();
+    expect(() => parseControl('{"t":"profile_reply","app_id":5,"granted":true}')).toThrow();
+  });
+});
+
 describe("avatarImage", () => {
   test("only jpeg and webp base64 data urls are images", () => {
     expect(avatarImage("data:image/jpeg;base64,/9j/4AAQ")).toBe("data:image/jpeg;base64,/9j/4AAQ");

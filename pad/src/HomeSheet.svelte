@@ -3,6 +3,8 @@
   import { colorHex } from './colors'
   import Avatar from './Avatar.svelte'
   import AvatarPicker from './AvatarPicker.svelte'
+  import CodeEntry from './CodeEntry.svelte'
+  import { friendlyError } from './api'
 
   export let player: Player
   export let kioskName = ''
@@ -13,6 +15,14 @@
   export let onSpeaker: () => void
   /** Saves a new avatar (null removes it). Rejects when the kiosk refused it. */
   export let onAvatar: (avatar: string | null) => Promise<void>
+  /** The Yui account linked to this phone, if any (plan 10). */
+  export let accountName: string | null = null
+  /** Play as the account (true) or as a guest (false) this session. Rejects on failure. */
+  export let onAccountUse: (use: boolean) => Promise<void> = async () => {}
+  /** Forget the link on this phone. */
+  export let onAccountForget: () => Promise<void> = async () => {}
+  /** Redeem a phone code. */
+  export let onAccountLink: (code: string) => Promise<void> = async () => {}
 
   let confirmQuit = false
   let speakerAsked = false
@@ -38,6 +48,41 @@
     } finally {
       savingAvatar = false
     }
+  }
+
+  let accountBusy = false
+  let accountError = ''
+  let confirmForget = false
+  let enteringCode = false
+
+  $: usingAccount = player.account_linked === true
+  $: label = accountName || 'your Yui account'
+
+  async function account(fn: () => Promise<void>): Promise<boolean> {
+    accountBusy = true
+    accountError = ''
+    try {
+      await fn()
+      return true
+    } catch (e) {
+      accountError = friendlyError(e)
+      return false
+    } finally {
+      accountBusy = false
+    }
+  }
+
+  function forget() {
+    if (!confirmForget) {
+      confirmForget = true
+      return
+    }
+    confirmForget = false
+    void account(onAccountForget)
+  }
+
+  async function link(code: string) {
+    if (await account(() => onAccountLink(code))) enteringCode = false
   }
 
   function quit() {
@@ -79,6 +124,25 @@
     {/if}
 
     <button class="primary big" on:click={onResume}>Resume</button>
+
+    <section class="account" aria-label="Yui account">
+      {#if enteringCode}
+        <CodeEntry busy={accountBusy} error={accountError} onSubmit={link} onCancel={() => ((enteringCode = false), (accountError = ''))} />
+      {:else if usingAccount || accountName}
+        <p class="account-line">
+          <strong>{usingAccount ? `${label} · playing as your account` : `${label}`}</strong>
+        </p>
+        {#if usingAccount}
+          <button class="secondary" type="button" disabled={accountBusy} on:click={() => account(() => onAccountUse(false))}>Stop using it here</button>
+        {:else}
+          <button class="secondary" type="button" disabled={accountBusy} on:click={() => account(() => onAccountUse(true))}>Play as {label}</button>
+        {/if}
+        <button class="secondary danger" type="button" disabled={accountBusy} on:click={forget}>{confirmForget ? 'Tap again to forget this phone' : 'Forget this phone'}</button>
+      {:else}
+        <button class="secondary" type="button" on:click={() => (enteringCode = true)}>Use my Yui account</button>
+      {/if}
+      {#if accountError && !enteringCode}<p class="err" role="alert">{accountError}</p>{/if}
+    </section>
 
     <label class="volume">
       <span>Volume</span>
@@ -237,6 +301,17 @@
     min-width: 3.5em;
     text-align: right;
     color: var(--muted);
+  }
+  .account {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .account-line {
+    margin: 0;
+    padding: 0 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .danger {
     color: #ff9a9a;

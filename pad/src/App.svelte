@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import type { Node, Player } from '@yui/protocol'
-  import { ApiError, codeFromPath, friendlyError, getInfo, join, qrTokenFromQuery, simSlotFromQuery, type SessionInfo } from './api'
+  import { ApiError, codeFromPath, friendlyError, getInfo, join, linkAccount, qrTokenFromQuery, simSlotFromQuery, type SessionInfo } from './api'
   import { COLOR_NAMES, colorHex } from './colors'
   import Pad from './Pad.svelte'
   import AvatarPicker from './AvatarPicker.svelte'
+  import CodeEntry from './CodeEntry.svelte'
   import { AVATAR_EMOJIS } from './avatar'
   import { demoGamepad, demoRemote, demoShell, demoTree } from './layout/demo'
   import { unlockAudio } from './platform/sound'
@@ -41,6 +42,11 @@
     }
   })()
   let busy = false
+  // Plan 10: play as the phone's linked account (on by default), or link now with a phone code.
+  let useAccountOn = true
+  let enteringCode = false
+  let pendingCode = ''
+  let accountName: string | null = null
   let error = ''
   let log: string[] = []
 
@@ -57,6 +63,7 @@
     try {
       info = await getInfo(code)
       player = info.player
+      accountName = info.account_name ?? null
       screen = player ? 'joined' : 'join'
       if (!player && simSlot) await submit()
     } catch (e) {
@@ -70,8 +77,21 @@
     error = ''
     unlockAudio()
     try {
-      const res = await join(code, name.trim(), color, qrToken, avatar)
+      const res = await join(code, name.trim(), color, qrToken, avatar, accountName ? useAccountOn : undefined)
       player = res.player
+      if (pendingCode) {
+        // Linking needs a player, so it happens right after joining.
+        const link = pendingCode
+        pendingCode = ''
+        try {
+          const acc = await linkAccount(code, link)
+          accountName = acc.account_name
+          player = { ...player, account_linked: acc.account_linked }
+        } catch (e) {
+          error = friendlyError(e)
+          return
+        }
+      }
       if (!simSlot) {
         try {
           localStorage.setItem('yui_pad_name', name.trim())
@@ -111,7 +131,7 @@
     <pre class="log">{log.join('\n') || 'no events yet'}</pre>
   </div>
 {:else if screen === 'joined' && player && code}
-  <Pad {code} {player} kioskName={info?.kiosk_name ?? ''} onEnd={(s) => (screen = s)} />
+  <Pad {code} {player} {accountName} kioskName={info?.kiosk_name ?? ''} onEnd={(s) => (screen = s)} />
 {:else}
   <main class="shell">
     {#if screen === 'loading'}
@@ -181,10 +201,40 @@
           <AvatarPicker bind:value={avatar} disabled={busy} />
         </div>
 
+        {#if accountName}
+          <label class="account-switch">
+            <span><strong>Play as {accountName}</strong><small class="muted">Your progress can follow you to any kiosk.</small></span>
+            <input type="checkbox" role="switch" bind:checked={useAccountOn} disabled={busy} />
+          </label>
+        {:else if pendingCode}
+          <p class="account-note">
+            <span>Phone code ready. You'll be linked when you join.</span>
+            <button class="link" type="button" on:click={() => (pendingCode = '')}>Remove</button>
+          </p>
+        {:else if !enteringCode}
+          <button class="link account-link" type="button" on:click={() => (enteringCode = true)}>Use my Yui account</button>
+        {/if}
+
         {#if error}<p class="err" role="alert">{error}</p>{/if}
 
         <button class="primary" type="submit" disabled={!canJoin}>{busy ? 'Joining…' : 'Join'}</button>
       </form>
+    {/if}
+    {#if screen === 'join' && enteringCode}
+      <div class="scrim" role="presentation" on:click|self={() => (enteringCode = false)}>
+        <div class="sheet" role="dialog" aria-modal="true" aria-label="Use my Yui account">
+          <h2>Use my Yui account</h2>
+          <CodeEntry
+            submitLabel="Use this code"
+            onCancel={() => (enteringCode = false)}
+            onSubmit={(c) => {
+              pendingCode = c
+              enteringCode = false
+              error = ''
+            }}
+          />
+        </div>
+      </div>
     {/if}
   </main>
 {/if}
@@ -271,6 +321,83 @@
     background: rgba(216, 74, 74, 0.16);
     color: #ff9a9a;
     font-weight: 600;
+  }
+  .account-switch {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    min-height: 56px;
+    padding: 10px 14px;
+    border-radius: var(--yui-radius-hero);
+    background: var(--yui-chrome-fill);
+  }
+  .account-switch span {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .account-switch small {
+    font-weight: 600;
+  }
+  .account-switch input {
+    flex: 0 0 auto;
+    width: 52px;
+    height: 32px;
+    min-height: 0;
+    padding: 0;
+    margin: 0;
+    accent-color: var(--accent);
+  }
+  .account-note {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .link {
+    flex: 0 0 auto;
+    min-height: 48px;
+    padding: 0 12px;
+    border: 0;
+    background: none;
+    color: var(--yui-blue-soft);
+    font: inherit;
+    font-weight: 700;
+  }
+  .account-link {
+    align-self: center;
+    font-size: 0.95rem;
+  }
+  .scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    background: var(--yui-scrim);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+  .sheet {
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 20px max(20px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom))
+      max(20px, env(safe-area-inset-left));
+    border-radius: var(--yui-radius-shell) var(--yui-radius-shell) 0 0;
+    background-color: #142233;
+    box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--line) inset;
+  }
+  .sheet h2 {
+    margin: 0;
   }
   .demo {
     position: relative;
