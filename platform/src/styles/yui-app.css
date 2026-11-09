@@ -201,3 +201,48 @@
 	font-weight: 650;
 }
 
+
+/* ctx.controllers.joinCard() */
+.pad-join {
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	padding: 12px;
+	border-radius: 14px;
+	background: var(--yui-surface);
+	align-self: flex-start;
+}
+
+.pad-join-text {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.pad-join-text span {
+	font-size: 13px;
+	opacity: 0.8;
+}
+
+.pad-join-text strong {
+	font-size: 28px;
+	letter-spacing: 0.18em;
+}
+
+.pad-join-players {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.pad-join-players li {
+	padding: 2px 8px;
+	border-radius: 999px;
+	font-size: 12px;
+	font-weight: 650;
+	color: #fff;
+	background: var(--swatch, var(--yui-blue));
+}

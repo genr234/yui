@@ -475,6 +475,12 @@ func (m *Manager) prepare(spec Spec, pads VirtualPadResolver) (*exec.Cmd, *os.Fi
 		VirtualPad: func(n int) (string, error) {
 			return pads.VirtualPad(spec.AppID, n)
 		},
+		SystemPad: func() (string, error) {
+			if sys, ok := pads.(SystemPadResolver); ok {
+				return sys.SystemPad(spec.AppID)
+			}
+			return "", ErrVirtualPadsNotAttached
+		},
 	}
 	args := make([]string, len(spec.Args))
 	for i, arg := range spec.Args {

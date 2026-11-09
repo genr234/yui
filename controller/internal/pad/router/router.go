@@ -148,6 +148,15 @@ func New(cfg Config) (*Router, error) {
 // Stack is the focus stack, for pushing app and native providers.
 func (r *Router) Stack() *hub.Stack { return r.stack }
 
+// Pointer is the CDP adapter (nil when none was configured).
+func (r *Router) Pointer() Pointer { return r.cfg.Pointer }
+
+// Pads is the virtual pad adapter (nil when none was configured).
+func (r *Router) Pads() Pads { return r.cfg.Pads }
+
+// Send sends one control message (for example a §3 `sound`) to a phone.
+func (r *Router) Send(playerID string, msg any) error { return r.send(playerID, msg) }
+
 // Attach binds a running session. A previously attached session is detached.
 func (r *Router) Attach(s Session) {
 	r.mu.Lock()

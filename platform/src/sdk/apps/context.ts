@@ -9,6 +9,8 @@ import type {
 } from "./types";
 import type { LibraryTitle } from "../library";
 import { getLaunchItem } from "./launch-intent";
+import { createControllersHost, registerControllersHost } from "./controllers";
+import { yuiControllersRuntime } from "./controllers-runtime";
 import { isPermissionDeclared, isPermissionGranted, requestAppPermission } from "./permissions";
 import { bridge } from "../bridge";
 import {
@@ -168,7 +170,26 @@ export function createYuiContext(app: YuiSimpleApp, onRender: () => void): YuiCo
 		}
 	};
 
-	return {
+	// ctx.controllers: the host half checks permissions and talks to the
+	// controller; the runtime is the app-facing API (the sandbox runs its own
+	// copy against the same host).
+	const controllersHost = createControllersHost(app, ensurePermission);
+	let controllersPushOff: (() => void) | undefined;
+	const controllers = yuiControllersRuntime({
+		call: (method, args) => {
+			if (method === "start" && !controllersPushOff) {
+				controllersPushOff = controllersHost.addPush((event, data) => controllers.push(event, data));
+			}
+			return controllersHost.call(method, args ?? []);
+		},
+		changed: scheduleRender,
+	});
+	disposables.add(() => {
+		controllers.dispose();
+		controllersHost.dispose();
+	});
+
+	const ctx: YuiContext = {
 		app: {
 			id: app.id,
 			name: app.name,
@@ -343,11 +364,28 @@ export function createYuiContext(app: YuiSimpleApp, onRender: () => void): YuiCo
 				await bridge.send("library.remove", { app_id: app.id, ids });
 			},
 		},
+		controllers: controllers.api,
+		virtualPads: {
+			attach: (player, options) =>
+				controllersHost.virtualPads("attach", [typeof player === "string" ? player : player.id, options]) as any,
+			detach: async (player) => {
+				await controllersHost.virtualPads("detach", [typeof player === "string" ? player : player.id]);
+			},
+			list: () => controllersHost.virtualPads("list", []) as any,
+			systemPad: () => controllersHost.virtualPads("systemPad", []) as any,
+			press: async (button, action) => {
+				await controllersHost.virtualPads("press", [button, action ?? "tap"]);
+			},
+		},
 		launch: {
 			item: getLaunchItem(app.id),
 		},
 		log: console,
-		state: (initial) => createState(initial, scheduleRender),
+		state: (initial) =>
+			createState(initial, () => {
+				scheduleRender();
+				controllers.stateChanged();
+			}),
 		async toast(message) {
 			console.info(`[${app.id}] ${message}`);
 		},
@@ -359,4 +397,6 @@ export function createYuiContext(app: YuiSimpleApp, onRender: () => void): YuiCo
 			eventHandlers.clear();
 		},
 	};
+	registerControllersHost(ctx, controllersHost);
+	return ctx;
 }

@@ -63,6 +63,8 @@ type Options struct {
 //	             ArrowLeft, ArrowRight, Home, End, PageUp, PageDown, Delete,
 //	             or one letter or digit)
 //	click        the left mouse button at the cursor, by level or events
+//	swipe:…      swipe gestures → key taps (gestures.go)
+//	mouse[:…]    absolute trackpad → left-button drag (gestures.go)
 //
 // Commands run in order on one worker (Run); Deliver never blocks on Chrome.
 type Adapter struct {
@@ -76,6 +78,12 @@ type Adapter struct {
 	metricsAt time.Time
 	held      map[string]bool
 	lastErr   time.Time
+	swipes    map[string]*swipeState
+	// The absolute-trackpad mouse (gestures.go): pending is armed by a
+	// press and pressed by the next frame; down is held.
+	mouseDown    bool
+	mousePending bool
+	now          func() time.Time
 }
 
 type opKind int
@@ -88,6 +96,8 @@ const (
 	opInsert
 	opKey
 	opNavigate
+	opAbsMove
+	opAbsRelease
 )
 
 type op struct {
@@ -98,6 +108,9 @@ type op struct {
 	key    keyDef
 	down   bool
 	tap    bool
+	// opAbsMove: normalised point (0–1) inside region, or the viewport.
+	nx, ny float64
+	region *Rect
 }
 
 // New builds an adapter. Call Run to start executing commands.
@@ -111,7 +124,7 @@ func New(opts Options) *Adapter {
 	if opts.CallTimeout <= 0 {
 		opts.CallTimeout = 2 * time.Second
 	}
-	return &Adapter{opts: opts, queue: make(chan op, 256), held: map[string]bool{}}
+	return &Adapter{opts: opts, queue: make(chan op, 256), held: map[string]bool{}, swipes: map[string]*swipeState{}}
 }
 
 // Name implements hub.Adapter.
@@ -140,6 +153,14 @@ func (a *Adapter) Deliver(playerID string, outputs []hub.Output) error {
 			a.level(playerID, out, op{kind: opKey, player: playerID, key: key})
 		case out.Target == "click":
 			a.level(playerID, out, op{kind: opMouse, player: playerID})
+		case strings.HasPrefix(out.Target, "swipe:"):
+			if err := a.swipe(playerID, out); err != nil {
+				return err
+			}
+		case out.Target == "mouse" || strings.HasPrefix(out.Target, "mouse:"):
+			if err := a.mouse(playerID, out); err != nil {
+				return err
+			}
 		default:
 			return fmt.Errorf("cdp: unknown target %q", out.Target)
 		}
@@ -361,6 +382,28 @@ func (a *Adapter) exec(ctx context.Context, o op) error {
 	case opNavigate:
 		_, err := a.call(ctx, "Page.navigate", map[string]any{"url": o.text})
 		return err
+	case opAbsMove:
+		a.viewport(ctx)
+		x, y := a.place(o)
+		if o.down {
+			if _, err := a.call(ctx, "Input.dispatchMouseEvent", map[string]any{"type": "mouseMoved", "x": x, "y": y}); err != nil {
+				return err
+			}
+			_, err := a.call(ctx, "Input.dispatchMouseEvent", map[string]any{
+				"type": "mousePressed", "x": x, "y": y, "button": "left", "buttons": 1, "clickCount": 1,
+			})
+			return err
+		}
+		_, err := a.call(ctx, "Input.dispatchMouseEvent", map[string]any{
+			"type": "mouseMoved", "x": x, "y": y, "button": "left", "buttons": 1,
+		})
+		return err
+	case opAbsRelease:
+		x, y := a.position()
+		_, err := a.call(ctx, "Input.dispatchMouseEvent", map[string]any{
+			"type": "mouseReleased", "x": x, "y": y, "button": "left", "buttons": 0, "clickCount": 1,
+		})
+		return err
 	}
 	return nil
 }
@@ -411,6 +454,21 @@ func (a *Adapter) move(dx, dy float64) (float64, float64) {
 	defer a.mu.Unlock()
 	a.x = clamp(a.x+dx*f, 0, a.vw-1)
 	a.y = clamp(a.y+dy*f, 0, a.vh-1)
+	return a.x, a.y
+}
+
+// place moves the cursor to an absolute-trackpad point and returns it.
+func (a *Adapter) place(o op) (float64, float64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	nx, ny := clamp(o.nx, 0, 1), clamp(o.ny, 0, 1)
+	if r := o.region; r != nil {
+		a.x, a.y = r.X+nx*r.W, r.Y+ny*r.H
+	} else {
+		a.x, a.y = nx*(a.vw-1), ny*(a.vh-1)
+	}
+	a.x, a.y = clamp(a.x, 0, a.vw-1), clamp(a.y, 0, a.vh-1)
+	a.placed = true
 	return a.x, a.y
 }
 

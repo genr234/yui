@@ -11,6 +11,7 @@
   import {
     rememberEmbedStorage,
   } from "../../sdk/apps/embed-storage";
+  import PadJoin from "./PadJoin.svelte";
   import type {
     YuiChildren,
     YuiNode,
@@ -551,6 +552,10 @@
   <div style={`height: ${numberProp("size", 12)}px`}></div>
 {:else if node.type === "divider"}
   <hr class="yui-app-divider" />
+{:else if node.type === "pad-join"}
+  {#if app && permissionVersion >= 0 && isPermissionDeclared(app, "controllers") && isPermissionGranted(app.id, "controllers")}
+    <PadJoin size={numberProp("size", 132)} />
+  {/if}
 {:else if node.type === "image"}
   <img
     class="yui-app-image"

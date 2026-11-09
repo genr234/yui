@@ -327,9 +327,69 @@ class DemoBridge {
 			return this.padState as T;
 		}
 		if (method === "pad.sensitive") return { active: Boolean(params.active) } as T;
+		if (method === "pad.app.focus") {
+			if (params.active) {
+				this.focusedApp = String(params.app_id ?? "");
+				const pending = this.lastLayouts.get(this.focusedApp);
+				if (pending) this.simulatePhones(this.focusedApp, pending);
+			} else if (!params.app_id || params.app_id === this.focusedApp) this.focusedApp = "";
+			return { active: Boolean(params.active), app_id: this.focusedApp } as T;
+		}
+		if (method === "pad.app.layout") {
+			this.simulatePhones(String(params.app_id ?? ""), (params.layouts ?? {}) as Record<string, any>);
+			return null as T;
+		}
+		if (method === "pad.vpads.attach") {
+			return { player_id: params.player_id, backend: "dsu", slot: params.slot, address: `127.0.0.1:26760/${params.slot}` } as T;
+		}
+		if (method === "pad.vpads.list") return [] as T;
+		if (method === "pad.vpads.system_pad") return { backend: "dsu", slot: 0, address: "127.0.0.1:26761/0", buttons: [] } as T;
 		if (method in responses) return responses[method] as T;
 
 		return undefined as T;
+	}
+
+	private focusedApp = "";
+	private lastLayouts = new Map<string, Record<string, any>>();
+	private phoneTimers = new Map<string, number>();
+
+	/**
+	 * Demo only: the two demo phones act on the layouts an app sends them.
+	 * A guest picks the first option of a `choice`; the host taps its first
+	 * button a little later. Lets ctx.controllers apps play without phones.
+	 * The layouts are kept on `window.__yuiDemoPadLayouts` for inspection.
+	 */
+	private simulatePhones(appId: string, layouts: Record<string, any>) {
+		(window as any).__yuiDemoPadLayouts = layouts;
+		this.lastLayouts.set(appId, layouts);
+		const find = (node: any, type: string): any => {
+			if (!node || typeof node !== "object") return null;
+			if (node.type === type && node.props?.id) return node;
+			for (const child of node.children ?? []) {
+				const hit = find(child, type);
+				if (hit) return hit;
+			}
+			return null;
+		};
+		for (const player of this.padState.players) {
+			const id = String(player.id);
+			window.clearTimeout(this.phoneTimers.get(id));
+			const tree = layouts[id];
+			const choice = find(tree, "choice");
+			const button = player.host ? find(tree, "button") : null;
+			const target = choice ?? button;
+			if (!target || appId !== this.focusedApp) continue;
+			const value = choice ? choice.props.options?.[0]?.id : undefined;
+			const delay = choice ? (player.host ? 1800 : 1200) : 2600;
+			this.phoneTimers.set(
+				id,
+				window.setTimeout(() => {
+					for (const fn of [...(this.listeners.get("pad.app.input") ?? [])]) {
+						fn({ app_id: appId, player_id: id, target: target.props.id, kind: "tap", value });
+					}
+				}, delay),
+			);
+		}
 	}
 
 	on<T = unknown>(event: string, fn: BridgeEventListener<T>): () => void {
