@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -33,6 +34,10 @@ const (
 	StateVerifying   = "verifying"
 	StateReady       = "ready"
 	StateFailed      = "failed"
+	// StateRemote is an on-demand asset the server lists but has not fetched;
+	// StateFetching means the server is fetching it after a Request.
+	StateRemote   = "remote"
+	StateFetching = "fetching"
 
 	DefaultReserve        = uint64(5) << 30
 	DefaultReportInterval = 5 * time.Second
@@ -71,6 +76,7 @@ type Item struct {
 	State     string          `json:"state"`
 	BytesDone int64           `json:"bytes_done"`
 	ByteSize  int64           `json:"byte_size"`
+	Error     string          `json:"error,omitempty"`
 }
 
 type Current struct {
@@ -406,7 +412,11 @@ func (s *Syncer) List(kind string) ([]Item, error) {
 		if cur != nil && cur.ID == l.ID && l.State != StateReady {
 			done = cur.BytesDone
 		}
-		items = append(items, Item{ID: l.ID, Kind: l.Kind, Title: l.Title, Metadata: l.Metadata, State: l.State, BytesDone: done, ByteSize: l.ByteSize})
+		item := Item{ID: l.ID, Kind: l.Kind, Title: l.Title, Metadata: l.Metadata, State: l.State, BytesDone: done, ByteSize: l.ByteSize}
+		if l.State == StateRemote || l.State == StateFailed {
+			item.Error = l.Error
+		}
+		items = append(items, item)
 	}
 	sort.Slice(items, func(i, j int) bool {
 		if items[i].Title != items[j].Title {
@@ -458,6 +468,8 @@ func validItem(it ManifestItem) error {
 		return fmt.Errorf("unsafe filename %q", it.Filename)
 	case it.ByteSize < 0:
 		return fmt.Errorf("negative size")
+	case it.Remote:
+		return nil
 	case len(it.SHA256) != 64:
 		return fmt.Errorf("bad sha256")
 	}
@@ -684,6 +696,12 @@ func (s *Syncer) reconcileLocked(ctx, recCtx context.Context, gen uint64, force 
 	for _, id := range ids {
 		it := wanted[id]
 		old, had := recs[id]
+		if it.Remote {
+			if s.saveRemote(it, old, had) {
+				changed = true
+			}
+			continue
+		}
 		if had && old.SHA256 == it.SHA256 && old.State == StateReady && old.Filename == it.Filename && old.Kind == it.Kind {
 			if st, err := os.Stat(old.Path); err == nil && st.Size() == it.ByteSize {
 				if old.Title != it.Title || string(old.Metadata) != string(it.Metadata) || old.ByteSize != it.ByteSize {
@@ -741,6 +759,79 @@ func (s *Syncer) reconcileLocked(ctx, recCtx context.Context, gen uint64, force 
 	s.lastErr = ""
 	s.mu.Unlock()
 	return nil
+}
+
+// saveRemote records an on-demand asset without downloading it. A copy from an
+// earlier version is dropped: the server lists it as remote again only when
+// the file changed.
+func (s *Syncer) saveRemote(it ManifestItem, old Local, had bool) bool {
+	state := StateRemote
+	if it.RemoteState == StateFetching {
+		state = StateFetching
+	}
+	rec := Local{ID: it.ID, Kind: it.Kind, Title: it.Title, Filename: it.Filename, ByteSize: it.ByteSize, Metadata: it.Metadata, State: state, Error: it.RemoteError, UpdatedAt: s.cfg.Now().UTC().Format(time.RFC3339)}
+	if had && old.State == rec.State && old.Title == rec.Title && old.Error == rec.Error && old.ByteSize == rec.ByteSize &&
+		old.Filename == rec.Filename && string(old.Metadata) == string(rec.Metadata) {
+		return false
+	}
+	if had && old.State != StateRemote && old.State != StateFetching {
+		s.removeFiles(old)
+	}
+	_ = s.save(rec)
+	return true
+}
+
+// Request asks the server for an on-demand asset and returns its state. When
+// the server has it ready the next reconcile downloads it; while it is being
+// fetched the syncer checks back until it is ready, fails or 15 minutes pass
+// (the server also sends assets.reconcile when it is done). kinds, when not
+// empty, limits which kinds of asset the caller may ask for.
+func (s *Syncer) Request(ctx context.Context, id string, kinds []string) (Item, error) {
+	recs, err := s.records()
+	if err != nil {
+		return Item{}, err
+	}
+	l, ok := recs[id]
+	if !ok || (len(kinds) > 0 && !slices.Contains(kinds, l.Kind)) {
+		return Item{}, fmt.Errorf("unknown asset %q", id)
+	}
+	item := Item{ID: l.ID, Kind: l.Kind, Title: l.Title, Metadata: l.Metadata, State: l.State, BytesDone: l.BytesDone, ByteSize: l.ByteSize}
+	if l.State != StateRemote {
+		return item, nil
+	}
+	state, errText, err := s.cfg.Remote.RequestAsset(ctx, id)
+	if err != nil {
+		return item, err
+	}
+	switch state {
+	case "ready":
+		s.TriggerReconcile()
+		item.State = StateQueued
+	case "fetching":
+		l.State, l.Error = StateFetching, ""
+		_ = s.save(l)
+		s.changed()
+		item.State = StateFetching
+		go s.followRequest(id)
+	default:
+		item.State, item.Error = StateRemote, errText
+	}
+	return item, nil
+}
+
+func (s *Syncer) followRequest(id string) {
+	deadline := s.cfg.Now().Add(15 * time.Minute)
+	for s.cfg.Now().Before(deadline) {
+		time.Sleep(10 * time.Second)
+		s.TriggerReconcile()
+		recs, err := s.records()
+		if err != nil {
+			return
+		}
+		if l, ok := recs[id]; !ok || l.State != StateFetching {
+			return
+		}
+	}
 }
 
 func (s *Syncer) setErr(err error) {

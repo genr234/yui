@@ -51,6 +51,9 @@ type fakeServer struct {
 	downloads    int
 	reports      []reportRec
 	failReports  bool
+	// remote lists on-demand asset ids and their server state ("remote" or "fetching").
+	remote   map[string]string
+	requests []string
 }
 
 func newFakeServer(t *testing.T, assets ...fakeAsset) *fakeServer {
@@ -99,10 +102,24 @@ func (f *fakeServer) handle(w http.ResponseWriter, r *http.Request) {
 			if sha == "" {
 				sha = a.sha()
 			}
-			out = append(out, map[string]any{"id": a.ID, "kind": a.Kind, "title": a.Title, "filename": a.Filename,
-				"byte_size": len(a.Data), "sha256": sha, "metadata": map[string]any{"game_id": "X"}})
+			item := map[string]any{"id": a.ID, "kind": a.Kind, "title": a.Title, "filename": a.Filename,
+				"byte_size": len(a.Data), "sha256": sha, "metadata": map[string]any{"game_id": "X"}}
+			if state, ok := f.remote[a.ID]; ok {
+				item["sha256"], item["remote"], item["remote_state"] = nil, true, state
+			}
+			out = append(out, item)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"assets": out})
+	case strings.HasSuffix(r.URL.Path, "/request") && r.Method == "POST":
+		id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/kiosk/assets/"), "/request")
+		f.requests = append(f.requests, id)
+		if _, ok := f.remote[id]; ok {
+			f.remote[id] = "fetching"
+			w.WriteHeader(202)
+			_, _ = w.Write([]byte(`{"state":"fetching"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"state":"ready"}`))
 	case strings.HasSuffix(r.URL.Path, "/download"):
 		id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/kiosk/assets/"), "/download")
 		a, ok := f.assets[id]
@@ -774,5 +791,57 @@ func TestSweepKeepsWantedPartial(t *testing.T) {
 	}
 	if _, err := os.Stat(drop); !os.IsNotExist(err) {
 		t.Fatal("unwanted partial should be deleted")
+	}
+}
+
+func TestOnDemandAssetIsListedAndDownloadedOnlyAfterARequest(t *testing.T) {
+	a := fakeAsset{ID: "7", Kind: "game", Title: "Tiny Quest", Filename: "tiny.sfc", Data: data(4096, 9)}
+	srv := newFakeServer(t, a)
+	srv.remote = map[string]string{"7": "remote"}
+	h := newHarness(t, srv)
+
+	if err := h.s.Reconcile(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	if it := h.stateOf(t, "7"); it.State != StateRemote || it.Title != "Tiny Quest" {
+		t.Fatalf("remote item %+v", it)
+	}
+	if srv.downloads != 0 {
+		t.Fatal("an on-demand asset must not download before a request")
+	}
+
+	it, err := h.s.Request(context.Background(), "7", []string{"game"})
+	if err != nil || it.State != StateFetching {
+		t.Fatalf("request: %+v %v", it, err)
+	}
+	if len(srv.requests) != 1 || h.stateOf(t, "7").State != StateFetching {
+		t.Fatalf("requests %v state %+v", srv.requests, h.stateOf(t, "7"))
+	}
+
+	// The server finished fetching: the asset is an ordinary one now.
+	srv.mu.Lock()
+	delete(srv.remote, "7")
+	srv.mu.Unlock()
+	if err := h.s.Reconcile(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	if path, ok := h.s.LocalPath("7"); !ok || string(readFile(t, path)) != string(a.Data) {
+		t.Fatal("expected the requested asset on disk")
+	}
+	// A ready asset is not requested again.
+	if it, _ := h.s.Request(context.Background(), "7", []string{"game"}); it.State != StateReady || len(srv.requests) != 1 {
+		t.Fatalf("ready request %+v %v", it, srv.requests)
+	}
+}
+
+func TestRequestRespectsKinds(t *testing.T) {
+	srv := newFakeServer(t, fakeAsset{ID: "8", Kind: "media", Title: "Clip", Filename: "c.mp4", Data: data(64, 1)})
+	srv.remote = map[string]string{"8": "remote"}
+	h := newHarness(t, srv)
+	if err := h.s.Reconcile(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.s.Request(context.Background(), "8", []string{"game"}); err == nil || len(srv.requests) != 0 {
+		t.Fatalf("a game-only caller must not request media: %v %v", err, srv.requests)
 	}
 }

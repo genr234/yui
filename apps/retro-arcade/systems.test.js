@@ -109,10 +109,26 @@ describe("library", () => {
 			{ id: 4, title: "Later", state: "downloading", metadata: { platform: "gba" } },
 			{ id: 5, title: "Plain http", state: "ready", metadata: { platform: "gb", cover_url: "http://evil.example/x.png" } },
 		]);
-		expect(games.map((g) => g.title)).toEqual(["Alpha", "Plain http", "Zeta"]);
-		expect(games[2].cover).toBe("https://yui.example/c.png");
-		expect(games[1].cover).toBe("");
+		expect(games.map((g) => g.title)).toEqual(["Alpha", "Later", "Plain http", "Zeta"]);
+		expect(games[3].cover).toBe("https://yui.example/c.png");
+		expect(games[2].cover).toBe("");
+		expect(games[1].available).toBe(false);
 		expect(pending).toBe(1);
+		expect(s.fetchLabel(games[1])).toBe("Downloading…");
+		expect(s.fetchLabel(games[0])).toBe("");
+	});
+
+	test("lists remote games as pickable, with progress and errors", () => {
+		const { games, pending } = s.selectGames([
+			{ id: 1, title: "Cloud", state: "remote", byte_size: 100, metadata: { platform: "snes" } },
+			{ id: 2, title: "Half", state: "downloading", bytes_done: 50, byte_size: 100, metadata: { platform: "gb" } },
+			{ id: 3, title: "Oops", state: "remote", error: "RomM rejected the login", metadata: { platform: "gb" } },
+		]);
+		expect(pending).toBe(1);
+		expect(games.map((g) => [g.state, g.available, g.progress])).toEqual([["remote", false, 0], ["downloading", false, 0.5], ["remote", false, 0]]);
+		expect(s.fetchLabel(games[0])).toBe("Downloads when picked");
+		expect(s.fetchLabel(games[1])).toBe("Downloading 50%");
+		expect(s.fetchLabel(games[2])).toBe("Couldn't download");
 		expect(s.libraryIdFor("a/b")).toBe("game-a_b");
 	});
 });

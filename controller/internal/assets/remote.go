@@ -28,6 +28,12 @@ type ManifestItem struct {
 	SHA256    string          `json:"sha256"`
 	Metadata  json.RawMessage `json:"metadata,omitempty"`
 	UpdatedAt string          `json:"updated_at,omitempty"`
+	// Remote marks an on-demand asset the server lists but has not fetched
+	// yet (no sha256). RemoteState is "remote" or "fetching"; RemoteError is
+	// why the last fetch failed. Ask for it with Remote.RequestAsset.
+	Remote      bool   `json:"remote,omitempty"`
+	RemoteState string `json:"remote_state,omitempty"`
+	RemoteError string `json:"remote_error,omitempty"`
 }
 
 // Remote is the server side of the asset contract.
@@ -38,6 +44,9 @@ type Remote interface {
 	// body starts exactly at offset.
 	Download(ctx context.Context, id string, offset int64) (body io.ReadCloser, total int64, sha string, err error)
 	ReportStatus(ctx context.Context, id, state string, bytesDone int64, errText string) error
+	// RequestAsset asks the server to fetch an on-demand asset. It returns the
+	// server's state: "ready", "fetching" or "remote" (with the last error).
+	RequestAsset(ctx context.Context, id string) (state, errText string, err error)
 }
 
 // HTTPRemote implements Remote against the Rails kiosk API.
@@ -173,6 +182,33 @@ func (h *HTTPRemote) ReportStatus(ctx context.Context, id, state string, bytesDo
 		return httpError("status report", resp)
 	}
 	return nil
+}
+
+func (h *HTTPRemote) RequestAsset(ctx context.Context, id string) (string, string, error) {
+	req, err := h.request(ctx, http.MethodPost, "/api/kiosk/assets/"+url.PathEscape(id)+"/request", nil)
+	if err != nil {
+		return "", "", err
+	}
+	resp, err := h.control().Do(req)
+	if err != nil {
+		return "", "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
+		return "", "", httpError("asset request", resp)
+	}
+	var body struct {
+		State string  `json:"state"`
+		Error *string `json:"error"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&body); err != nil {
+		return "", "", fmt.Errorf("asset request: %w", err)
+	}
+	errText := ""
+	if body.Error != nil {
+		errText = *body.Error
+	}
+	return body.State, errText, nil
 }
 
 func httpError(what string, resp *http.Response) error {

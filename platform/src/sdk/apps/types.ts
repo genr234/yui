@@ -231,9 +231,12 @@ export type YuiAsset = {
 	title: string;
 	/** What the server's analyzers or the upload form recorded, e.g. `platform`, `cover_url`, `runtime`, `version`. */
 	metadata: Record<string, any>;
-	state: "queued" | "downloading" | "paused" | "verifying" | "ready" | "failed" | string;
+	/** "remote": listed but only downloaded on request (`ctx.assets.request`); "fetching": the server is getting it. */
+	state: "remote" | "fetching" | "queued" | "downloading" | "paused" | "verifying" | "ready" | "failed" | string;
 	bytes_done: number;
 	byte_size: number;
+	/** Why the last fetch of a remote asset failed. */
+	error?: string;
 };
 
 /** `ctx.assets("game")` lists the synced assets of a kind (permission `assets:<kind>`). */
@@ -241,6 +244,11 @@ export type YuiAssetsApi = {
 	(kind: string): Promise<YuiAsset[]>;
 	/** A short-lived URL for a ready asset on the app's own origin (needs `assets:<kind>` and a web bundle). */
 	url(id: string): Promise<string>;
+	/**
+	 * Asks for an on-demand asset (state "remote"), such as a game imported from a linked
+	 * account. Resolves with its new state; `onChange` reports the download as usual.
+	 */
+	request(id: string): Promise<YuiAsset>;
 	/** Runs when the asset list or sync progress changes; re-list to read it. */
 	onChange(handler: () => void): () => void;
 };

@@ -1,7 +1,7 @@
 // Retro Arcade's kiosk page: draws the picker, runs games in play.html and
 // turns phone input frames into EmulatorJS input. The app (app.yui.js)
 // owns state and talks to this page over the embed channel.
-import { createInputMapper, systemFor, tileSvg } from "./systems.js";
+import { createInputMapper, fetchLabel, systemFor, tileSvg } from "./systems.js";
 
 const $ = (id) => document.getElementById(id);
 const yui = window.yui;
@@ -10,6 +10,7 @@ let view = { phase: "lobby", games: [], recent: [], filter: "all", players: [] }
 let ports = {}; // player id -> port
 let mappers = new Map(); // port -> input mapper
 let game = null; // { frame, window, system, started, paused }
+let preparing = false; // the loading screen is up before the game's files are here
 let badgeTimer = 0;
 let toastTimer = 0;
 
@@ -21,6 +22,12 @@ yui.on((message) => {
     case "view":
       view = message.view;
       render();
+      break;
+    case "prepare":
+      prepare(message.game, message.label);
+      break;
+    case "progress":
+      if (preparing) $("loading-label").textContent = String(message.label || "");
       break;
     case "load":
       load(message);
@@ -47,6 +54,7 @@ yui.on((message) => {
       if (game?.started) game.window.arcade.reset();
       break;
     case "stop":
+      unprepare();
       stop();
       yui.post({ type: "stopped" });
       break;
@@ -117,6 +125,14 @@ function tileFor(entry, extra = "") {
     system.textContent = entry.systemName;
     cart.append(system);
   }
+  if (entry.available === false) {
+    button.classList.add("not-here");
+    const fetch = document.createElement("span");
+    fetch.className = "fetch";
+    fetch.textContent = entry.state === "remote" ? (entry.error ? "!" : "⇣") : `${Math.round((entry.progress || 0) * 100)}%`;
+    fetch.title = fetchLabel(entry);
+    cart.append(fetch);
+  }
   if (entry.saved) {
     const badge = document.createElement("span");
     badge.className = "badge";
@@ -128,7 +144,7 @@ function tileFor(entry, extra = "") {
   name.textContent = entry.title;
   const meta = document.createElement("span");
   meta.className = "meta";
-  meta.textContent = extra || entry.systemName;
+  meta.textContent = extra || (entry.available === false && entry.state !== "remote" ? `${entry.systemName} · ${fetchLabel(entry)}` : entry.systemName);
   button.append(cart, name, meta);
   button.addEventListener("click", () => yui.post({ type: "pick", id: entry.id }));
   return button;
@@ -187,6 +203,7 @@ function renderPicker() {
 // ---- games --------------------------------------------------------------
 
 function render() {
+  if (preparing && view.phase === "lobby") unprepare();
   const playing = Boolean(game);
   $("app").dataset.phase = view.phase;
   $("picker").hidden = playing;
@@ -197,7 +214,27 @@ function render() {
   renderBadges();
 }
 
+// Shows the loading screen the moment a game is picked, before its files or
+// saves are ready; load() takes over from here.
+function prepare(entry, label) {
+  if (!entry || game) return;
+  const system = systemFor(entry.system);
+  preparing = true;
+  $("loading-tile").src = entry.cover || tileSvg(entry.title, system ? system.name : "");
+  $("loading-title").textContent = entry.title;
+  $("loading-label").textContent = String(label || "Loading…");
+  $("loading").hidden = false;
+  $("error").hidden = true;
+}
+
+function unprepare() {
+  if (!preparing) return;
+  preparing = false;
+  if (!game) $("loading").hidden = true;
+}
+
 function load(message) {
+  preparing = false;
   stop();
   const system = systemFor(message.game.system);
   if (!system) {

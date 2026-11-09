@@ -213,7 +213,11 @@ function assignPorts(players, system, current = {}) {
 	return ports;
 }
 
-/** Games out of ctx.assets("game"). */
+/**
+ * Games out of ctx.assets("game"). Games that aren't on this kiosk yet are listed
+ * too (available: false): "remote" ones download when picked (ctx.assets.request),
+ * the rest are already on their way. `pending` counts those already downloading.
+ */
 function selectGames(assets) {
 	const games = [];
 	let pending = 0;
@@ -221,16 +225,31 @@ function selectGames(assets) {
 		const meta = asset?.metadata ?? {};
 		const system = systemFor(meta.platform);
 		if (!system) continue;
-		if (asset.state !== undefined && asset.state !== "ready") {
-			pending += 1;
-			continue;
-		}
+		const state = asset.state === undefined ? "ready" : String(asset.state);
+		if (state !== "ready" && state !== "remote") pending += 1;
 		const title = String(asset.title || meta.title || "Untitled game");
 		const cover = typeof meta.cover_url === "string" && /^(https:\/\/|http:\/\/(localhost|127\.0\.0\.1)[:/])/.test(meta.cover_url) ? meta.cover_url : "";
-		games.push({ id: String(asset.id), title, system: system.id, systemName: system.name, cover, fromLink: Boolean(meta.source && meta.source.provider) });
+		const size = Number(asset.byte_size) || 0;
+		games.push({
+			id: String(asset.id), title, system: system.id, systemName: system.name, cover,
+			fromLink: Boolean(meta.source && meta.source.provider),
+			state, available: state === "ready",
+			progress: state === "ready" ? 1 : size > 0 ? Math.min(1, (Number(asset.bytes_done) || 0) / size) : 0,
+			error: typeof asset.error === "string" ? asset.error : "",
+		});
 	}
 	games.sort((a, b) => a.title.localeCompare(b.title) || a.id.localeCompare(b.id));
 	return { games, pending };
+}
+
+/** What a tile or the loading screen says about a game that isn't here yet. */
+function fetchLabel(game) {
+	if (!game || game.available) return "";
+	if (game.state === "remote") return game.error ? "Couldn't download" : "Downloads when picked";
+	if (game.state === "fetching") return "Getting it from the server…";
+	if (game.state === "failed") return "Download failed, retrying";
+	const pct = Math.round((game.progress || 0) * 100);
+	return pct > 0 ? `Downloading ${pct}%` : "Downloading…";
 }
 
 /** Library title ids match [A-Za-z0-9][A-Za-z0-9._:-]{0,127}. */
@@ -241,5 +260,5 @@ function libraryIdFor(assetId) {
 export {
 	EMULATORJS_VERSION, EMULATORJS_RUNTIME, RETROPAD, PAD_BITS, POSITION_TO_RETROPAD, SYSTEMS,
 	systemFor, phonePreset, createInputMapper, titleHue, tileSvg, saveKeyBase, stateKey, sramKey,
-	statesFor, nextStateSlot, assignPorts, selectGames, libraryIdFor,
+	statesFor, nextStateSlot, assignPorts, selectGames, fetchLabel, libraryIdFor,
 };

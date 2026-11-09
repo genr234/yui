@@ -400,6 +400,14 @@ export function createYuiContext(app: YuiSimpleApp, onRender: () => void): YuiCo
 			},
 			{
 				url: (id: string) => webHost.assetUrl(id),
+				async request(id: string) {
+					if (typeof id !== "string" || !id) throw new Error("YUI_ASSETS: an asset id is required");
+					const kinds = (app.permissions ?? [])
+						.filter((permission) => permission.startsWith("assets:") && isPermissionGranted(app.id, permission))
+						.map((permission) => permission.slice("assets:".length));
+					if (!kinds.length) throw permissionError("assets:<kind>");
+					return await bridge.send<YuiAsset>("assets.request", { id, kinds });
+				},
 				onChange(handler: () => void) {
 					const granted = (app.permissions ?? []).some(
 						(permission) => permission.startsWith("assets:") && isPermissionGranted(app.id, permission),

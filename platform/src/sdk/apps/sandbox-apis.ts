@@ -114,6 +114,7 @@ function yuiExtendContext(ctx) {
   };
   ctx.assets = Object.assign((kind) => rpc("assets", "list", [kind]), {
     url: (id) => rpc("assets", "url", [id]),
+    request: (id) => rpc("assets", "request", [id]),
     onChange: (handler) => yuiSubscribe("assets", "changed", handler)
   });
   ctx.web = {
@@ -204,6 +205,8 @@ export async function handleSandboxApiCall(
 			ctx.assets.onChange(() => push("assets", "changed", null));
 			return undefined;
 		}
+		case "assets.request":
+			return ctx.assets.request(first);
 		case "assets.url":
 			return ctx.assets.url(first);
 		case "web.origin":

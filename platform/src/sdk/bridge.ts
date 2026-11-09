@@ -284,6 +284,9 @@ class DemoBridge {
 			const kind = String(params.kind ?? "");
 			return (Array.isArray(list) ? list : []).filter((asset: any) => !kind || asset.kind === kind).map(({ file: _file, ...asset }: any) => asset) as T;
 		}
+		if (method === "assets.request") {
+			return { id: String(params.id), state: "ready" } as T;
+		}
 		if (method === "assets.url") {
 			return {
 				url: `${window.location.origin}/app-web/${String(params.app_id)}/_asset/${encodeURIComponent(String(params.asset_id))}`,

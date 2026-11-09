@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"sync"
@@ -19,6 +20,7 @@ const (
 func AssetsCommands() []Command {
 	return []Command{
 		AssetsListCommand{},
+		AssetsRequestCommand{},
 		AssetsStatusCommand{},
 		AssetsSyncNowCommand{},
 		AssetsReconcileCommand{},
@@ -153,6 +155,24 @@ func (AssetsListCommand) Handle(r *Registry, params json.RawMessage) (any, error
 		}
 	}
 	return r.AssetSyncer().List(p.Kind)
+}
+
+// AssetsRequestCommand asks the server for an on-demand asset (one it lists
+// but only fetches when a kiosk needs it, such as an imported game).
+type AssetsRequestCommand struct{}
+
+func (AssetsRequestCommand) Name() string { return "assets.request" }
+func (AssetsRequestCommand) Handle(r *Registry, params json.RawMessage) (any, error) {
+	var p struct {
+		ID    string   `json:"id"`
+		Kinds []string `json:"kinds"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil || p.ID == "" {
+		return nil, fmt.Errorf("assets.request needs an id")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return r.AssetSyncer().Request(ctx, p.ID, p.Kinds)
 }
 
 type AssetsStatusCommand struct{}

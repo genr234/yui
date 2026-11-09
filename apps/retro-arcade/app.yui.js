@@ -38,6 +38,7 @@ export default {
       saveOwner: null, // player id whose account keeps this game's saves
       error: "",
       hover: null,
+      loadingLabel: "", // download progress while a picked game is fetched
     });
 
     // ---- the page -----------------------------------------------------------
@@ -150,6 +151,7 @@ export default {
         const picked = selectGames(await ctx.assets("game"));
         state.games = picked.games;
         state.pending = picked.pending;
+        checkFetch();
         if (!watching) {
           watching = true;
           ctx.assets.onChange(() => refresh());
@@ -315,6 +317,51 @@ export default {
       start(game, { continue: Boolean(state.saved[game.id]) });
     }
 
+    // A game that isn't on this kiosk yet: ask for it once, then follow
+    // ctx.assets.onChange until it is ready (checkFetch runs on every refresh).
+    let fetching = null; // { id, resolve, reject, requested, deadline }
+    function fetchGame(game) {
+      return new Promise((resolve, reject) => {
+        fetching = { id: game.id, resolve, reject, requested: game.state !== "remote", deadline: Date.now() + 15 * 60_000 };
+        if (game.state === "remote") {
+          ctx.assets.request(game.id).then(
+            (asset) => {
+              if (!fetching || fetching.id !== game.id) return;
+              fetching.requested = true;
+              if (asset && asset.state === "remote" && asset.error) failFetch(`Couldn't download ${game.title}: ${asset.error}`);
+              else refresh();
+            },
+            (error) => failFetch(`Couldn't download ${game.title}: ${errorText(error)}`),
+          );
+        }
+      });
+    }
+
+    function failFetch(message) {
+      const waiter = fetching;
+      fetching = null;
+      if (waiter) waiter.reject(new Error(message));
+    }
+
+    function checkFetch() {
+      if (!fetching) return;
+      const game = gameById(fetching.id);
+      if (!game) return failFetch("That game was removed from the library.");
+      if (game.available) {
+        const waiter = fetching;
+        fetching = null;
+        waiter.resolve(game);
+        return;
+      }
+      if (fetching.requested && game.state === "remote" && game.error) return failFetch(`Couldn't download ${game.title}: ${game.error}`);
+      if (Date.now() > fetching.deadline) return failFetch(`${game.title} is taking too long to download. Try again in a bit.`);
+      const label = fetchLabel(game);
+      if (label !== state.loadingLabel) {
+        state.loadingLabel = label;
+        post({ type: "progress", label });
+      }
+    }
+
     async function start(game, options) {
       const system = systemFor(game.system);
       if (!system || state.phase !== "lobby") return;
@@ -323,17 +370,33 @@ export default {
       state.error = "";
       state.hostView = "games";
       state.ports = assignPorts(pad.players, system);
+      state.loadingLabel = game.available ? "" : fetchLabel(game);
       lastSramHash = "";
+      // Show the loading screen straight away; everything below runs behind it.
+      post({
+        type: "prepare",
+        game: { id: game.id, title: game.title, system: game.system, systemName: game.systemName, cover: game.cover },
+        label: game.available ? "Loading the emulator…" : state.loadingLabel,
+      });
       sendView();
+      const ready = game.available ? Promise.resolve(game) : fetchGame(game);
+      ready.catch(() => {}); // handled below; keeps an early failure from going unhandled
+      const stillHere = () => state.phase === "loading" && state.current === game;
       try {
         await chooseSaveOwner();
+        if (!stillHere()) return;
+        const scope = state.saveOwner ? "player" : "kiosk";
+        const [sram, saved] = await Promise.all([
+          readBlob(sramKey(game.id), scope),
+          options.continue
+            ? listStates(game).then((states) => (states.length ? readBlob(states[0].key, states[0].scope) : null))
+            : null,
+          ready,
+        ]);
+        if (!stillHere()) return;
+        state.loadingLabel = "";
         const gameUrl = await ctx.assets.url(game.id);
-        const sram = await readBlob(sramKey(game.id), state.saveOwner ? "player" : "kiosk");
-        let saved = null;
-        if (options.continue) {
-          const states = await listStates(game);
-          if (states.length) saved = await readBlob(states[0].key, states[0].scope);
-        }
+        if (!stillHere()) return;
         post({
           type: "load",
           game: { id: game.id, title: game.title, system: game.system, systemName: game.systemName, cover: game.cover },
@@ -347,12 +410,19 @@ export default {
         post({ type: "ports", ports: state.ports });
         markPlayed(game);
       } catch (error) {
+        if (!stillHere()) return;
         state.error = errorText(error);
         backToLobby();
       }
     }
 
     function backToLobby() {
+      if (fetching) {
+        const waiter = fetching;
+        fetching = null;
+        waiter.reject(new Error("cancelled"));
+      }
+      state.loadingLabel = "";
       state.phase = "lobby";
       state.current = null;
       state.ports = {};
@@ -469,7 +539,7 @@ export default {
       return ordered.slice(0, MAX_PHONE_GAMES).map((game) => ({
         id: game.id,
         title: game.title,
-        subtitle: state.saved[game.id] ? `${game.systemName} · continue` : game.systemName,
+        subtitle: state.saved[game.id] ? `${game.systemName} · continue` : game.available ? game.systemName : `${game.systemName} · ${fetchLabel(game).toLowerCase()}`,
         image: game.cover && /^https:/.test(game.cover) ? game.cover : tileSvg(game.title, game.systemName),
       }));
     }
@@ -554,7 +624,11 @@ export default {
 
     pad.layout((player) => {
       const ui = pad.ui;
-      if (state.phase === "loading") return ui.text(`Loading ${state.current ? state.current.title : "the game"}…`, { size: "large", align: "center" });
+      if (state.phase === "loading") {
+        const title = ui.text(`Loading ${state.current ? state.current.title : "the game"}…`, { size: "large", align: "center" });
+        if (!state.loadingLabel) return title;
+        return ui.column({ gap: 10 }, [title, ui.text(state.loadingLabel, { align: "center" }), player.host ? ui.button({ id: "cancel_load", label: "Cancel", variant: "secondary" }) : null]);
+      }
       if (state.phase === "playing" && state.current) return playingLayout(ui, player);
       if (player.host) return hostLobby(ui);
       const host = pad.players.find((other) => other.host && other.connected);
@@ -569,6 +643,10 @@ export default {
         return;
       }
       if (!player.host) return;
+      if (state.phase === "loading" && control === "cancel_load" && kind === "tap") {
+        quit();
+        return;
+      }
       if (state.phase === "lobby") {
         if (control === "games" && kind === "tap") {
           state.hover = String(value);
@@ -884,7 +962,11 @@ function assignPorts(players, system, current = {}) {
 	return ports;
 }
 
-/** Games out of ctx.assets("game"). */
+/**
+ * Games out of ctx.assets("game"). Games that aren't on this kiosk yet are listed
+ * too (available: false): "remote" ones download when picked (ctx.assets.request),
+ * the rest are already on their way. `pending` counts those already downloading.
+ */
 function selectGames(assets) {
 	const games = [];
 	let pending = 0;
@@ -892,16 +974,31 @@ function selectGames(assets) {
 		const meta = asset?.metadata ?? {};
 		const system = systemFor(meta.platform);
 		if (!system) continue;
-		if (asset.state !== undefined && asset.state !== "ready") {
-			pending += 1;
-			continue;
-		}
+		const state = asset.state === undefined ? "ready" : String(asset.state);
+		if (state !== "ready" && state !== "remote") pending += 1;
 		const title = String(asset.title || meta.title || "Untitled game");
 		const cover = typeof meta.cover_url === "string" && /^(https:\/\/|http:\/\/(localhost|127\.0\.0\.1)[:/])/.test(meta.cover_url) ? meta.cover_url : "";
-		games.push({ id: String(asset.id), title, system: system.id, systemName: system.name, cover, fromLink: Boolean(meta.source && meta.source.provider) });
+		const size = Number(asset.byte_size) || 0;
+		games.push({
+			id: String(asset.id), title, system: system.id, systemName: system.name, cover,
+			fromLink: Boolean(meta.source && meta.source.provider),
+			state, available: state === "ready",
+			progress: state === "ready" ? 1 : size > 0 ? Math.min(1, (Number(asset.bytes_done) || 0) / size) : 0,
+			error: typeof asset.error === "string" ? asset.error : "",
+		});
 	}
 	games.sort((a, b) => a.title.localeCompare(b.title) || a.id.localeCompare(b.id));
 	return { games, pending };
+}
+
+/** What a tile or the loading screen says about a game that isn't here yet. */
+function fetchLabel(game) {
+	if (!game || game.available) return "";
+	if (game.state === "remote") return game.error ? "Couldn't download" : "Downloads when picked";
+	if (game.state === "fetching") return "Getting it from the server…";
+	if (game.state === "failed") return "Download failed, retrying";
+	const pct = Math.round((game.progress || 0) * 100);
+	return pct > 0 ? `Downloading ${pct}%` : "Downloading…";
 }
 
 /** Library title ids match [A-Za-z0-9][A-Za-z0-9._:-]{0,127}. */
