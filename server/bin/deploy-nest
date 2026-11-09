@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+# Deploys the server to a Hack Club Nest container (NixOS, no Docker) as a
+# plain systemd service on port 3000. Kamal stays the deploy for Docker hosts.
+#
+#   bin/deploy-nest                 # deploy the committed HEAD
+#   NEST_HOST=you@hackclub.app NEST_KEY=~/.ssh/nest_ed25519 bin/deploy-nest
+#   bin/deploy-nest --domain yui.example.org   # set the public domain, then deploy
+#
+# Layout on the box:
+#   /srv/yui/releases/<sha>   code (read-only to the service)
+#   /srv/yui/bundle           gems
+#   /srv/yui/yui.env          secrets and settings (made on first deploy, never overwritten)
+#   /var/lib/yui              database, uploads, covers, tmp (systemd StateDirectory)
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+host=${NEST_HOST:-genr234@hackclub.app}
+key=${NEST_KEY:-$HOME/.ssh/nest_ed25519}
+domain=""
+if [ "${1:-}" = "--domain" ]; then domain=${2:?--domain needs a host name}; fi
+
+ssh_nest() { ssh -o BatchMode=yes -o IdentitiesOnly=yes -i "$key" "$host" "$@" 2> >(grep -v "post-quantum\|pq.html\|upgraded\|store now" >&2); }
+
+sha=$(git rev-parse --short HEAD)
+if ! git diff --quiet HEAD -- . ; then echo "note: deploying $sha; uncommitted server changes are not included" >&2; fi
+
+echo "==> uploading $sha"
+git archive --format=tar HEAD . | ssh_nest "set -e; mkdir -p /srv/yui/releases/$sha && tar -x -C /srv/yui/releases/$sha"
+
+echo "==> installing on the box"
+ssh_nest bash -s -- "$sha" "$domain" <<'REMOTE'
+set -euo pipefail
+sha=$1; domain=${2:-}
+release=/srv/yui/releases/$sha
+profile=/nix/var/nix/profiles/yui
+export PATH=$profile/bin:$PATH
+
+# Settings and secrets: generated once, kept across deploys.
+env=/srv/yui/yui.env
+if [ ! -f "$env" ]; then
+  umask 077
+  hex() { openssl rand -hex "$1"; }
+  cat > "$env" <<ENV
+RAILS_ENV=production
+PORT=3000
+SECRET_KEY_BASE=$(hex 64)
+ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY=$(hex 16)
+ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY=$(hex 16)
+ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT=$(hex 16)
+SOLID_QUEUE_IN_PUMA=true
+RAILS_MAX_THREADS=8
+WEB_CONCURRENCY=0
+RAILS_LOG_LEVEL=info
+# Nest's gateway terminates TLS and forwards plain HTTP.
+RAILS_ASSUME_SSL=true
+RAILS_FORCE_SSL=false
+# Set by bin/deploy-nest --domain <host>:
+RAILS_HOST=
+RAILS_ALLOWED_HOSTS=
+WEBAUTHN_ALLOWED_ORIGINS=
+WEBAUTHN_RP_ID=
+ENV
+  echo "made $env"
+fi
+if [ -n "$domain" ]; then
+  sed -i -e "s|^RAILS_HOST=.*|RAILS_HOST=$domain|" \
+         -e "s|^RAILS_ALLOWED_HOSTS=.*|RAILS_ALLOWED_HOSTS=$domain|" \
+         -e "s|^WEBAUTHN_ALLOWED_ORIGINS=.*|WEBAUTHN_ALLOWED_ORIGINS=https://$domain|" \
+         -e "s|^WEBAUTHN_RP_ID=.*|WEBAUTHN_RP_ID=$domain|" "$env"
+  echo "domain set to $domain"
+fi
+
+# Writable state lives in the service's StateDirectory.
+state=/var/lib/private/yui
+mkdir -p "$state/storage" "$state/tmp"
+chmod 700 /var/lib/private
+[ -e /var/lib/yui ] || ln -s private/yui /var/lib/yui
+cd "$release"
+rm -rf storage tmp log
+ln -s /var/lib/yui/storage storage
+ln -s /var/lib/yui/tmp tmp
+mkdir -p log
+
+# Gems are built inside nix-shell so native extensions find headers and libs.
+nix-shell -p ruby_3_4 gcc gnumake pkg-config sqlite libyaml openssl git --run "
+  set -e
+  export BUNDLE_PATH=/srv/yui/bundle BUNDLE_DEPLOYMENT=1 BUNDLE_WITHOUT=development:test
+  bundle install --jobs 4 --quiet
+  # Precompile with a throwaway key; storage points at a scratch dir so the live DB is untouched.
+  SECRET_KEY_BASE_DUMMY=1 RAILS_ENV=production bundle exec rails assets:precompile >/dev/null
+  bundle exec bootsnap precompile -j 0 app/ lib/ >/dev/null 2>&1 || true
+"
+
+# Service unit (same mechanism as the other services on this box).
+unit=/etc/systemd/system.control/yui.service
+cat > "$unit" <<UNIT
+[Unit]
+Description=Yui server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/srv/yui/yui.env
+Environment=BUNDLE_PATH=/srv/yui/bundle BUNDLE_DEPLOYMENT=1 BUNDLE_WITHOUT=development:test
+Environment=PATH=$profile/bin:/run/current-system/sw/bin
+Environment=LD_LIBRARY_PATH=$profile/lib
+Environment=LD_PRELOAD=$profile/lib/libjemalloc.so
+Environment=BOOTSNAP_CACHE_DIR=/var/lib/yui/tmp/cache
+WorkingDirectory=/srv/yui/current
+ExecStartPre=+/srv/yui/firewall.sh open
+ExecStartPre=$profile/bin/bundle exec rails db:prepare
+ExecStopPost=+/srv/yui/firewall.sh close
+ExecStart=$profile/bin/bundle exec rails server -b 0.0.0.0 -p 3000
+DynamicUser=yes
+StateDirectory=yui
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+Restart=always
+RestartSec=3
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+mkdir -p /etc/systemd/system.control/multi-user.target.wants
+ln -sf ../yui.service /etc/systemd/system.control/multi-user.target.wants/yui.service
+
+cat > /srv/yui/firewall.sh <<'FW'
+#!/bin/sh
+# Opens port 3000 to the Nest gateway only.
+set -e
+IPT=/run/current-system/sw/bin/iptables
+RULE="nixos-fw -p tcp --dport 3000 -s 10.60.1.2 -j nixos-fw-accept"
+case "$1" in
+  open)  $IPT -C $RULE 2>/dev/null || $IPT -I $RULE ;;
+  close) while $IPT -C $RULE 2>/dev/null; do $IPT -D $RULE; done ;;
+esac
+FW
+chmod +x /srv/yui/firewall.sh
+
+ln -sfn "$release" /srv/yui/current
+systemctl daemon-reload
+systemctl restart yui
+
+# Keep the last 3 releases.
+ls -1dt /srv/yui/releases/* | tail -n +4 | xargs -r rm -rf
+
+for i in $(seq 1 60); do
+  if curl -fsS -o /dev/null http://127.0.0.1:3000/up; then echo "up: $sha"; exit 0; fi
+  sleep 2
+done
+echo "server did not come up; recent logs:" >&2
+journalctl -u yui -n 40 --no-pager >&2
+exit 1
+REMOTE
