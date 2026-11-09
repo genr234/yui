@@ -42,11 +42,11 @@ func readSaveFile(t *testing.T, dir, rel string) string {
 var saveEpoch = time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
 
 func TestNormalizeSaves(t *testing.T) {
-	got, err := normalizeSaves([]string{"GC", "Wii/title", "Wii/title/00010000", "GC", `Dir\Sub`})
+	got, err := normalizeSaves([]string{"cards", "profile/slots", "profile/slots/00010000", "cards", `Dir\Sub`})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(got, ",") != "Dir/Sub,GC,Wii/title" {
+	if strings.Join(got, ",") != "Dir/Sub,cards,profile/slots" {
 		t.Fatalf("normalized = %v", got)
 	}
 	for _, bad := range []string{"../x", "a/../../x", "/abs", "C:/x", "", ".", "a:b"} {
@@ -61,11 +61,11 @@ func TestNormalizeSaves(t *testing.T) {
 
 func TestPackAndRestoreRoundTrip(t *testing.T) {
 	src := t.TempDir()
-	writeSaveFile(t, src, "Wii/title/a.sav", "alpha", saveEpoch)
-	writeSaveFile(t, src, "Wii/title/sub/b.sav", "beta", saveEpoch.Add(time.Hour))
-	writeSaveFile(t, src, "GC/card.raw", "gamma", saveEpoch.Add(-time.Hour))
+	writeSaveFile(t, src, "profile/slots/a.sav", "alpha", saveEpoch)
+	writeSaveFile(t, src, "profile/slots/sub/b.sav", "beta", saveEpoch.Add(time.Hour))
+	writeSaveFile(t, src, "cards/card.raw", "gamma", saveEpoch.Add(-time.Hour))
 	writeSaveFile(t, src, "Config/not-a-save.ini", "nope", saveEpoch)
-	saves := []string{"GC", "Wii/title", "Missing/path"}
+	saves := []string{"cards", "profile/slots", "Missing/path"}
 
 	var buf bytes.Buffer
 	savedAt, files, err := packSaves(src, saves, &buf, SaveLimits{})
@@ -88,15 +88,15 @@ func TestPackAndRestoreRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	dst := t.TempDir()
-	writeSaveFile(t, dst, "Wii/title/stale.sav", "stale", saveEpoch)
+	writeSaveFile(t, dst, "profile/slots/stale.sav", "stale", saveEpoch)
 	writeSaveFile(t, dst, "Config/keep.ini", "keep", saveEpoch)
 	if err := restoreSaves(archive, dst, filepath.Join(t.TempDir(), "stage"), saves, SaveLimits{}); err != nil {
 		t.Fatal(err)
 	}
-	if readSaveFile(t, dst, "Wii/title/a.sav") != "alpha" || readSaveFile(t, dst, "Wii/title/sub/b.sav") != "beta" || readSaveFile(t, dst, "GC/card.raw") != "gamma" {
+	if readSaveFile(t, dst, "profile/slots/a.sav") != "alpha" || readSaveFile(t, dst, "profile/slots/sub/b.sav") != "beta" || readSaveFile(t, dst, "cards/card.raw") != "gamma" {
 		t.Fatal("restored files differ")
 	}
-	if _, err := os.Stat(filepath.Join(dst, "Wii/title/stale.sav")); !errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Stat(filepath.Join(dst, "profile/slots/stale.sav")); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("stale file survived the restore: %v", err)
 	}
 	if readSaveFile(t, dst, "Config/keep.ini") != "keep" {
