@@ -1,7 +1,9 @@
 package webapps
 
 import (
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -543,9 +545,18 @@ func TestServeOverTCP(t *testing.T) {
 		_ = f.srv.Close()
 		<-done
 	}()
-	origin, _, err := f.srv.Register("dev.demo")
-	if err != nil {
-		t.Fatal(err)
+	// Serve records the listener's port as it starts; wait for that.
+	port := fmt.Sprintf(":%d", ln.Addr().(*net.TCPAddr).Port)
+	var origin string
+	for i := 0; i < 200; i++ {
+		var err error
+		if origin, _, err = f.srv.Register("dev.demo"); err == nil && strings.HasSuffix(origin, port) {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !strings.HasSuffix(origin, port) {
+		t.Fatalf("origin %q never used port %s", origin, port)
 	}
 	req, _ := http.NewRequest("GET", "http://"+ln.Addr().String()+"/", nil)
 	req.Host = hostOf(origin)

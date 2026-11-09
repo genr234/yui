@@ -214,9 +214,13 @@
 {:else if apps.length === 0}
   <section class="empty-with-action">
     <EmptyState
-      title="No apps found"
+      title="No apps yet"
       body="Add apps from trusted catalogs or create local apps under /apps."
     />
+    <button class="app-tile get-more" on:click={() => dispatch("store")}>
+      <span class="app-tile-icon" aria-hidden="true"><PlusIcon size={32} strokeWidth={2.2} /></span>
+      <span class="app-tile-name">Get apps</span>
+    </button>
   </section>
 {:else if launched}
   <section class="app-route-view">
