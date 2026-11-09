@@ -8,6 +8,8 @@ class Asset < ApplicationRecord
   STALE_UPLOAD_AGE = 7.days
 
   belongs_to :account
+  # Set for games imported from a linked account (plan 16); those are re-synced, not edited.
+  belongs_to :linked_account, optional: true
   has_many :kiosk_assets, dependent: :delete_all
 
   before_validation :normalize_filename
@@ -90,6 +92,17 @@ class Asset < ApplicationRecord
     cover_path&.file? || false
   end
 
+  def imported?
+    linked_account_id.present?
+  end
+
+  # Site-relative path of the cover to show in the control room, or nil.
+  def cover_src
+    return Rails.application.routes.url_helpers.cover_path(game_id) if cover?
+
+    metadata["cover_url"].presence if imported? && metadata["cover_url"].to_s.start_with?("/")
+  end
+
   # Queues an `assets.reconcile` command for every kiosk on the account.
   def request_kiosk_reconcile!
     Asset.request_reconcile_for!(account)
@@ -122,7 +135,10 @@ class Asset < ApplicationRecord
     data = metadata.to_h
     return data unless game?
 
-    data.merge("cover_url" => (base_url && cover? ? GameCover.url_for(game_id, base_url) : data["cover_url"]))
+    cover_url = base_url && cover? ? GameCover.url_for(game_id, base_url) : data["cover_url"]
+    # Imported covers are stored as site-relative paths; kiosks need them absolute.
+    cover_url = "#{base_url.to_s.chomp("/")}#{cover_url}" if base_url && cover_url.to_s.start_with?("/")
+    data.merge("cover_url" => cover_url)
   end
 
   def normalize_filename
@@ -131,5 +147,6 @@ class Asset < ApplicationRecord
 
   def remove_files
     FileUtils.rm_rf(directory) if id.present? && account_id.present?
+    LinkedCover.remove_for(id) if imported?
   end
 end

@@ -38,6 +38,7 @@ class AccountsController < ApplicationController
     @phone_links = @account.phone_links.live.order(last_used_at: :desc)
     @state_records = @account.account_state_records.order(:collection, :record_id)
     @assets = @account.assets.includes(:kiosk_assets).order(created_at: :desc)
+    @linked_accounts = @account.linked_accounts.order(:label)
     @operations = @account.kiosk_operations
       .then { |scope| @account.operations_cleared_at.present? ? scope.where("kiosk_operations.created_at > ?", @account.operations_cleared_at) : scope }
       .order(server_seq: :desc)
