@@ -15,6 +15,9 @@ type Player struct {
 	Color     string `json:"color"`
 	Host      bool   `json:"host"`
 	Connected bool   `json:"connected"`
+	// Avatar is an emoji or a small data:image/jpeg|webp;base64 selfie
+	// (contracts §2). Rails clears it when the session ends.
+	Avatar string `json:"avatar,omitempty"`
 }
 
 // Node is a layout tree node (same shape as ctx.ui).

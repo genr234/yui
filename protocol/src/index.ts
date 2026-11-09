@@ -15,6 +15,19 @@ export interface Player {
   connected: boolean;
   /** This phone plays the kiosk's audio (contracts §2). Absent on older kiosks. */
   speaker?: boolean;
+  /**
+   * An emoji, or a selfie as a `data:image/jpeg|webp;base64,` URL (contracts §2).
+   * Render it as an image only when `avatarImage` returns a URL; otherwise as text.
+   */
+  avatar?: string | null;
+}
+
+const AVATAR_IMAGE_PREFIXES = ["data:image/jpeg;base64,", "data:image/webp;base64,"];
+
+/** The avatar's image URL when it is a JPEG/WebP data URL, otherwise null (show it as text). */
+export function avatarImage(avatar: string | null | undefined): string | null {
+  if (typeof avatar !== "string") return null;
+  return AVATAR_IMAGE_PREFIXES.some((prefix) => avatar.startsWith(prefix)) ? avatar : null;
 }
 
 export interface IceServer {
@@ -242,6 +255,7 @@ function checkPlayer(p: unknown, where: string): void {
   if (!isStr(p.color)) fail(`${where}: player.color must be a string`);
   if (!isBool(p.host)) fail(`${where}: player.host must be a boolean`);
   if (!isBool(p.connected)) fail(`${where}: player.connected must be a boolean`);
+  if (!(p.avatar === undefined || p.avatar === null || isStr(p.avatar))) fail(`${where}: player.avatar must be a string or null`);
 }
 
 function checkNode(n: unknown, depth = 0): void {

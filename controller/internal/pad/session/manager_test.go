@@ -636,3 +636,52 @@ func TestLinkHealthInRoster(t *testing.T) {
 		t.Fatalf("input rate %+v", got.InputHz)
 	}
 }
+
+func TestAvatarSurvivesRosterMerge(t *testing.T) {
+	mgr, err := Open(Config{ServerURL: "http://kiosk.example", DeviceToken: "t"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const selfie = "data:image/jpeg;base64,/9j/4AAQ"
+	var list []Player
+	railsJSON := `[{"id":"p1","slot":1,"name":"Ada","color":"blue","host":true,"speaker":true,"connected":true,"avatar":"🦊"},
+		{"id":"p2","slot":2,"name":"Bo","color":"red","host":false,"speaker":false,"connected":true,"avatar":null}]`
+	if err := json.Unmarshal([]byte(railsJSON), &list); err != nil {
+		t.Fatal(err)
+	}
+	mgr.mu.Lock()
+	mgr.mergePlayersLocked(list)
+	mgr.mu.Unlock()
+
+	// A later player_updated carries a new avatar.
+	updated := list[1]
+	updated.Avatar = selfie
+	mgr.applyPlayer(updated, "")
+
+	raw, err := json.Marshal(mgr.Snapshot())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded struct {
+		Players []map[string]any `json:"players"`
+	}
+	if err := json.Unmarshal(raw, &decoded); err != nil || len(decoded.Players) != 2 {
+		t.Fatalf("json %s", raw)
+	}
+	if got := decoded.Players[0]["avatar"]; got != "🦊" {
+		t.Fatalf("p1 avatar %v in %s", got, raw)
+	}
+	if got := decoded.Players[1]["avatar"]; got != selfie {
+		t.Fatalf("p2 avatar %v in %s", got, raw)
+	}
+
+	// No avatar: the key is left out.
+	updated.Avatar = ""
+	mgr.applyPlayer(updated, "")
+	raw, _ = json.Marshal(mgr.Snapshot())
+	decoded.Players = nil
+	_ = json.Unmarshal(raw, &decoded)
+	if _, ok := decoded.Players[1]["avatar"]; ok {
+		t.Fatalf("empty avatar serialized: %s", raw)
+	}
+}
