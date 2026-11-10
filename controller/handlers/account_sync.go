@@ -753,7 +753,8 @@ func remoteCommandAllowed(method string) bool {
 		"plugins.permissions.update", "plugins.settings.update",
 		"assets.reconcile",
 		"update.check", "update.apply",
-		"kiosk.status", "kiosk.restartChrome", "kiosk.screenshot", "kiosk.input":
+		"kiosk.status", "kiosk.restartChrome", "kiosk.screenshot", "kiosk.input",
+		"debug.diagnostics", "debug.logs", "debug.ls", "debug.read", "debug.screen", "debug.nativeStop":
 		return true
 	default:
 		return false

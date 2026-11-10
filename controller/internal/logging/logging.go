@@ -10,9 +10,18 @@ import (
 	"sync/atomic"
 )
 
+var activePath atomic.Value // string
+
+// Path is the log file in use ("" before Setup).
+func Path() string {
+	p, _ := activePath.Load().(string)
+	return p
+}
+
 func Setup(path string) (*os.File, error) {
 	file, err := open(path)
 	if err == nil {
+		activePath.Store(path)
 		configure(file)
 		return file, nil
 	}
@@ -22,6 +31,7 @@ func Setup(path string) (*os.File, error) {
 		if fallbackErr != nil {
 			continue
 		}
+		activePath.Store(fallback)
 		configure(file)
 		log.Printf("primary log path unavailable: %s: %v", path, err)
 		log.Printf("using fallback log path: %s", fallback)

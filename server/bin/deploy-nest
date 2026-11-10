@@ -158,6 +158,19 @@ esac
 FW
 chmod +x /srv/yui/firewall.sh
 
+# yui-rails runs rails commands (runner, console) as the service's own
+# dynamic user, so the state folder keeps its owner.
+mkdir -p /srv/yui/bin
+cat > /srv/yui/bin/yui-rails <<SH
+#!/bin/sh
+exec systemd-run --wait --pipe --quiet -p User=yui -p DynamicUser=yes -p StateDirectory=yui \\
+  -p WorkingDirectory=/srv/yui/current -p EnvironmentFile=/srv/yui/yui.env -p PrivateTmp=yes \\
+  -E BUNDLE_PATH=/srv/yui/bundle -E BUNDLE_DEPLOYMENT=1 -E BUNDLE_WITHOUT=development:test \\
+  -E PATH=$profile/bin:/run/current-system/sw/bin -E LD_LIBRARY_PATH=$profile/lib -E HOME=/tmp \\
+  -E BOOTSNAP_CACHE_DIR=/var/lib/yui/tmp/cache $profile/bin/bundle exec rails "\$@"
+SH
+chmod +x /srv/yui/bin/yui-rails
+
 ln -sfn "$release" /srv/yui/current
 systemctl daemon-reload
 systemctl restart yui

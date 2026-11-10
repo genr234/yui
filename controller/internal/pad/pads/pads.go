@@ -65,6 +65,15 @@ type Adapter struct {
 	buttons map[string]uint32
 	owned   map[int]string // slot → player that last wrote it
 	sysBits uint32
+
+	delivered map[string]deliveryStats // debugging: frames per player
+}
+
+type deliveryStats struct {
+	Frames uint64    `json:"frames"`
+	Errors uint64    `json:"errors"`
+	Last   time.Time `json:"last"`
+	Error  string    `json:"error,omitempty"`
 }
 
 // New builds an adapter over two sinks. Either sink may be nil.
@@ -79,6 +88,8 @@ func New(players, system Sink, slotOf SlotFunc) *Adapter {
 		origin:  map[string][2]int16{},
 		buttons: map[string]uint32{},
 		owned:   map[int]string{},
+
+		delivered: map[string]deliveryStats{},
 	}
 }
 
@@ -122,7 +133,47 @@ func (a *Adapter) Deliver(playerID string, outputs []hub.Output) error {
 			errs = append(errs, err)
 		}
 	}
-	return errors.Join(errs...)
+	err := errors.Join(errs...)
+	a.mu.Lock()
+	d := a.delivered[playerID]
+	d.Frames++
+	d.Last = a.now()
+	if err != nil {
+		d.Errors++
+		d.Error = err.Error()
+	}
+	a.delivered[playerID] = d
+	a.mu.Unlock()
+	return err
+}
+
+// Stats is a debugging snapshot of both DSU servers and what the hub sent.
+func (a *Adapter) Stats() map[string]any {
+	type statser interface{ Stats() dsu.Stats }
+	out := map[string]any{}
+	if s, ok := a.players.(statser); ok {
+		out["player_pads"] = s.Stats()
+	} else {
+		out["player_pads"] = "not listening"
+	}
+	if s, ok := a.system.(statser); ok {
+		out["system_pad"] = s.Stats()
+	} else {
+		out["system_pad"] = "not listening"
+	}
+	a.mu.Lock()
+	delivered := map[string]deliveryStats{}
+	for id, d := range a.delivered {
+		delivered[id] = d
+	}
+	owned := map[string]string{}
+	for slot, id := range a.owned {
+		owned[strconv.Itoa(slot)] = id
+	}
+	a.mu.Unlock()
+	out["delivered"] = delivered
+	out["slot_owners"] = owned
+	return out
 }
 
 func (a *Adapter) deliverOne(playerID string, out hub.Output) error {

@@ -159,6 +159,7 @@ func NewRegistry(cfg config.Config) *Registry {
 	r.Register(PluginCommands()...)
 	r.Register(UpdateCommands()...)
 	r.Register(KioskRemoteCommands()...)
+	r.Register(KioskDebugCommands()...)
 	r.Register(EmbedBlockerCommands()...)
 	r.Register(PadCommands()...)
 	r.Register(NativeCommands()...)

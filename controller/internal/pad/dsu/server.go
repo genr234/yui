@@ -35,6 +35,9 @@ type slotState struct {
 	connected bool
 	state     PadState
 	counter   uint32
+	updates   uint64    // SetSlot calls (input from the hub)
+	updatedAt time.Time // last SetSlot
+	sent      uint64    // data packets sent to subscribers
 }
 
 // Server is a DSU protocol server.
@@ -49,6 +52,7 @@ type Server struct {
 	mu    sync.Mutex
 	slots [numSlots]slotState
 	subs  map[string]*subscription
+	stats serverStats
 }
 
 // NewServer binds a UDP socket on addr (e.g. "127.0.0.1:26760").
@@ -70,6 +74,7 @@ func NewServer(addr string) (*Server, error) {
 		subTimeout:     5 * time.Second,
 		resendInterval: 100 * time.Millisecond,
 		subs:           map[string]*subscription{},
+		stats:          serverStats{requests: map[uint32]uint64{}},
 	}, nil
 }
 
@@ -123,9 +128,16 @@ func (s *Server) resendLoop(ctx context.Context) {
 
 func (s *Server) handle(b []byte, addr *net.UDPAddr) {
 	req, ok := parseRequest(b)
+	s.mu.Lock()
+	s.stats.lastRequest = time.Now()
 	if !ok {
+		s.stats.badRequests++
+		s.mu.Unlock()
 		return
 	}
+	s.stats.requests[req.msgType]++
+	s.stats.lastClient = addr.String()
+	s.mu.Unlock()
 	switch req.msgType {
 	case msgVersion:
 		s.send(encodeVersion(s.serverID), addr)
@@ -207,6 +219,7 @@ func (s *Server) pushLocked(slot int) {
 			pkt = encodeControllerData(s.serverID, slot, st.counter, ps)
 		}
 		s.send(pkt, sub.addr)
+		st.sent++
 	}
 }
 
@@ -219,6 +232,8 @@ func (s *Server) SetSlot(slot int, state PadState) {
 	defer s.mu.Unlock()
 	s.slots[slot].connected = true
 	s.slots[slot].state = state
+	s.slots[slot].updates++
+	s.slots[slot].updatedAt = time.Now()
 	s.pushLocked(slot)
 }
 

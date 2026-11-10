@@ -21,6 +21,12 @@ class KioskCommand < ApplicationRecord
     kiosk.restartChrome
     kiosk.screenshot
     kiosk.input
+    debug.diagnostics
+    debug.logs
+    debug.ls
+    debug.read
+    debug.screen
+    debug.nativeStop
   ].freeze
 
   STATUSES = %w[pending sent succeeded failed].freeze
