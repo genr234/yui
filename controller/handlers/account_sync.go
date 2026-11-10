@@ -12,10 +12,12 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"kiosk/controller/internal/config"
+	"kiosk/controller/internal/native"
 	"kiosk/controller/internal/store"
 
 	"github.com/gorilla/websocket"
@@ -84,6 +86,12 @@ type syncMeta struct {
 }
 
 func (r *Registry) StartAccountSync(ctx context.Context) {
+	go func() {
+		dir := filepath.Join(r.snapshotConfig().ConfigDir, "runtimes")
+		if n := native.CloseLeftovers(dir); n > 0 {
+			telemetry.Record("controller_closed_leftover_programs", map[string]any{"count": n})
+		}
+	}()
 	go r.accountLoop(ctx)
 	go r.accountCommandLoop(ctx)
 	r.StartAssetSync(ctx)

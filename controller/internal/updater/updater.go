@@ -46,6 +46,7 @@ type githubRelease struct {
 	TargetCommitish string        `json:"target_commitish"`
 	HTMLURL         string        `json:"html_url"`
 	Draft           bool          `json:"draft"`
+	PublishedAt     time.Time     `json:"published_at"`
 	Assets          []githubAsset `json:"assets"`
 }
 
@@ -199,15 +200,8 @@ func latestRelease(ctx context.Context, repo string) (githubRelease, githubAsset
 		return githubRelease{}, githubAsset{}, fmt.Errorf("decode GitHub releases: %w", err)
 	}
 
-	for _, release := range releases {
-		if release.Draft || !strings.HasPrefix(release.TagName, "kiosk-") {
-			continue
-		}
-		for _, asset := range release.Assets {
-			if asset.Name == releaseAssetName && asset.BrowserDownloadURL != "" {
-				return release, asset, nil
-			}
-		}
+	if release, asset, ok := newestRelease(releases); ok {
+		return release, asset, nil
 	}
 
 	return githubRelease{}, githubAsset{}, fmt.Errorf("no %s asset found in recent kiosk releases", releaseAssetName)
@@ -329,4 +323,28 @@ func isHexCommit(commit string) bool {
 		return false
 	}
 	return true
+}
+
+// newestRelease is the most recently published kiosk release with the
+// installer. GitHub lists releases ordered by tag name, and kiosk tags carry
+// a commit hash, so list order says nothing about which one is newest.
+func newestRelease(releases []githubRelease) (githubRelease, githubAsset, bool) {
+	var best githubRelease
+	var bestAsset githubAsset
+	found := false
+	for _, release := range releases {
+		if release.Draft || !strings.HasPrefix(release.TagName, "kiosk-") {
+			continue
+		}
+		for _, asset := range release.Assets {
+			if asset.Name != releaseAssetName || asset.BrowserDownloadURL == "" {
+				continue
+			}
+			if !found || release.PublishedAt.After(best.PublishedAt) {
+				best, bestAsset, found = release, asset, true
+			}
+			break
+		}
+	}
+	return best, bestAsset, found
 }

@@ -103,7 +103,26 @@
   $: eventMode = config?.event_mode === true;
 
   function touchAttract() {
+    lastScreenInput = Date.now();
     if (attract.shown || eventMode) attract = touched(attract, Date.now());
+  }
+
+  // The PIN screen locks every phone out (D9) and phones can't type a PIN,
+  // so it only appears for someone at the screen, and it closes again when
+  // nobody touches it, so an unattended kiosk never stays locked.
+  const AUTH_IDLE_MS = 60_000;
+  let lastScreenInput = Date.now();
+
+  function closeIdleAuth() {
+    if (authVisible && !alwaysOpen() && Date.now() - lastScreenInput > AUTH_IDLE_MS) closeMenu();
+  }
+
+  async function openMenuFromPhone() {
+    if (alwaysOpen()) return openMenu();
+    await refreshAuthStatus();
+    // Only reopen what is already unlocked: a phone would only reach a PIN
+    // (or PIN setup) screen it can't use, and that screen locks it out.
+    if (authConfigured && authUnlocked) showShell();
   }
 
   async function loadAttractEntries() {
@@ -196,12 +215,12 @@
     // Phones: Home brings Yui forward; the host's remote opens, closes and
     // goes back; a phone keyboard hides the on-screen one.
     const offPadHome = pad.onHome(() => {
-      if (!open && !authVisible) openMenu();
+      if (!open && !authVisible) openMenuFromPhone();
     });
     const offPadRemote = pad.onRemote(({ action }) => {
       switch (remoteIntent(action, open || authVisible)) {
         case "open":
-          openMenu();
+          openMenuFromPhone();
           break;
         case "close":
           closeMenu();
@@ -224,7 +243,10 @@
     window.addEventListener("yui:config-changed", onConfigChanged);
     void pad.state().then((state) => (attractPad = state));
     const offAttractPad = pad.onState((state) => (attractPad = state));
-    const attractTimer = window.setInterval(tickAttract, 1000);
+    const attractTimer = window.setInterval(() => {
+      tickAttract();
+      closeIdleAuth();
+    }, 1000);
     return () => {
       for (const name of attractEvents) {
         window.removeEventListener(name, touchAttract, { capture: true });
@@ -385,6 +407,7 @@
   function showAuth(mode: "setup" | "unlock", message = "") {
     open = false;
     authVisible = true;
+    lastScreenInput = Date.now();
     authMode = mode;
     authMessage = message;
     resetAuthEntry();
