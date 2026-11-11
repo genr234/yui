@@ -12,7 +12,7 @@ import PickedBy from "./PickedBy.svelte";
 import SeatChips from "./SeatChips.svelte";
 
 registerBarItem({ id: "game-title", bar: "top", zone: "center", order: 0, component: GameTitle });
-registerBarItem({ id: "yui-logo", bar: "top", zone: "right", order: 90, component: YuiLogo });
+registerBarItem({ id: "yui-logo", bar: "top", zone: "left", order: -10, component: YuiLogo });
 registerBarItem({ id: "exit-fullscreen", bar: "top", zone: "right", order: 100, component: ExitFullscreen });
 
 // Social layer (reactions, seat chips, join corner). Social events come from
