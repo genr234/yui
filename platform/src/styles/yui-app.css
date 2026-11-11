@@ -264,3 +264,35 @@
   min-height: 0;
   border-radius: 0;
 }
+
+/* ctx.ui.embed({ web, aspect }): the stage takes the available area and the
+ * frame inside is fitted to the aspect and centred (WebEmbed measures it). */
+.yui-app-web-stage {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.yui-app-web-embed.aspect {
+  flex: none;
+  min-height: 0;
+  border-radius: 0;
+}
+
+/* The stage needs a definite height, so the host is a column; in fullscreen
+ * the frame sits on a plain backdrop with no card padding (the bars fill the rest). */
+.simple-app-host:has(.yui-app-web-stage) {
+  display: flex;
+  flex-direction: column;
+}
+
+.shell.app-fullscreen .simple-app-host:has(.yui-app-web-stage) {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: #000;
+}

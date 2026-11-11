@@ -53,6 +53,8 @@ export type YuiSimpleApp = {
 	tags?: string[];
 	permissions?: YuiPermission[];
 	runtime?: string;
+	/** `false` opts the app out of the letterbox bars (the host fills space around a game; components/bars). */
+	bars?: boolean;
 	/**
 	 * Phone controllers. Declaring this (even `{}`) gives the app the phones
 	 * while it is open; `keymap` drives an embedded web game with no code.
