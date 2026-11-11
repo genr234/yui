@@ -7,6 +7,7 @@
   import AvatarPicker from './AvatarPicker.svelte'
   import CodeEntry from './CodeEntry.svelte'
   import { AVATAR_EMOJIS } from './avatar'
+  import Icon from './Icon.svelte'
   import { demoGamepad, demoRemote, demoShell, demoTree } from './layout/demo'
   import { unlockAudio } from './platform/sound'
 
@@ -140,7 +141,7 @@
       </section>
     {:else if screen === 'not_found' || screen === 'ended'}
       <section class="center">
-        <div class="glyph kit-panel" aria-hidden="true">{screen === 'ended' ? '✓' : '?'}</div>
+        <div class="glyph kit-panel" aria-hidden="true"><Icon name={screen === 'ended' ? 'checkmark' : 'search'} size={52} /></div>
         <h1>{screen === 'ended' ? 'Thanks for playing' : 'Session not found'}</h1>
         <p class="muted">
           {screen === 'ended'
@@ -150,7 +151,7 @@
       </section>
     {:else if screen === 'kicked'}
       <section class="center">
-        <div class="glyph kit-panel bad" aria-hidden="true">✕</div>
+        <div class="glyph kit-panel bad" aria-hidden="true"><Icon name="cross" size={48} /></div>
         <h1>You were removed</h1>
         <p class="muted">The host removed you from this session. Ask them to let you back in, then scan the QR code again.</p>
       </section>
@@ -192,7 +193,8 @@
                 disabled={taken.has(c)}
                 style="--chip:{colorHex(c)}"
                 on:click={() => (color = c)}
-              ></button>
+              >{#if color === c}<Icon name="checkmark" size={26} />{/if}</button
+              >
             {/each}
           </div>
         </div>
@@ -335,6 +337,9 @@
     gap: 12px 10px;
   }
   .chip {
+    display: grid;
+    place-items: center;
+    color: #fff;
     --edge: color-mix(in srgb, var(--chip), #000 28%);
     position: relative;
     aspect-ratio: 1.5;
@@ -348,18 +353,6 @@
   .chip.selected {
     transform: translateY(var(--yui-lip));
     box-shadow: 0 0 0 var(--edge), 0 0 0 3px #fff, 0 0 0 5px var(--edge);
-  }
-  /* A check on the picked colour. */
-  .chip.selected::after {
-    content: '';
-    position: absolute;
-    left: 50%;
-    top: 46%;
-    width: 9px;
-    height: 17px;
-    border: solid #fff;
-    border-width: 0 4px 4px 0;
-    transform: translate(-50%, -50%) rotate(45deg);
   }
   .chip:disabled {
     opacity: 0.25;

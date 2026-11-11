@@ -5,6 +5,7 @@
   import AvatarPicker from './AvatarPicker.svelte'
   import CodeEntry from './CodeEntry.svelte'
   import { friendlyError } from './api'
+  import Icon, { type IconName } from './Icon.svelte'
 
   export let player: Player
   export let kioskName = ''
@@ -30,6 +31,36 @@
   /** Redeem a phone code. */
   export let onAccountLink: (code: string) => Promise<void> = async () => {}
 
+  // Tabs. The last one stays selected for the rest of this browser session.
+  type Tab = 'game' | 'sound' | 'you'
+  const TABS: { id: Tab; label: string; icon: IconName }[] = [
+    { id: 'game', label: 'Game', icon: 'play' },
+    { id: 'sound', label: 'Sound', icon: 'sound' },
+    { id: 'you', label: 'You', icon: 'star' },
+  ]
+  const TAB_KEY = 'yui_pad_home_tab'
+  let lastTab: Tab = 'game'
+  function loadTab(): Tab {
+    try {
+      const t = sessionStorage.getItem(TAB_KEY)
+      if (t === 'game' || t === 'sound' || t === 'you') return t
+    } catch {
+      /* storage unavailable */
+    }
+    return lastTab
+  }
+  let tab: Tab = loadTab()
+  function pickTab(t: Tab) {
+    tab = lastTab = t
+    confirmQuit = false // a half-done confirm-twice never survives a tab change
+    confirmForget = false
+    try {
+      sessionStorage.setItem(TAB_KEY, t)
+    } catch {
+      /* storage unavailable */
+    }
+  }
+
   let confirmQuit = false
   let speakerAsked: '' | 'mono' | 'right' = ''
   // A role change from the kiosk (or a failed ask) re-enables the buttons.
@@ -40,6 +71,7 @@
   let avatarError = ''
 
   function editAvatar() {
+    pickTab('you')
     draftAvatar = player.avatar ?? null
     avatarError = ''
     editingAvatar = true
@@ -118,96 +150,112 @@
       {/if}
     </header>
 
-    {#if editingAvatar}
-      <section class="avatar-edit" aria-label="Avatar">
-        <AvatarPicker bind:value={draftAvatar} disabled={savingAvatar} />
-        {#if avatarError}<p class="err" role="alert">{avatarError}</p>{/if}
-        <div class="avatar-actions">
-          <button class="secondary" type="button" disabled={savingAvatar} on:click={() => (editingAvatar = false)}>Cancel</button>
-          <button class="primary" type="button" disabled={savingAvatar || draftAvatar === (player.avatar ?? null)} on:click={saveAvatar}
-            >{savingAvatar ? 'Saving…' : 'Save avatar'}</button
-          >
-        </div>
-      </section>
-    {/if}
+    <div class="tabs" role="tablist" aria-label="Home sections">
+      {#each TABS as t (t.id)}
+        <button class="tab" class:on={tab === t.id} type="button" role="tab" aria-selected={tab === t.id} on:click={() => pickTab(t.id)}
+          ><Icon name={t.icon} size={18} />{t.label}</button
+        >
+      {/each}
+    </div>
 
-    <button class="primary big" on:click={onResume}>{playing ? 'Resume' : 'Close'}</button>
+    {#if tab === 'game'}
+      <button class="primary big" on:click={onResume}>{playing ? 'Resume' : 'Close'}</button>
 
-    <section class="account" aria-label="Yui account">
-      {#if enteringCode}
-        <CodeEntry busy={accountBusy} error={accountError} onSubmit={link} onCancel={() => ((enteringCode = false), (accountError = ''))} />
-      {:else if usingAccount || accountName}
-        <p class="account-line">
-          <strong>{usingAccount ? `${label} · playing as your account` : `${label}`}</strong>
-        </p>
-        {#if usingAccount}
-          <button class="secondary" type="button" disabled={accountBusy} on:click={() => account(() => onAccountUse(false))}>Stop using it here</button>
-        {:else}
-          <button class="secondary" type="button" disabled={accountBusy} on:click={() => account(() => onAccountUse(true))}>Play as {label}</button>
-        {/if}
-        <button class="secondary danger" type="button" disabled={accountBusy} on:click={forget}>{confirmForget ? 'Tap again to forget this phone' : 'Forget this phone'}</button>
-      {:else}
-        <button class="secondary" type="button" on:click={() => (enteringCode = true)}>Use my Yui account</button>
+      <!--
+        Per-feature rows go here (one row per feature, e.g. reactions, snapshot,
+        game-specific options). Keep Resume/Close first and Quit game last.
+      -->
+
+      {#if playing}
+        <button class="danger-btn" on:click={quit}>{confirmQuit ? 'Tap again to quit' : 'Quit game'}</button>
       {/if}
-      {#if accountError && !enteringCode}<p class="err" role="alert">{accountError}</p>{/if}
-    </section>
-
-    <label class="volume">
-      <span>Volume</span>
-      <input
-        style="--fill:{Math.round(volume * 100)}%"
-        type="range"
-        min="0"
-        max="100"
-        step="1"
-        value={Math.round(volume * 100)}
-        on:input={(e) => onVolume(Number(e.currentTarget.value) / 100)}
-      />
-      <span class="pct">{Math.round(volume * 100)}%</span>
-    </label>
-
-    {#if vibration !== null}
-      <label class="vibration">
-        <span>Vibration</span>
-        <input type="checkbox" checked={vibration} on:change={(e) => onVibration(e.currentTarget.checked)} />
+    {:else if tab === 'sound'}
+      <label class="volume">
+        <span>Volume</span>
+        <input
+          style="--fill:{Math.round(volume * 100)}%"
+          type="range"
+          min="0"
+          max="100"
+          step="1"
+          value={Math.round(volume * 100)}
+          on:input={(e) => onVolume(Number(e.currentTarget.value) / 100)}
+        />
+        <span class="pct">{Math.round(volume * 100)}%</span>
       </label>
-    {/if}
 
-    {#if player.speaker}
-      <p class="speaker-now">
-        {player.speaker_channel ? `This phone is the ${player.speaker_channel} speaker` : 'This phone is the speaker'}
-      </p>
-      {#if player.speaker_channel}
+      {#if vibration !== null}
+        <label class="vibration">
+          <span>Vibration</span>
+          <input type="checkbox" checked={vibration} on:change={(e) => onVibration(e.currentTarget.checked)} />
+        </label>
+      {/if}
+
+      {#if player.speaker}
+        <p class="speaker-now">
+          {player.speaker_channel ? `This phone is the ${player.speaker_channel} speaker` : 'This phone is the speaker'}
+        </p>
+        {#if player.speaker_channel}
+          <button
+            class="secondary"
+            disabled={speakerAsked !== ''}
+            on:click={() => {
+              speakerAsked = 'mono'
+              onSpeaker()
+            }}>{speakerAsked ? 'Switching the sound here…' : 'Play all the sound here'}</button
+          >
+        {/if}
+      {:else}
         <button
           class="secondary"
           disabled={speakerAsked !== ''}
           on:click={() => {
             speakerAsked = 'mono'
             onSpeaker()
-          }}>{speakerAsked ? 'Switching the sound here…' : 'Play all the sound here'}</button
+          }}>{speakerAsked === 'mono' ? 'Switching the sound here…' : 'Be the speaker'}</button
+        >
+        <button
+          class="secondary"
+          disabled={speakerAsked !== ''}
+          on:click={() => {
+            speakerAsked = 'right'
+            onSpeaker('right')
+          }}>{speakerAsked === 'right' ? 'Pairing as the right speaker…' : 'Be the right speaker'}</button
         >
       {/if}
     {:else}
-      <button
-        class="secondary"
-        disabled={speakerAsked !== ''}
-        on:click={() => {
-          speakerAsked = 'mono'
-          onSpeaker()
-        }}>{speakerAsked === 'mono' ? 'Switching the sound here…' : 'Be the speaker'}</button
-      >
-      <button
-        class="secondary"
-        disabled={speakerAsked !== ''}
-        on:click={() => {
-          speakerAsked = 'right'
-          onSpeaker('right')
-        }}>{speakerAsked === 'right' ? 'Pairing as the right speaker…' : 'Be the right speaker'}</button
-      >
-    {/if}
+      {#if editingAvatar}
+        <section class="avatar-edit" aria-label="Avatar">
+          <AvatarPicker bind:value={draftAvatar} disabled={savingAvatar} />
+          {#if avatarError}<p class="err" role="alert">{avatarError}</p>{/if}
+          <div class="avatar-actions">
+            <button class="secondary" type="button" disabled={savingAvatar} on:click={() => (editingAvatar = false)}>Cancel</button>
+            <button class="primary" type="button" disabled={savingAvatar || draftAvatar === (player.avatar ?? null)} on:click={saveAvatar}
+              >{savingAvatar ? 'Saving…' : 'Save avatar'}</button
+            >
+          </div>
+        </section>
+      {/if}
 
-    {#if playing}
-      <button class="danger-btn" on:click={quit}>{confirmQuit ? 'Tap again to quit' : 'Quit game'}</button>
+      <section class="account" aria-label="Yui account">
+        {#if enteringCode}
+          <CodeEntry busy={accountBusy} error={accountError} onSubmit={link} onCancel={() => ((enteringCode = false), (accountError = ''))} />
+        {:else if usingAccount || accountName}
+          <p class="account-line">
+            <strong>{usingAccount ? `${label} · playing as your account` : `${label}`}</strong>
+          </p>
+          {#if usingAccount}
+            <button class="secondary" type="button" disabled={accountBusy} on:click={() => account(() => onAccountUse(false))}>Stop using it here</button>
+          {:else}
+            <button class="secondary" type="button" disabled={accountBusy} on:click={() => account(() => onAccountUse(true))}>Play as {label}</button>
+          {/if}
+          <button class="secondary danger" type="button" disabled={accountBusy} on:click={forget}>{confirmForget ? 'Tap again to forget this phone' : 'Forget this phone'}</button>
+        {:else}
+          <button class="secondary" type="button" on:click={() => (enteringCode = true)}>Use my Yui account</button>
+        {/if}
+        {#if accountError && !enteringCode}<p class="err" role="alert">{accountError}</p>{/if}
+      </section>
+
     {/if}
   </div>
 </div>
@@ -309,6 +357,34 @@
   .link:active {
     transform: translateY(3px);
     box-shadow: none;
+  }
+  /* Tab chips, like the tabs at the top of a game options panel. */
+  .tabs {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  .tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 46px;
+    padding: 8px 6px;
+    border: 2px solid var(--kit-key-line);
+    border-radius: var(--yui-radius-hero);
+    background: var(--kit-well);
+    color: var(--ink-muted);
+    font-weight: 900;
+    font-size: 1rem;
+  }
+  .tab.on {
+    --edge: var(--yui-blue-lip);
+    border-color: var(--edge);
+    background: linear-gradient(180deg, #4cb4f2 0 50%, var(--kit-blue) 50%);
+    color: #fff;
+    text-shadow: 0 2px 0 var(--edge);
+    box-shadow: 0 3px 0 var(--edge);
   }
   .avatar-edit {
     display: flex;

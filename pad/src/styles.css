@@ -242,14 +242,15 @@ input[type='checkbox'] {
   box-shadow: 0 3px 0 var(--kit-key-lip);
   cursor: pointer;
 }
+/* The tick is Kenney's checkmark glyph (CC0) used as a mask. */
 input[type='checkbox']::after {
   content: '';
-  width: 9px;
-  height: 16px;
-  margin-top: -4px;
-  border: solid var(--ink);
-  border-width: 0 4px 4px 0;
-  transform: rotate(45deg) scale(0);
+  width: 22px;
+  height: 22px;
+  background: var(--ink);
+  -webkit-mask: url('./assets/kenney/icon_checkmark.svg') center / contain no-repeat;
+  mask: url('./assets/kenney/icon_checkmark.svg') center / contain no-repeat;
+  transform: scale(0);
   transition: transform var(--yui-press) var(--yui-ease-out);
 }
 input[type='checkbox']:checked {
@@ -257,8 +258,8 @@ input[type='checkbox']:checked {
   background: var(--kit-green);
 }
 input[type='checkbox']:checked::after {
-  border-color: #fff;
-  transform: rotate(45deg) scale(1);
+  background: #fff;
+  transform: scale(1);
 }
 
 /* Sliders: a blue groove with a chunky tab handle. */

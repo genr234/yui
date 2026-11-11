@@ -56,6 +56,15 @@ func ButtonNames() []string {
 // carries Home or Recenter. The pad expands the node, picks the orientation,
 // and puts every press into the input frame bits.
 func Preset(name string, labels map[string]string, hide []string) protocol.Node {
+	return PresetWithActions(name, labels, hide, nil)
+}
+
+// PresetWithActions is Preset plus `actions`: what each button does in this
+// app (for example {"South": "Accelerate", "East": "Drift"}), shown in the
+// pad's button guide. Keys are button names, or "Dpad" and "Stick" for those
+// controls. It is optional: empty actions leave the node exactly as Preset
+// builds it.
+func PresetWithActions(name string, labels map[string]string, hide []string, actions map[string]string) protocol.Node {
 	props := map[string]any{"name": name}
 	if len(labels) > 0 {
 		clean := make(map[string]any, len(labels))
@@ -78,6 +87,18 @@ func Preset(name string, labels map[string]string, hide []string) protocol.Node 
 	}
 	if len(hidden) > 0 {
 		props["hide"] = hidden
+	}
+	if len(actions) > 0 {
+		clean := make(map[string]any, len(actions))
+		for control, action := range actions {
+			_, button := buttonBits[control]
+			if (button || control == "Dpad" || control == "Stick") && action != "" {
+				clean[control] = action
+			}
+		}
+		if len(clean) > 0 {
+			props["actions"] = clean
+		}
 	}
 	return protocol.Node{Type: "preset", Props: props}
 }
