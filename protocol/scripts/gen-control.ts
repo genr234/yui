@@ -16,6 +16,11 @@ const valid: Record<string, unknown> = {
   sound: { t: "sound", url: "https://example.com/a.mp3", volume: 0.8 },
   player: { t: "player", player: player({ slot: null, color: "red", host: false }) },
   system: { t: "system", action: "save_state" },
+  react: { t: "react", emote: "heart" },
+  poke: { t: "poke", to: "8" },
+  poked: { t: "poked", from: "7" },
+  players: { t: "players", players: [{ id: "8", name: "Bo", color: "red", slot: 2, avatar: null, pokes: true }, { id: "9", name: "Cy", color: "green", slot: null, pokes: false }] },
+  system_pokes: { t: "system", action: "pokes", value: false },
   ping: { t: "ping", id: 1, ts: 1700000000000 },
   pong: { t: "pong", id: 1, ts: 1700000000001 },
 };
@@ -35,6 +40,10 @@ const invalid: Record<string, string> = {
   haptic_bad_intensity: '{"t":"haptic","name":"tap","intensity":2}',
   system_bad_action: '{"t":"system","action":"reboot"}',
   welcome_bad_player: '{"t":"welcome","v":1,"player":{"id":7},"kiosk_name":"k"}',
+  react_unknown_emote: '{"t":"react","emote":"poop"}',
+  poke_no_to: '{"t":"poke"}',
+  poked_no_from: '{"t":"poked"}',
+  players_bad: '{"t":"players","players":[{"id":1}]}',
   ping_no_ts: '{"t":"ping","id":1}',
   array: "[1,2]",
 };

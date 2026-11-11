@@ -108,12 +108,14 @@ type Router struct {
 	version  int
 	sent     map[string][]byte
 	keyboard bool
+
+	soc *social
 }
 
 // New builds the stack with the shell provider at the bottom and registers
 // the adapters.
 func New(cfg Config) (*Router, error) {
-	r := &Router{cfg: cfg, players: map[string]protocol.Player{}, sent: map[string][]byte{}, lastInput: map[string]protocol.InputState{}}
+	r := &Router{cfg: cfg, players: map[string]protocol.Player{}, sent: map[string][]byte{}, lastInput: map[string]protocol.InputState{}, soc: newSocial()}
 	deps := shell.Deps{
 		IsHost:   r.IsHost,
 		HostName: r.hostName,
@@ -204,6 +206,7 @@ func (r *Router) Detach(s Session) {
 	for _, id := range ids {
 		r.forget(id)
 	}
+	r.soc.reset()
 	if r.cfg.Pointer != nil {
 		r.cfg.Pointer.Hide()
 	}
@@ -325,6 +328,7 @@ func (r *Router) onPlayer(ev session.PlayerEvent) {
 			r.sendPlaying(id, true)
 		}
 		r.Refresh(false)
+		r.sendRosters()
 	case session.PlayerUpdated:
 		r.mu.Lock()
 		_, ready := r.players[id]
@@ -335,10 +339,12 @@ func (r *Router) onPlayer(ev session.PlayerEvent) {
 		if ready {
 			// A host change swaps the remote and the waiting layout.
 			r.Refresh(false)
+			r.sendRosters()
 		}
 	case session.PlayerLeft:
 		r.forget(id)
 		r.Refresh(false)
+		r.sendRosters()
 	}
 }
 
@@ -347,6 +353,7 @@ func (r *Router) forget(id string) {
 	delete(r.players, id)
 	delete(r.lastInput, id)
 	r.mu.Unlock()
+	r.soc.forget(id)
 	r.pushMu.Lock()
 	delete(r.sent, id)
 	r.pushMu.Unlock()
@@ -370,11 +377,21 @@ func (r *Router) onControl(playerID string, msg any) {
 		if m.Action == "sensitive" {
 			return // kiosk → pad only
 		}
+		if m.Action == "pokes" {
+			r.setPokes(playerID, m.Value)
+			return
+		}
 		err = r.stack.System(playerID, m)
 	case protocol.ProfileReply:
 		if r.cfg.ProfileReply != nil {
 			r.cfg.ProfileReply(playerID, m)
 		}
+		return
+	case protocol.React:
+		r.onReact(playerID, m)
+		return
+	case protocol.Poke:
+		r.onPoke(playerID, m)
 		return
 	default:
 		return
@@ -385,6 +402,7 @@ func (r *Router) onControl(playerID string, msg any) {
 }
 
 func (r *Router) onInput(playerID string, state protocol.InputState) {
+	r.noteButtons(playerID, state.Buttons)
 	if r.cfg.Activity != nil {
 		r.mu.Lock()
 		prev, seen := r.lastInput[playerID]

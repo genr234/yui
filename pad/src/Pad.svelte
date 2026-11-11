@@ -1,10 +1,12 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte'
-  import type { ControlMessage, Hello, Node, Player } from '@yui/protocol'
+  import type { ControlMessage, EmoteId, Hello, Node, Peer, Player } from '@yui/protocol'
   import { sketchState } from './controls/sketch'
   import LayoutView from './layout/LayoutView.svelte'
   import HomeSheet from './HomeSheet.svelte'
   import GuideSheet from './GuideSheet.svelte'
+  import ReactSheet from './ReactSheet.svelte'
+  import { TOAST_MS, loadPokes, pokedText, savePokes } from './social'
   import ConnSteps from './ConnSteps.svelte'
   import Icon from './Icon.svelte'
   import { guideEntries, hasButtons } from './layout/guide'
@@ -76,6 +78,35 @@
   let playing = false
   let homeOpen = false
   let guideOpen = false
+  let reactOpen = false
+  // Everyone else in the session (kiosk `players`), for the poke list.
+  let peers: Peer[] = demoTree
+    ? [
+        { id: 'd1', name: 'Bo', color: 'red', slot: 2, pokes: true },
+        { id: 'd2', name: 'Cy', color: 'green', slot: 3, avatar: '🦊', pokes: true },
+        { id: 'd3', name: 'Di', color: 'teal', slot: null, pokes: false },
+      ]
+    : []
+  // Whether other players may poke this phone (kept on this phone, told to the kiosk).
+  let allowPokes = loadPokes()
+  let toast = ''
+  let toastTimer: ReturnType<typeof setTimeout> | null = null
+  function showToast(text: string) {
+    toast = text
+    if (toastTimer) clearTimeout(toastTimer)
+    toastTimer = setTimeout(() => {
+      toast = ''
+      toastTimer = null
+    }, TOAST_MS)
+  }
+  function sendPokes() {
+    send({ t: 'system', action: 'pokes', value: allowPokes })
+  }
+  function changePokes(on: boolean) {
+    allowPokes = on
+    savePokes(on)
+    sendPokes()
+  }
   let volume = loadVolume()
   setMasterVolume(volume)
   let vibration = vibrationEnabled()
@@ -149,6 +180,14 @@
         return
       case 'player':
         player = msg.player
+        return
+      case 'players':
+        peers = msg.players
+        return
+      case 'poked':
+        if (!allowPokes) return
+        showToast(pokedText(peers, msg.from))
+        playHaptic({ name: 'hit' })
         return
       case 'haptic':
         playHaptic(msg)
@@ -259,11 +298,15 @@
       {
         state: (s) => {
           conn = s
+          // Tell the kiosk our poke setting each time the link comes up.
+          if (s === 'online' || s === 'fallback') sendPokes()
           if (s === 'kicked' || s === 'ended' || s === 'closed') {
             model.releaseAll()
             loop.setEnabled(false)
             motion.stop()
             asks = []
+            reactOpen = false
+            peers = []
             onEnd(s)
           }
         },
@@ -328,8 +371,23 @@
     void playSpeaker()
     model.releaseAll()
     guideOpen = false
+    reactOpen = false
     homeOpen = true
     send({ t: 'system', action: 'home' })
+  }
+  function openReact() {
+    pressTick()
+    model.releaseAll()
+    guideOpen = false
+    reactOpen = true
+  }
+  function reactWith(emote: EmoteId) {
+    pressTick()
+    send({ t: 'react', emote })
+  }
+  function pokePlayer(to: string) {
+    pressTick()
+    send({ t: 'poke', to })
   }
   function openGuide() {
     pressTick()
@@ -388,7 +446,7 @@
     if (!demoTree) {
       void keepAwake()
       startSession()
-    }
+    } else sendPokes()
   })
 
   onDestroy(() => {
@@ -398,6 +456,7 @@
     document.removeEventListener('visibilitychange', onVisibility)
     window.removeEventListener('online', wake)
     if (idleTimer) clearTimeout(idleTimer)
+    if (toastTimer) clearTimeout(toastTimer)
     session?.stop()
     loop.dispose()
     motion.stop()
@@ -436,6 +495,7 @@
     <!-- Round kit buttons. Features add their own white .tool button inside .tools
          (reactions, snapshot, ...); Home stays the yellow one at the far right. -->
     <div class="tools">
+      <button class="tool" type="button" aria-label="Reactions" on:click={openReact}><Icon name="talk" size={20} /></button>
       {#if hasButtons(guide)}
         <button class="tool" type="button" aria-label="What the buttons do" on:click={openGuide}><span class="q" aria-hidden="true">?</span></button>
       {/if}
@@ -533,7 +593,15 @@
       onAccountUse={accountUse}
       onAccountForget={accountForget}
       onAccountLink={accountLink}
+      {allowPokes}
+      onPokes={changePokes}
     />
+  {/if}
+  {#if reactOpen && !homeOpen}
+    <ReactSheet {player} {peers} {sensitive} onReact={reactWith} onPoke={pokePlayer} onClose={() => (reactOpen = false)} />
+  {/if}
+  {#if toast}
+    <div class="toast kit-panel" role="status" aria-live="polite">{toast}</div>
   {/if}
   {#if guideOpen && !homeOpen}
     <GuideSheet entries={guide} onClose={() => (guideOpen = false)} />
@@ -722,6 +790,27 @@
     font-size: 1.25rem;
     font-weight: 900;
     line-height: 1;
+  }
+  /* "Bo poked you": a small panel dropping in from the top, above the sheets. */
+  .toast {
+    position: fixed;
+    top: max(10px, env(safe-area-inset-top));
+    left: 50%;
+    z-index: 40;
+    max-width: calc(100% - 32px);
+    padding: 10px 18px;
+    transform: translateX(-50%);
+    border-radius: 99px;
+    font-weight: 900;
+    text-align: center;
+    pointer-events: none;
+    animation: toast-in 200ms var(--yui-ease-out);
+  }
+  @keyframes toast-in {
+    from {
+      transform: translate(-50%, -24px);
+      opacity: 0;
+    }
   }
   .stage {
     position: relative;

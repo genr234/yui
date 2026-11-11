@@ -119,6 +119,52 @@ type ProfileReply struct {
 	Granted bool   `json:"granted"`
 }
 
+// Emotes are the reaction ids (Kenney emote names without the emote_ prefix).
+var Emotes = []string{
+	"heart", "hearts", "laugh", "faceHappy", "faceSad", "faceAngry", "exclamation", "exclamations",
+	"question", "star", "stars", "idea", "music", "sleeps", "anger", "heartBroken",
+}
+
+var emoteSet = set(Emotes...)
+
+// IsEmote reports whether id is one of Emotes.
+func IsEmote(id string) bool { return emoteSet[id] }
+
+// React (pad → kiosk) shows an emote over the sender's badge.
+type React struct {
+	T     string `json:"t"`
+	Emote string `json:"emote"`
+}
+
+// Poke (pad → kiosk) pokes another player.
+type Poke struct {
+	T  string `json:"t"`
+	To string `json:"to"`
+}
+
+// Poked (kiosk → pad) tells a phone who poked it.
+type Poked struct {
+	T    string `json:"t"`
+	From string `json:"from"`
+}
+
+// Peer is one player in a Players roster.
+type Peer struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Color  string `json:"color"`
+	Slot   *int   `json:"slot"`
+	Avatar string `json:"avatar,omitempty"`
+	// Pokes is false when the player opted out of being poked.
+	Pokes bool `json:"pokes"`
+}
+
+// Players (kiosk → pad) lists everyone else in the session for the poke list.
+type Players struct {
+	T       string `json:"t"`
+	Players []Peer `json:"players"`
+}
+
 // Ping and Pong share a shape; ID may be a number or string on the wire.
 type Ping struct {
 	T  string `json:"t"`
@@ -131,7 +177,7 @@ type Pong = Ping
 var (
 	eventKinds    = set("press", "release", "tap", "change", "submit", "swipe")
 	textOps       = set("insert", "backspace", "enter")
-	systemActions = set("home", "resume", "quit", "save_state", "load_state", "be_speaker", "volume", "sensitive", "playing")
+	systemActions = set("home", "resume", "quit", "save_state", "load_state", "be_speaker", "volume", "sensitive", "playing", "pokes")
 )
 
 func set(v ...string) map[string]bool {
@@ -331,6 +377,47 @@ func ParseControl(data []byte) (any, error) {
 		}
 		if m.AppID == "" {
 			return nil, wrap(errors.New("app_id required"))
+		}
+		return m, nil
+	case "react":
+		var m React
+		if err := decode(data, &m); err != nil {
+			return nil, wrap(err)
+		}
+		if !IsEmote(m.Emote) {
+			return nil, wrap(errors.New("unknown emote"))
+		}
+		return m, nil
+	case "poke":
+		var m Poke
+		if err := decode(data, &m); err != nil {
+			return nil, wrap(err)
+		}
+		if m.To == "" {
+			return nil, wrap(errors.New("to required"))
+		}
+		return m, nil
+	case "poked":
+		var m Poked
+		if err := decode(data, &m); err != nil {
+			return nil, wrap(err)
+		}
+		if m.From == "" {
+			return nil, wrap(errors.New("from required"))
+		}
+		return m, nil
+	case "players":
+		if err := need("players"); err != nil {
+			return nil, wrap(err)
+		}
+		var m Players
+		if err := decode(data, &m); err != nil {
+			return nil, wrap(err)
+		}
+		for _, p := range m.Players {
+			if p.ID == "" || p.Name == "" || p.Color == "" {
+				return nil, wrap(errors.New("bad player"))
+			}
 		}
 		return m, nil
 	case "ping", "pong":

@@ -59,8 +59,9 @@ export interface Node {
 export type EventKind = "press" | "release" | "tap" | "change" | "submit" | "swipe";
 export type TextOp = "insert" | "backspace" | "enter";
 // "playing" is kiosk→pad only: value true while an app or native game owns the phones, so the Home sheet offers Quit.
+// "pokes" is pad→kiosk only: value false opts this player out of being poked (default on).
 // "sensitive" is kiosk→pad only: value true while the kiosk shows a sensitive surface (D9).
-export type SystemAction = "home" | "resume" | "quit" | "save_state" | "load_state" | "be_speaker" | "volume" | "sensitive" | "playing";
+export type SystemAction = "home" | "resume" | "quit" | "save_state" | "load_state" | "be_speaker" | "volume" | "sensitive" | "playing" | "pokes";
 
 export interface Hello {
   t: "hello";
@@ -136,6 +137,44 @@ export interface ProfileReply {
   app_id: string;
   granted: boolean;
 }
+/** The reaction emotes (Kenney emote names without the `emote_` prefix). */
+export const EMOTES = [
+  "heart", "hearts", "laugh", "faceHappy", "faceSad", "faceAngry", "exclamation", "exclamations",
+  "question", "star", "stars", "idea", "music", "sleeps", "anger", "heartBroken",
+] as const;
+export type EmoteId = (typeof EMOTES)[number];
+
+/** pad -> kiosk: show an emote over this player's badge (1 per 700 ms; dropped while sensitive). */
+export interface React {
+  t: "react";
+  emote: EmoteId;
+}
+/** pad -> kiosk: poke another player (1 per 3 s per sender and per target). */
+export interface Poke {
+  t: "poke";
+  to: string;
+}
+/** kiosk -> pad: someone poked you. */
+export interface Poked {
+  t: "poked";
+  from: string;
+}
+/** A player as shown in the poke list (no secrets, no avatar data URLs beyond what Player has). */
+export interface Peer {
+  id: string;
+  name: string;
+  color: string;
+  slot: number | null;
+  avatar?: string | null;
+  /** False when this player opted out of being poked (they stay listed so a `poked` toast can name them). */
+  pokes: boolean;
+}
+/** kiosk -> pad: everyone else in the session (opted-out players flagged `pokes: false`), re-sent whenever the roster changes. */
+export interface Players {
+  t: "players";
+  players: Peer[];
+}
+
 export interface Ping {
   t: "ping";
   id: number | string;
@@ -166,6 +205,10 @@ export type ControlMessage =
   | System
   | ProfileRequest
   | ProfileReply
+  | React
+  | Poke
+  | Poked
+  | Players
   | Ping
   | Pong
   | Idle;
@@ -320,7 +363,7 @@ function checkNode(n: unknown, depth = 0): void {
 
 const EVENT_KINDS = ["press", "release", "tap", "change", "submit", "swipe"];
 const TEXT_OPS = ["insert", "backspace", "enter"];
-const SYSTEM_ACTIONS = ["home", "resume", "quit", "save_state", "load_state", "be_speaker", "volume", "sensitive", "playing"];
+const SYSTEM_ACTIONS = ["home", "resume", "quit", "save_state", "load_state", "be_speaker", "volume", "sensitive", "playing", "pokes"];
 
 /** Parse and validate a control-channel JSON frame. Throws on invalid input. */
 export function parseControl(json: string): ControlMessage {
@@ -391,6 +434,23 @@ export function parseControl(json: string): ControlMessage {
     case "profile_reply":
       if (!isStr(m.app_id) || m.app_id === "") fail("profile_reply: app_id must be a non-empty string");
       if (!isBool(m.granted)) fail("profile_reply: granted must be a boolean");
+      break;
+    case "react":
+      if (!isStr(m.emote) || !(EMOTES as readonly string[]).includes(m.emote)) fail("react: unknown emote");
+      break;
+    case "poke":
+      if (!isStr(m.to) || m.to === "") fail("poke: to must be a non-empty string");
+      break;
+    case "poked":
+      if (!isStr(m.from) || m.from === "") fail("poked: from must be a non-empty string");
+      break;
+    case "players":
+      if (!Array.isArray(m.players)) fail("players: players must be an array");
+      for (const p of m.players) {
+        if (!isObj(p) || !isStr(p.id) || !isStr(p.name) || !isStr(p.color)) fail("players: bad player");
+        if (!(p.slot === null || isNum(p.slot))) fail("players: slot must be number or null");
+        if (!isBool(p.pokes)) fail("players: pokes must be a boolean");
+      }
       break;
     case "idle":
       if (!isNum(m.ends_in) || m.ends_in < 0) fail("idle: ends_in must be a non-negative number");
