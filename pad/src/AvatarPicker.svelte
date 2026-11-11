@@ -128,15 +128,19 @@
   .emoji {
     aspect-ratio: 1;
     padding: 0;
-    border: 3px solid transparent;
-    border-radius: 50%;
-    background: var(--yui-chrome-fill);
+    border: 2px solid var(--kit-key-line);
+    border-radius: var(--yui-radius-hero);
+    background: linear-gradient(180deg, #fff 0 50%, var(--kit-key) 50%);
+    box-shadow: 0 3px 0 var(--kit-key-lip);
     font-size: 1.5rem;
     line-height: 1;
+    transition: transform var(--yui-press) var(--yui-ease-out), box-shadow var(--yui-press) var(--yui-ease-out);
   }
   .emoji.selected {
-    border-color: #fff;
-    background: var(--yui-chrome-active);
+    transform: translateY(3px);
+    border-color: color-mix(in srgb, var(--player, var(--kit-blue)), #000 26%);
+    background: var(--player, var(--kit-blue));
+    box-shadow: 0 0 0 transparent;
   }
   .selfie-row {
     display: flex;
@@ -149,9 +153,9 @@
   .link {
     border: 0;
     background: none;
-    color: var(--muted);
+    color: var(--kit-red);
     font: inherit;
-    font-weight: 700;
+    font-weight: 800;
     text-decoration: underline;
   }
   .camera {
@@ -166,7 +170,8 @@
     border-radius: 50%;
     overflow: hidden;
     background: #000;
-    box-shadow: 0 0 0 4px var(--player, var(--accent)), 0 16px 40px rgba(0, 0, 0, 0.4);
+    border: 4px solid #fff;
+    box-shadow: 0 0 0 4px var(--player, var(--accent)), 0 6px 0 4px color-mix(in srgb, var(--player, var(--accent)), #000 28%);
   }
   video {
     width: 100%;

@@ -84,17 +84,18 @@
     display: grid;
     place-items: center;
     min-height: 64px;
+    border: 2px solid var(--kit-key-line);
     border-radius: var(--yui-radius-hero);
-    background: var(--yui-chrome-fill);
-    box-shadow: 0 0 0 1px var(--line) inset;
+    background: #fff;
+    box-shadow: 0 var(--yui-lip) 0 var(--kit-key-lip), inset 0 3px 0 rgba(58, 65, 81, 0.08);
     overflow: hidden;
   }
   .live.typing {
-    box-shadow: 0 0 0 2px var(--player) inset;
+    border-color: var(--player);
   }
   .hint {
-    color: var(--muted);
-    font-weight: 600;
+    color: var(--ink-muted);
+    font-weight: 800;
     pointer-events: none;
   }
   /* The real input covers the box but is invisible: typed text goes to the kiosk, not here. */

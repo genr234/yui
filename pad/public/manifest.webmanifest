@@ -6,8 +6,8 @@
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#0d1825",
-  "theme_color": "#0d1825",
+  "background_color": "#3d9de0",
+  "theme_color": "#3d9de0",
   "icons": [
     { "src": "/pad/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
   ]

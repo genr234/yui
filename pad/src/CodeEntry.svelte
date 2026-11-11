@@ -47,8 +47,11 @@
     flex-direction: column;
     gap: 10px;
     padding: 14px;
+    border: 2px solid var(--kit-panel-line);
     border-radius: var(--yui-radius-hero);
-    background: var(--yui-chrome-fill);
+    background: var(--kit-panel);
+    color: var(--ink);
+    --muted: var(--ink-muted);
   }
   .field {
     display: flex;
@@ -60,7 +63,7 @@
     min-height: 56px;
     text-align: center;
     font-size: 1.8rem;
-    font-weight: 800;
+    font-weight: 900;
     letter-spacing: 0.3em;
     font-variant-numeric: tabular-nums;
   }
@@ -70,8 +73,8 @@
   }
   .err {
     margin: 0;
-    color: #ff9a9a;
-    font-weight: 600;
+    color: var(--kit-red);
+    font-weight: 800;
   }
   .actions {
     display: grid;

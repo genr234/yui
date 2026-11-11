@@ -82,25 +82,26 @@
     align-items: center;
     gap: 8px;
     padding: 8px 14px;
+    border: 2px solid var(--kit-key-line);
     border-radius: 999px;
-    background: var(--yui-chrome-fill);
-    box-shadow: 0 0 0 1px var(--line) inset;
-    color: var(--muted);
+    background: var(--kit-key);
+    color: var(--ink-muted);
     font-size: 0.9rem;
-    font-weight: 700;
+    font-weight: 800;
+    box-shadow: 0 3px 0 var(--kit-key-lip);
   }
   .state.on {
-    color: var(--fg);
+    color: var(--ink);
   }
   .dot {
     width: 9px;
     height: 9px;
     border-radius: 50%;
-    background: var(--muted);
+    background: var(--kit-panel-line);
   }
   .on .dot {
-    background: var(--player);
-    box-shadow: 0 0 10px var(--player);
+    background: var(--kit-green);
+    box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.2);
   }
   .note {
     color: var(--muted);
@@ -109,16 +110,19 @@
   .mini {
     min-height: 44px;
     padding: 8px 16px;
-    border: 0;
+    border: 2px solid var(--kit-key-line);
     border-radius: 999px;
-    background: var(--surface-2);
-    color: var(--fg);
-    font-weight: 700;
-    box-shadow: 0 var(--yui-lip) 0 rgba(0, 0, 0, 0.4), 0 0 0 1px var(--line) inset;
+    background: linear-gradient(180deg, #fff 0 50%, var(--kit-key) 50%);
+    color: var(--ink);
+    font-weight: 800;
+    box-shadow: 0 3px 0 var(--kit-key-lip);
     touch-action: none;
   }
   .mini.pressed {
-    transform: translateY(var(--yui-lip));
+    transform: translateY(3px);
+    border-color: color-mix(in srgb, var(--player), #000 26%);
     background: var(--player);
+    color: #fff;
+    box-shadow: none;
   }
 </style>

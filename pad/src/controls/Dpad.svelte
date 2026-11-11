@@ -79,20 +79,33 @@
     -webkit-user-select: none;
     flex: 0 1 auto;
   }
+  /* One white cross on a lip; arms light up in the player's colour. */
   .arm,
   .hub {
     position: absolute;
-    background: var(--surface-2);
-    box-shadow: 0 var(--yui-lip) 0 rgba(0, 0, 0, 0.4), 0 0 0 1px var(--line) inset;
+    background: linear-gradient(180deg, #fff, var(--kit-key));
+    border: 2px solid var(--kit-key-line);
+    box-shadow: 0 var(--yui-lip) 0 var(--kit-key-lip);
     pointer-events: none;
-    transition: background 60ms, transform 60ms;
+    transition: background 50ms, transform 50ms, box-shadow 50ms;
   }
   .hub {
     left: 33.3%;
     top: 33.3%;
     width: 33.4%;
     height: 33.4%;
-    box-shadow: none;
+    border: 0;
+    background: var(--kit-key);
+    box-shadow: 0 var(--yui-lip) 0 var(--kit-key-lip);
+    z-index: 1;
+  }
+  .hub::after {
+    content: '';
+    position: absolute;
+    inset: 26%;
+    border-radius: 50%;
+    background: var(--kit-well);
+    box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.1);
   }
   .arm.up,
   .arm.down {
@@ -108,19 +121,24 @@
   }
   .arm.up {
     top: 0;
-    border-radius: var(--yui-radius-card) var(--yui-radius-card) 0 0;
+    border-bottom: 0;
+    border-radius: var(--yui-radius-hero) var(--yui-radius-hero) 0 0;
+    box-shadow: none;
   }
   .arm.down {
     bottom: 0;
-    border-radius: 0 0 var(--yui-radius-card) var(--yui-radius-card);
+    border-top: 0;
+    border-radius: 0 0 var(--yui-radius-hero) var(--yui-radius-hero);
   }
   .arm.left {
     left: 0;
-    border-radius: var(--yui-radius-card) 0 0 var(--yui-radius-card);
+    border-right: 0;
+    border-radius: var(--yui-radius-hero) 0 0 var(--yui-radius-hero);
   }
   .arm.right {
     right: 0;
-    border-radius: 0 var(--yui-radius-card) var(--yui-radius-card) 0;
+    border-left: 0;
+    border-radius: 0 var(--yui-radius-hero) var(--yui-radius-hero) 0;
   }
   .arm::after {
     content: '';
@@ -129,29 +147,32 @@
     margin: auto;
     width: 0;
     height: 0;
-    border: 9px solid transparent;
+    border: 11px solid transparent;
   }
   .arm.up::after {
-    border-bottom-color: var(--muted);
+    border-bottom-color: var(--kit-blue);
     border-top-width: 0;
   }
   .arm.down::after {
-    border-top-color: var(--muted);
+    border-top-color: var(--kit-blue);
     border-bottom-width: 0;
   }
   .arm.left::after {
-    border-right-color: var(--muted);
+    border-right-color: var(--kit-blue);
     border-left-width: 0;
   }
   .arm.right::after {
-    border-left-color: var(--muted);
+    border-left-color: var(--kit-blue);
     border-right-width: 0;
   }
   .arm.lit {
     background: var(--player);
-    transform: scale(0.96);
+    border-color: color-mix(in srgb, var(--player), #000 26%);
+  }
+  .arm.lit::after {
+    filter: brightness(0) invert(1);
   }
   .arm.off {
-    opacity: 0.25;
+    opacity: 0.35;
   }
 </style>

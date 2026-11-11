@@ -64,17 +64,18 @@
     gap: 14px;
     min-height: 64px;
     padding: 10px 14px;
-    border: 0;
+    border: 2px solid var(--kit-key-line);
     border-radius: var(--yui-radius-hero);
-    background: var(--surface-2);
-    color: var(--fg);
+    background: var(--kit-key);
+    color: var(--ink);
     text-align: left;
-    box-shadow: 0 var(--yui-lip) 0 rgba(0, 0, 0, 0.4), 0 0 0 1px var(--line) inset;
-    transition: transform var(--yui-press) var(--yui-ease-out);
+    box-shadow: 0 var(--yui-lip) 0 var(--kit-key-lip);
+    transition: transform var(--yui-press) var(--yui-ease-out), box-shadow var(--yui-press) var(--yui-ease-out);
   }
   .item:active {
     transform: translateY(var(--yui-lip));
-    box-shadow: 0 0 0 3px var(--player) inset;
+    border-color: var(--player);
+    box-shadow: inset 0 0 0 2px var(--player);
   }
   .item img {
     flex: 0 0 auto;
@@ -82,7 +83,7 @@
     height: 56px;
     object-fit: cover;
     border-radius: var(--yui-radius-control);
-    background: var(--yui-chrome-fill);
+    background: var(--kit-well);
   }
   .text {
     display: flex;
@@ -91,13 +92,14 @@
     min-width: 0;
   }
   .title {
-    font-weight: 700;
+    font-weight: 800;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .sub {
-    color: var(--muted);
+    color: var(--ink-muted);
+    font-weight: 600;
     font-size: 0.9rem;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -120,8 +122,8 @@
     display: grid;
     place-items: center;
     border-radius: var(--yui-radius-control);
-    background: var(--yui-chrome-fill);
-    color: var(--muted);
+    background: var(--kit-well);
+    color: var(--ink-muted);
     font-size: 2rem;
     font-weight: 800;
   }

@@ -1,49 +1,76 @@
 /*
- * Yui Pad theme. Values are copied from platform/src/styles/tokens.css (the
- * pad is a separate bundle): the dark "chrome" palette, Yui blue, radii,
- * press timing and font. --player is the player's colour (playerSwatch).
+ * Yui Pad theme: a bright "game kit" look. Sky-blue stage, light grey panels
+ * with a darker rim, and chunky buttons with a lit top half and a thick lip
+ * under them that they sink into when pressed. --player is the player's
+ * colour (playerSwatch); --b is a chunky button's base colour.
  */
 :root {
-  --yui-chrome: linear-gradient(165deg, rgba(255, 255, 255, 0.08), transparent 38%),
-    linear-gradient(180deg, #1c2b3d 0%, #0d1825 100%);
-  --yui-chrome-fg: #f7fbff;
-  --yui-chrome-muted: #9fb1c4;
-  --yui-chrome-soft: #c9d6e4;
-  --yui-chrome-fill: rgba(255, 255, 255, 0.08);
-  --yui-chrome-active: rgba(255, 255, 255, 0.12);
-  --yui-chrome-line: rgba(255, 255, 255, 0.16);
+  /* stage */
+  --kit-sky: #3d9de0;
+  --kit-sky-deep: #2a84cb;
+  --kit-sky-line: rgba(14, 64, 112, 0.35);
+  /* panels and keys (white buttons) */
+  --kit-panel: #e5e8ef;
+  --kit-panel-line: #b9bfcd;
+  --kit-panel-lip: #9ea5b7;
+  --kit-well: #d3d8e2;
+  --kit-key: #fbfcfe;
+  --kit-key-line: #c4c9d5;
+  --kit-key-lip: #a8aebf;
+  /* accents */
+  --kit-green: #27c068;
+  --kit-red: #ee3d52;
+  --kit-yellow: #ffc627;
+  --kit-blue: #1b99e6;
+  /* text */
+  --ink: #3a4151;
+  --ink-muted: #7b8396;
 
-  --yui-blue: #2f76dc;
-  --yui-blue-lip: #1d58ad;
-  --yui-blue-soft: #6fb0ff;
+  --yui-blue: var(--kit-blue);
+  --yui-blue-lip: #0f70b3;
+  --yui-blue-soft: #8fd0ff;
   --yui-violet: #6558d8;
   --yui-teal: #0f9f8f;
   --yui-orange: #ee9b23;
-  --yui-red: #d84a4a;
+  --yui-red: var(--kit-red);
 
-  --yui-radius-shell: 22px;
-  --yui-radius-hero: 18px;
-  --yui-radius-card: 14px;
-  --yui-radius-control: 12px;
-  --yui-radius-badge: 10px;
-  --yui-lip: 3px;
+  --yui-radius-shell: 16px;
+  --yui-radius-hero: 12px;
+  --yui-radius-card: 10px;
+  --yui-radius-control: 8px;
+  --yui-radius-badge: 8px;
+  --yui-lip: 4px;
   --yui-ease-out: cubic-bezier(0.2, 0.9, 0.18, 1);
-  --yui-press: 120ms;
-  --yui-scrim: rgba(10, 16, 22, 0.6);
-  --yui-font: 'YuiAvenirNext', 'Avenir Next', 'Segoe UI', Helvetica, Arial, sans-serif;
+  --yui-press: 90ms;
+  --yui-scrim: rgba(18, 62, 104, 0.55);
+  --yui-font: ui-rounded, 'SF Pro Rounded', 'Nunito', 'Varela Round', 'Arial Rounded MT Bold', 'YuiAvenirNext',
+    'Avenir Next', 'Segoe UI', Helvetica, Arial, sans-serif;
 
-  /* pad aliases */
-  --bg: #0d1825;
-  --surface: #16263a;
-  --surface-2: #213650;
-  --fg: var(--yui-chrome-fg);
-  --muted: var(--yui-chrome-muted);
-  --line: var(--yui-chrome-line);
-  --accent: var(--yui-blue);
+  /* pad aliases: on the stage text is white; .kit-panel flips it to ink */
+  --bg: var(--kit-sky);
+  --surface: var(--kit-panel);
+  --surface-2: var(--kit-key);
+  --fg: #ffffff;
+  --muted: rgba(255, 255, 255, 0.82);
+  --line: var(--kit-key-line);
+  --accent: var(--kit-blue);
   --accent-lip: var(--yui-blue-lip);
-  --player: var(--yui-blue);
-  --ink: #0d1825;
-  color-scheme: dark;
+  --player: var(--kit-blue);
+  --yui-chrome-fill: rgba(255, 255, 255, 0.18);
+  --yui-chrome-active: rgba(255, 255, 255, 0.3);
+  color-scheme: light;
+}
+
+/* A light panel: dark ink text, rimmed, sitting on a lip. */
+.kit-panel {
+  --fg: var(--ink);
+  --muted: var(--ink-muted);
+  --yui-chrome-fill: var(--kit-well);
+  color: var(--ink);
+  background: var(--kit-panel);
+  border: 2px solid var(--kit-panel-line);
+  border-radius: var(--yui-radius-shell);
+  box-shadow: 0 var(--yui-lip) 0 var(--kit-panel-lip), 0 14px 30px rgba(10, 50, 90, 0.25);
 }
 
 * {
@@ -59,8 +86,10 @@ body {
   /* clip, not hidden: hidden on both html and body makes body its own scroll
      box, which breaks page scrolling on some phones and position: sticky. */
   overflow-x: clip;
-  background: #0d1825;
-  background-image: var(--yui-chrome);
+  background: var(--kit-sky);
+  /* soft diagonal stripes, like a game menu backdrop */
+  background-image: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.045) 0 22px, transparent 22px 44px),
+    radial-gradient(120% 80% at 50% 0%, #4fb0ee 0%, var(--kit-sky) 55%, var(--kit-sky-deep) 100%);
   background-attachment: fixed;
   color: var(--fg);
   font-family: var(--yui-font);
@@ -103,8 +132,14 @@ html.pad-locked body {
 
 h1 {
   margin: 0;
-  font-size: 1.75rem;
-  line-height: 1.15;
+  font-size: 1.85rem;
+  font-weight: 900;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+}
+/* Headings straight on the sky get a printed drop like a game logo. */
+h1:not(.kit-panel h1) {
+  text-shadow: 0 3px 0 var(--kit-sky-line);
 }
 
 .muted {
@@ -114,17 +149,22 @@ h1 {
 
 input {
   width: 100%;
-  padding: 16px 18px;
-  border: 2px solid var(--line);
-  border-radius: var(--yui-radius-card);
-  background: var(--yui-chrome-fill);
-  color: var(--fg);
+  padding: 14px 16px;
+  border: 2px solid var(--kit-key-line);
+  border-radius: var(--yui-radius-control);
+  background: #fff;
+  color: var(--ink);
   font: inherit;
   font-size: 1.1rem; /* >= 16px stops iOS zooming on focus */
+  font-weight: 700;
+  box-shadow: inset 0 3px 0 rgba(58, 65, 81, 0.08);
+}
+input::placeholder {
+  color: #a9afbd;
 }
 input:focus {
   outline: none;
-  border-color: var(--yui-blue-soft);
+  border-color: var(--kit-blue);
 }
 
 button {
@@ -133,31 +173,133 @@ button {
   cursor: pointer;
 }
 
+/*
+ * Chunky buttons. --b is the face colour; the top half is lit, the rim and
+ * lip are a darker shade, and pressing sinks the face onto the lip.
+ */
 button.primary,
-button.secondary {
+button.secondary,
+button.danger-btn,
+.kit-btn {
+  --b: var(--kit-green);
+  --b-hi: color-mix(in srgb, var(--b), #fff 16%);
+  --b-edge: color-mix(in srgb, var(--b), #000 26%);
+  position: relative;
   min-height: 60px;
   padding: 14px 24px;
-  border: 0;
+  border: 2px solid var(--b-edge);
   border-radius: var(--yui-radius-hero);
-  background: var(--accent);
+  background: linear-gradient(180deg, var(--b-hi) 0 48%, var(--b) 48% 100%);
   color: #fff;
   font-size: 1.15rem;
-  font-weight: 700;
-  box-shadow: 0 var(--yui-lip) 0 var(--accent-lip);
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  text-shadow: 0 2px 0 color-mix(in srgb, var(--b), #000 22%);
+  box-shadow: 0 var(--yui-lip) 0 var(--b-edge), inset 0 2px 0 rgba(255, 255, 255, 0.35);
   transition: transform var(--yui-press) var(--yui-ease-out), box-shadow var(--yui-press) var(--yui-ease-out);
 }
 button.secondary {
-  background: var(--yui-chrome-fill);
-  box-shadow: 0 var(--yui-lip) 0 rgba(0, 0, 0, 0.35), 0 0 0 1px var(--line) inset;
+  --b: var(--kit-key);
+  --b-hi: #fff;
+  --b-edge: var(--kit-key-lip);
+  border-color: var(--kit-key-line);
+  color: var(--ink);
+  text-shadow: none;
+  box-shadow: 0 var(--yui-lip) 0 var(--kit-key-lip), inset 0 -3px 0 rgba(58, 65, 81, 0.06);
+}
+button.danger-btn {
+  --b: var(--kit-red);
 }
 button.primary:active:not(:disabled),
-button.secondary:active:not(:disabled) {
+button.secondary:active:not(:disabled),
+button.danger-btn:active:not(:disabled),
+.kit-btn:active:not(:disabled) {
   transform: translateY(var(--yui-lip));
-  box-shadow: 0 0 0 var(--accent-lip);
+  box-shadow: 0 0 0 var(--b-edge), inset 0 2px 0 rgba(255, 255, 255, 0.25);
 }
-button.primary:disabled {
-  opacity: 0.4;
+button.primary:disabled,
+button.secondary:disabled,
+button.danger-btn:disabled {
+  filter: saturate(0.25);
+  opacity: 0.55;
+}
+
+/* A chunky checkbox, like a game options screen. */
+input[type='checkbox'] {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--kit-key-line);
+  border-radius: var(--yui-radius-control);
+  background: #fff;
+  box-shadow: 0 3px 0 var(--kit-key-lip);
+  cursor: pointer;
+}
+input[type='checkbox']::after {
+  content: '';
+  width: 9px;
+  height: 16px;
+  margin-top: -4px;
+  border: solid var(--ink);
+  border-width: 0 4px 4px 0;
+  transform: rotate(45deg) scale(0);
+  transition: transform var(--yui-press) var(--yui-ease-out);
+}
+input[type='checkbox']:checked {
+  border-color: color-mix(in srgb, var(--kit-green), #000 26%);
+  background: var(--kit-green);
+}
+input[type='checkbox']:checked::after {
+  border-color: #fff;
+  transform: rotate(45deg) scale(1);
+}
+
+/* Sliders: a blue groove with a chunky tab handle. */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 34px;
+  padding: 0;
+  border: 0;
   box-shadow: none;
+  background: transparent;
+  --fill: 50%;
+}
+input[type='range']::-webkit-slider-runnable-track {
+  height: 10px;
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--kit-blue) 0 var(--fill), var(--kit-well) var(--fill) 100%);
+  box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.12);
+}
+input[type='range']::-moz-range-track {
+  height: 10px;
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--kit-blue) 0 var(--fill), var(--kit-well) var(--fill) 100%);
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 28px;
+  height: 32px;
+  margin-top: -12px;
+  border: 2px solid var(--yui-blue-lip);
+  border-radius: 8px 8px 12px 12px;
+  background: linear-gradient(180deg, #4cb4f2 0 50%, var(--kit-blue) 50%);
+  box-shadow: 0 3px 0 var(--yui-blue-lip);
+}
+input[type='range']::-moz-range-thumb {
+  width: 26px;
+  height: 30px;
+  border: 2px solid var(--yui-blue-lip);
+  border-radius: 8px 8px 12px 12px;
+  background: linear-gradient(180deg, #4cb4f2 0 50%, var(--kit-blue) 50%);
+  box-shadow: 0 3px 0 var(--yui-blue-lip);
 }
 
 /* iOS haptic switch (platform/haptics.ts): present but invisible. */

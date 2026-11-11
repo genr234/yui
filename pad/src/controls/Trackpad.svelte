@@ -68,9 +68,10 @@
     position: relative;
     flex: 1;
     min-height: 96px;
+    border: 2px solid var(--kit-panel-line);
     border-radius: var(--yui-radius-shell);
-    background: var(--yui-chrome-fill);
-    box-shadow: 0 0 0 1px var(--line) inset;
+    background: var(--kit-panel);
+    box-shadow: 0 var(--yui-lip) 0 var(--kit-panel-lip), inset 0 6px 0 rgba(58, 65, 81, 0.07);
     touch-action: none;
     user-select: none;
     -webkit-user-select: none;
@@ -79,13 +80,13 @@
     place-items: center;
   }
   .pad.touching {
-    box-shadow: 0 0 0 2px var(--player) inset;
+    border-color: var(--player);
   }
   .label {
     padding: 0 20px;
     text-align: center;
-    color: var(--muted);
-    font-weight: 600;
+    color: var(--ink-muted);
+    font-weight: 800;
     pointer-events: none;
   }
   .dot {
@@ -106,7 +107,7 @@
     height: 16px;
     transform: translate(-50%, -50%);
     border-radius: 50%;
-    border: 2px solid var(--line);
+    border: 2px solid var(--kit-panel-line);
     pointer-events: none;
   }
 </style>

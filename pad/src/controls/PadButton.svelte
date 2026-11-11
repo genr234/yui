@@ -56,25 +56,34 @@
 </button>
 
 <style>
+  /*
+   * Chunky game buttons: a lit top half, a darker rim and a lip the face
+   * sinks onto when pressed. --b is the face colour.
+   */
   .pb {
+    --b: var(--accent);
+    --b-hi: color-mix(in srgb, var(--b), #fff 16%);
+    --b-edge: color-mix(in srgb, var(--b), #000 26%);
+    --b-ink: #fff;
     flex: 1;
     min-width: 0;
     min-height: 64px;
     padding: 10px;
-    border: 0;
+    border: 2px solid var(--b-edge);
     border-radius: var(--yui-radius-hero);
-    background: var(--accent);
-    color: #fff;
+    background: linear-gradient(180deg, var(--b-hi) 0 48%, var(--b) 48% 100%);
+    color: var(--b-ink);
     font: inherit;
     font-size: 1.15rem;
-    font-weight: 800;
+    font-weight: 900;
     letter-spacing: 0.01em;
-    box-shadow: 0 var(--yui-lip) 0 var(--accent-lip), 0 8px 18px rgba(0, 0, 0, 0.25);
+    text-shadow: 0 2px 0 var(--b-edge);
+    box-shadow: 0 var(--yui-lip) 0 var(--b-edge), inset 0 2px 0 rgba(255, 255, 255, 0.35);
     touch-action: none;
     user-select: none;
     -webkit-user-select: none;
     -webkit-touch-callout: none;
-    transition: transform 60ms var(--yui-ease-out), box-shadow 60ms var(--yui-ease-out), filter 60ms;
+    transition: transform 50ms var(--yui-ease-out), box-shadow 50ms var(--yui-ease-out), filter 50ms;
   }
   .pb span {
     pointer-events: none;
@@ -88,39 +97,59 @@
     flex: 0 0 auto;
   }
   .pb.pressed {
-    transform: translateY(var(--yui-lip)) scale(0.97);
-    box-shadow: 0 0 0 var(--accent-lip), 0 0 0 4px var(--player) inset;
-    filter: brightness(1.15);
+    transform: translateY(var(--yui-lip));
+    box-shadow: 0 0 0 var(--b-edge), inset 0 2px 0 rgba(255, 255, 255, 0.25);
+    filter: brightness(1.08);
   }
   .pb[data-variant='primary'] {
-    background: var(--player);
-    box-shadow: 0 var(--yui-lip) 0 rgba(0, 0, 0, 0.35), 0 8px 18px rgba(0, 0, 0, 0.25);
+    --b: var(--player);
   }
-  .pb[data-variant='primary'].pressed {
-    box-shadow: 0 0 0 transparent, 0 0 0 4px rgba(255, 255, 255, 0.55) inset;
-  }
+  /* White keys, like a menu's plain buttons; they light in the player's colour. */
   .pb[data-variant='secondary'] {
-    background: var(--surface-2);
-    color: var(--fg);
-    box-shadow: 0 var(--yui-lip) 0 rgba(0, 0, 0, 0.4), 0 0 0 1px var(--line) inset;
+    --b: var(--kit-key);
+    --b-hi: #fff;
+    --b-edge: var(--kit-key-lip);
+    --b-ink: var(--ink);
+    border-color: var(--kit-key-line);
+    text-shadow: none;
+    box-shadow: 0 var(--yui-lip) 0 var(--kit-key-lip), inset 0 -3px 0 rgba(58, 65, 81, 0.06);
+  }
+  .pb[data-variant='secondary'].pressed {
+    --b: var(--player);
+    --b-hi: color-mix(in srgb, var(--player), #fff 16%);
+    --b-ink: #fff;
+    border-color: color-mix(in srgb, var(--player), #000 26%);
+    box-shadow: none;
+    filter: none;
   }
   .pb[data-variant='danger'] {
-    background: var(--yui-red);
-    box-shadow: 0 var(--yui-lip) 0 #a83434;
+    --b: var(--kit-red);
   }
   .pb[data-variant='ghost'] {
-    background: transparent;
-    color: var(--fg);
-    box-shadow: 0 0 0 2px var(--line) inset;
+    background: rgba(255, 255, 255, 0.12);
+    border: 2px dashed rgba(255, 255, 255, 0.7);
+    color: #fff;
+    text-shadow: none;
+    box-shadow: none;
+  }
+  .pb[data-variant='ghost'].pressed {
+    background: rgba(255, 255, 255, 0.3);
+    transform: none;
   }
   .pb.round {
     flex: 0 0 auto;
     width: var(--round, 76px);
     height: var(--round, 76px);
     min-height: 0;
+    padding: 0;
     border-radius: 50%;
     align-self: center;
     justify-self: center;
+    /* A ring of shine, like a game's round icon buttons. */
+    box-shadow: 0 var(--yui-lip) 0 var(--b-edge), inset 0 0 0 3px rgba(255, 255, 255, 0.3);
+  }
+  .pb.round.pressed {
+    box-shadow: 0 0 0 var(--b-edge), inset 0 0 0 3px rgba(255, 255, 255, 0.3);
   }
   .pb.round.large {
     --round: 104px;
@@ -138,6 +167,7 @@
   .pb.small {
     min-height: 44px;
     font-size: 0.95rem;
+    --yui-lip: 3px;
   }
   .pb.large:not(.round) {
     min-height: 96px;

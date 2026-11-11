@@ -8,8 +8,8 @@
 </script>
 
 <div class="scrim" role="presentation">
-  <div class="sheet" role="alertdialog" aria-modal="true" aria-label="Save your progress">
-    <h2>Save your progress?</h2>
+  <div class="sheet kit-panel" role="alertdialog" aria-modal="true" aria-label="Save your progress">
+    <h2 class="band">Save your progress?</h2>
     <p>{askText(ask, account)}</p>
     <p class="muted">It can then keep your scores and unlocks for you, on any Yui kiosk. You can change your mind from your account page.</p>
     <div class="actions">
@@ -28,8 +28,6 @@
     align-items: flex-end;
     justify-content: center;
     background: var(--yui-scrim);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
   }
   .sheet {
     width: 100%;
@@ -37,11 +35,11 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
-    padding: 20px max(20px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom))
-      max(20px, env(safe-area-inset-left));
+    padding: 0 max(18px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom))
+      max(18px, env(safe-area-inset-left));
+    border-bottom: 0;
     border-radius: var(--yui-radius-shell) var(--yui-radius-shell) 0 0;
-    background-color: #142233;
-    box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--line) inset;
+    overflow: hidden;
     animation: up 220ms var(--yui-ease-out);
   }
   @keyframes up {
@@ -53,6 +51,17 @@
   h2,
   p {
     margin: 0;
+  }
+  /* The yellow title strip, like a reward panel. */
+  .band {
+    margin: 0 calc(-1 * max(18px, env(safe-area-inset-left))) 4px;
+    padding: 14px 18px;
+    border-bottom: 2px solid #cf9700;
+    background: linear-gradient(180deg, #ffd65a 0 50%, var(--kit-yellow) 50%);
+    color: #6b4b00;
+    font-size: 1.25rem;
+    font-weight: 900;
+    text-align: center;
   }
   p:not(.muted) {
     font-size: 1.1rem;

@@ -104,7 +104,7 @@
 </script>
 
 <div class="scrim" role="presentation" on:click|self={onResume}>
-  <div class="sheet" role="dialog" aria-modal="true" aria-label="Home" style="--player:{colorHex(player.color)}">
+  <div class="sheet kit-panel" role="dialog" aria-modal="true" aria-label="Home" style="--player:{colorHex(player.color)}">
     <header>
       <span class="slot" class:with-avatar={!!player.avatar}
         ><Avatar avatar={player.avatar} size={40} />{player.slot ? `P${player.slot}` : 'Spectator'}</span
@@ -155,6 +155,7 @@
     <label class="volume">
       <span>Volume</span>
       <input
+        style="--fill:{Math.round(volume * 100)}%"
         type="range"
         min="0"
         max="100"
@@ -206,7 +207,7 @@
     {/if}
 
     {#if playing}
-      <button class="secondary danger" on:click={quit}>{confirmQuit ? 'Tap again to quit' : 'Quit game'}</button>
+      <button class="danger-btn" on:click={quit}>{confirmQuit ? 'Tap again to quit' : 'Quit game'}</button>
     {/if}
   </div>
 </div>
@@ -220,8 +221,6 @@
     align-items: flex-end;
     justify-content: center;
     background: var(--yui-scrim);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
   }
   .sheet {
     width: 100%;
@@ -230,13 +229,11 @@
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 14px;
-    padding: 20px max(20px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom))
-      max(20px, env(safe-area-inset-left));
+    gap: 12px;
+    padding: 0 max(16px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom))
+      max(16px, env(safe-area-inset-left));
+    border-bottom: 0;
     border-radius: var(--yui-radius-shell) var(--yui-radius-shell) 0 0;
-    background: var(--yui-chrome);
-    background-color: #142233;
-    box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--line) inset;
     animation: up 220ms var(--yui-ease-out);
   }
   @keyframes up {
@@ -245,50 +242,82 @@
       opacity: 0;
     }
   }
+  /* The player's coloured title strip across the top of the panel. */
   header {
+    --edge: color-mix(in srgb, var(--player), #000 26%);
+    position: sticky;
+    top: 0;
+    z-index: 1;
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: 12px;
+    margin: 0 calc(-1 * max(16px, env(safe-area-inset-left))) 4px;
+    padding: 12px max(16px, env(safe-area-inset-left));
+    border-bottom: 2px solid var(--edge);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--player), #fff 16%) 0 50%, var(--player) 50%);
+    color: #fff;
   }
   .slot {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
-    min-width: 64px;
-    padding: 10px 14px;
-    border-radius: var(--yui-radius-card);
-    background: var(--player);
-    color: #fff;
-    font-size: 1.4rem;
-    font-weight: 800;
+    min-width: 60px;
+    padding: 8px 12px;
+    border: 2px solid var(--edge);
+    border-radius: var(--yui-radius-hero);
+    background: #fff;
+    color: var(--ink);
+    font-size: 1.3rem;
+    font-weight: 900;
     text-align: center;
+    box-shadow: 0 3px 0 var(--edge);
   }
   .slot.with-avatar {
-    padding: 4px 14px 4px 4px;
+    padding: 3px 12px 3px 3px;
   }
   .who {
     flex: 1;
     display: flex;
     flex-direction: column;
     min-width: 0;
+    text-shadow: 0 2px 0 var(--edge);
+  }
+  .who .muted {
+    color: rgba(255, 255, 255, 0.88);
+    font-weight: 700;
+    font-size: 0.9rem;
+  }
+  .who strong {
+    font-size: 1.2rem;
+    font-weight: 900;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .link {
     flex: 0 0 auto;
-    border: 0;
-    background: none;
-    color: var(--yui-blue-soft);
+    padding: 6px 10px;
+    border: 2px solid var(--edge);
+    border-radius: var(--yui-radius-control);
+    background: rgba(255, 255, 255, 0.92);
+    color: var(--ink);
     font: inherit;
-    font-weight: 700;
-    font-size: 0.9rem;
+    font-weight: 800;
+    font-size: 0.85rem;
+    box-shadow: 0 3px 0 var(--edge);
+  }
+  .link:active {
+    transform: translateY(3px);
+    box-shadow: none;
   }
   .avatar-edit {
     display: flex;
     flex-direction: column;
     gap: 12px;
-    padding: 14px;
+    padding: 12px;
+    border: 2px solid var(--kit-key-line);
     border-radius: var(--yui-radius-hero);
-    background: var(--yui-chrome-fill);
+    background: #fff;
   }
   .avatar-actions {
     display: grid;
@@ -297,62 +326,47 @@
   }
   .err {
     margin: 0;
-    color: #ff9a9a;
-    font-weight: 600;
-  }
-  .who strong {
-    font-size: 1.2rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    color: var(--kit-red);
+    font-weight: 800;
   }
   .big {
     min-height: 72px;
-    font-size: 1.3rem;
+    font-size: 1.35rem;
   }
   .speaker-now {
     margin: 0;
     padding: 12px 16px;
-    border-radius: 14px;
-    background: var(--yui-chrome-fill);
+    border: 2px dashed var(--kit-panel-line);
+    border-radius: var(--yui-radius-hero);
     text-align: center;
-    font-weight: 700;
+    font-weight: 800;
   }
-  .volume {
+  /* Settings rows: a white inset row, label left, control right. */
+  .volume,
+  .vibration {
     display: grid;
     grid-template-columns: auto 1fr auto;
     align-items: center;
     gap: 12px;
-    padding: 12px 16px;
+    min-height: 60px;
+    padding: 8px 14px;
+    border: 2px solid var(--kit-key-line);
     border-radius: var(--yui-radius-hero);
-    background: var(--yui-chrome-fill);
-    font-weight: 700;
-  }
-  .volume input {
-    padding: 0;
-    border: 0;
-    background: none;
-    accent-color: var(--player);
-    height: 32px;
+    background: #fff;
+    font-weight: 800;
   }
   .vibration {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 16px;
-    border-radius: var(--yui-radius-hero);
-    background: var(--yui-chrome-fill);
-    font-weight: 700;
-  }
-  .vibration input {
-    width: 24px;
-    height: 24px;
-    padding: 0;
-    accent-color: var(--player);
+    grid-template-columns: 1fr auto;
   }
   .pct {
-    min-width: 3.5em;
-    text-align: right;
-    color: var(--muted);
+    min-width: 3.2em;
+    padding: 4px 6px;
+    border-radius: var(--yui-radius-control);
+    background: var(--kit-well);
+    text-align: center;
+    color: var(--ink);
+    font-size: 0.9rem;
+    font-variant-numeric: tabular-nums;
   }
   .account {
     display: flex;
@@ -366,6 +380,6 @@
     text-overflow: ellipsis;
   }
   .danger {
-    color: #ff9a9a;
+    color: var(--kit-red);
   }
 </style>

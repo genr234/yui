@@ -441,10 +441,13 @@
       {/if}
     {:else}
       <section class="waiting">
-        {#if player.avatar}
-          <div class="big-avatar"><Avatar avatar={player.avatar} size={112} /></div>
-        {/if}
-        <div class="badge">{player.slot ? `P${player.slot}` : '—'}</div>
+        <div class="badge-card" class:with-avatar={!!player.avatar}>
+          {#if player.avatar}
+            <div class="big-avatar"><Avatar avatar={player.avatar} size={96} /></div>
+          {/if}
+          <span class="badge-name">{player.name}</span>
+          <div class="badge"><small>{player.host ? 'Host' : 'Player'}</small>{player.slot ? `P${player.slot}` : '—'}</div>
+        </div>
         <h1>{conn === 'online' || conn === 'fallback' ? "You're in" : connLabel + '…'}</h1>
         <p class="muted">
           {player.host ? "You're the host. " : ''}Waiting for {kioskName || 'the kiosk'}…
@@ -453,14 +456,14 @@
     {/if}
 
     {#if player.speaker && $speakerBlocked}
-      <button class="sound-gate" type="button" on:click={() => void playSpeaker()}>
+      <button class="sound-gate kit-btn" type="button" on:click={() => void playSpeaker()}>
         Tap to enable sound
         <span>This phone is the speaker</span>
       </button>
     {/if}
 
     {#if idleEndsAt}
-      <div class="idle-warning" role="alert">
+      <div class="idle-warning kit-panel" role="alert">
         <strong>Still playing?</strong>
         <span>Press any button. The session ends in {idleLeft} s.</span>
       </div>
@@ -469,7 +472,7 @@
     {#if conn === 'fallback'}
       <!-- Input frames only travel peer to peer, so on the fallback the
            buttons don't reach the game: say how to get a direct link. -->
-      <div class="slow-link" role="status">
+      <div class="slow-link kit-panel" role="status">
         <strong>Can't reach the kiosk directly</strong>
         {#if wifiSsid}
           <span>Join the Wi-Fi <b>{wifiSsid}</b> (scan its QR on the kiosk screen), then come back here.</span>
@@ -481,8 +484,10 @@
 
     {#if sensitive}
       <div class="sensitive" role="status">
+        <div class="kit-panel">
         <strong>Use the screen for this</strong>
         <span>The kiosk is showing something private. Phones can't type or point here.</span>
+        </div>
       </div>
     {/if}
   </main>
@@ -525,24 +530,36 @@
     -webkit-touch-callout: none;
     overflow: hidden;
   }
+  /* A light strip across the top, sitting on its own lip. */
   header {
+    position: relative;
+    z-index: 2;
     flex: 0 0 auto;
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 8px 12px;
-    border-bottom: 1px solid var(--line);
-    background: rgba(13, 24, 37, 0.6);
+    margin: 8px 10px 0;
+    padding: 6px 6px 6px 8px;
+    border: 2px solid var(--kit-panel-line);
+    border-radius: var(--yui-radius-shell);
+    background: var(--kit-panel);
+    color: var(--ink);
+    box-shadow: 0 var(--yui-lip) 0 var(--kit-panel-lip);
   }
+  /* The player's tab: their colour, chunky. */
   .slot {
+    --edge: color-mix(in srgb, var(--player), #000 26%);
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 6px 12px;
-    border-radius: var(--yui-radius-badge);
-    background: var(--player);
+    padding: 5px 12px;
+    border: 2px solid var(--edge);
+    border-radius: var(--yui-radius-control);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--player), #fff 16%) 0 50%, var(--player) 50%);
     color: #fff;
-    font-weight: 800;
+    font-weight: 900;
+    text-shadow: 0 2px 0 var(--edge);
+    box-shadow: 0 3px 0 var(--edge);
   }
   .slot.with-avatar {
     padding: 3px 12px 3px 3px;
@@ -550,7 +567,7 @@
   .name {
     flex: 1;
     min-width: 0;
-    font-weight: 700;
+    font-weight: 800;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -559,22 +576,29 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    color: var(--muted);
+    padding: 4px 10px 4px 6px;
+    border-radius: 99px;
+    background: var(--kit-well);
+    color: var(--ink-muted);
     font-size: 0.8rem;
-    font-weight: 600;
+    font-weight: 800;
   }
   .conn .dot {
-    width: 10px;
-    height: 10px;
+    width: 12px;
+    height: 12px;
     border-radius: 50%;
-    background: var(--yui-orange);
+    background: var(--kit-yellow);
+    box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.18);
+  }
+  .conn.online {
+    padding: 6px;
   }
   .conn.online .dot {
-    background: #3ddc84;
+    background: var(--kit-green);
   }
   .conn.reconnecting .dot,
   .conn.closed .dot {
-    background: var(--yui-red);
+    background: var(--kit-red);
   }
   .conn.online .txt {
     display: none;
@@ -585,7 +609,7 @@
     width: 32px;
     height: 32px;
     border-radius: 50%;
-    background: var(--yui-chrome-fill);
+    background: var(--kit-well);
   }
   .speaker-badge.paired {
     width: auto;
@@ -598,56 +622,53 @@
   .speaker-badge .channel {
     font-size: 0.8rem;
     line-height: 1;
-    color: var(--fg);
+    color: var(--ink);
   }
   .speaker-badge svg {
     width: 18px;
     height: 18px;
-    fill: var(--fg);
+    fill: var(--ink);
   }
   .sound-gate {
+    --b: var(--player);
     position: absolute;
     left: 14px;
     right: 14px;
-    bottom: 14px;
+    bottom: 18px;
     z-index: 4;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 2px;
     min-height: 64px;
-    padding: 12px 16px;
-    border: 0;
-    border-radius: var(--yui-radius-control, 14px);
-    background: var(--player);
-    color: #fff;
-    font: inherit;
-    font-weight: 800;
-    font-size: 1.05rem;
-    box-shadow: 0 var(--yui-lip) 0 rgba(0, 0, 0, 0.35);
   }
   .sound-gate span {
-    font-weight: 600;
+    font-weight: 700;
     font-size: 0.85rem;
-    opacity: 0.85;
+    opacity: 0.9;
   }
+  /* The round yellow button, like a game's play button. */
   .home {
-    width: 48px;
-    height: 48px;
+    --edge: #cf9700;
+    width: 46px;
+    height: 46px;
     display: grid;
     place-items: center;
-    border: 0;
+    padding: 0;
+    border: 2px solid var(--edge);
     border-radius: 50%;
-    background: var(--yui-chrome-fill);
-    box-shadow: 0 0 0 2px var(--player) inset;
+    background: linear-gradient(180deg, #ffd65a 0 50%, var(--kit-yellow) 50%);
+    box-shadow: 0 3px 0 var(--edge), inset 0 0 0 3px rgba(255, 255, 255, 0.45);
+    transition: transform var(--yui-press) var(--yui-ease-out), box-shadow var(--yui-press) var(--yui-ease-out);
   }
   .home:active {
-    background: var(--player);
+    transform: translateY(3px);
+    box-shadow: 0 0 0 var(--edge), inset 0 0 0 3px rgba(255, 255, 255, 0.45);
   }
   .home svg {
-    width: 24px;
-    height: 24px;
-    fill: var(--fg);
+    width: 22px;
+    height: 22px;
+    fill: #7a5600;
   }
   .stage {
     position: relative;
@@ -661,7 +682,7 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-    padding: 14px 14px 18px;
+    padding: 16px 14px 20px;
     overflow: auto;
   }
   .layout > :global(*) {
@@ -669,14 +690,15 @@
   }
   /* Landscape phones have ~320px of height: a slimmer header and controls. */
   .landscape header {
-    padding: 4px 12px;
+    margin-top: 4px;
+    padding: 3px 4px 3px 6px;
   }
   .landscape .home {
-    width: 40px;
-    height: 40px;
+    width: 38px;
+    height: 38px;
   }
   .landscape .layout {
-    padding: 8px 18px 10px;
+    padding: 10px 18px 12px;
   }
   .landscape .layout :global(.pb:not(.round)) {
     min-height: 50px;
@@ -695,83 +717,134 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 16px;
+    gap: 14px;
     padding: 24px;
     text-align: center;
     max-width: 480px;
     margin: 0 auto;
   }
-  .big-avatar {
-    padding: 6px;
-    border-radius: 50%;
-    background: var(--player);
-    box-shadow: 0 var(--yui-lip) 0 rgba(0, 0, 0, 0.35);
-    margin-bottom: -4px;
+  .gate .primary,
+  .gate .secondary {
+    width: 100%;
+    max-width: 320px;
   }
-  .badge {
-    min-width: 168px;
-    padding: 24px 32px;
-    border-radius: var(--yui-radius-shell);
-    background: var(--player);
-    color: #fff;
-    font-size: 4.2rem;
-    font-weight: 900;
-    line-height: 1;
-    box-shadow: 0 var(--yui-lip) 0 rgba(0, 0, 0, 0.35), 0 20px 50px rgba(0, 0, 0, 0.35);
-  }
-  .idle-warning {
-    position: absolute;
-    left: 12px;
-    right: 12px;
-    top: 12px;
-    z-index: 4;
+  /* The player card: their colour, a white plate with the slot. */
+  .badge-card {
+    --edge: color-mix(in srgb, var(--player), #000 26%);
+    position: relative;
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding: 12px 14px;
-    border-radius: 14px;
-    background: rgba(13, 24, 37, 0.92);
-    text-align: center;
+    align-items: center;
+    gap: 10px;
+    min-width: 200px;
+    max-width: 100%;
+    margin-bottom: 8px;
+    padding: 16px 16px 18px;
+    border: 2px solid var(--edge);
+    border-radius: var(--yui-radius-shell);
+    background: var(--player);
+    box-shadow: 0 var(--yui-lip) 0 var(--edge), 0 18px 40px rgba(10, 50, 90, 0.3);
   }
-  .idle-warning span {
-    color: var(--muted);
+  .badge-card.with-avatar {
+    margin-top: 48px;
+    padding-top: 58px;
   }
+  .big-avatar {
+    position: absolute;
+    top: -52px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 5px;
+    border: 2px solid var(--edge);
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 var(--yui-lip) 0 var(--edge);
+  }
+  .badge-name {
+    max-width: 240px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #fff;
+    font-weight: 900;
+    font-size: 1.05rem;
+    text-shadow: 0 2px 0 var(--edge);
+  }
+  .badge {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    width: 100%;
+    padding: 12px 28px 14px;
+    border: 3px solid var(--kit-yellow);
+    border-radius: var(--yui-radius-hero);
+    background: var(--kit-panel);
+    color: var(--ink);
+    font-size: 3.6rem;
+    font-weight: 900;
+    line-height: 1;
+    box-shadow: inset 0 0 0 3px #fff;
+  }
+  .badge small {
+    color: var(--ink-muted);
+    font-size: 0.9rem;
+    font-weight: 800;
+  }
+  .idle-warning,
   .slow-link {
     position: absolute;
     left: 12px;
     right: 12px;
-    bottom: 12px;
     z-index: 4;
     display: flex;
     flex-direction: column;
     gap: 4px;
     padding: 12px 14px;
-    border-radius: 14px;
-    background: rgba(13, 24, 37, 0.92);
     text-align: center;
   }
+  .idle-warning {
+    top: 12px;
+    border-color: var(--kit-yellow);
+  }
+  .slow-link {
+    bottom: 16px;
+  }
+  .idle-warning strong,
+  .slow-link strong {
+    font-size: 1.1rem;
+    font-weight: 900;
+  }
+  .idle-warning span,
   .slow-link span {
-    color: var(--muted);
+    color: var(--ink-muted);
+    font-weight: 600;
   }
   .sensitive {
     position: absolute;
     inset: 0;
     z-index: 5;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: var(--yui-scrim);
+  }
+  .sensitive .kit-panel {
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
     gap: 10px;
-    padding: 24px;
+    max-width: 340px;
+    padding: 22px 20px;
     text-align: center;
-    background: rgba(13, 24, 37, 0.92);
     font-size: 1.05rem;
   }
   .sensitive strong {
-    font-size: 1.5rem;
+    font-size: 1.4rem;
+    font-weight: 900;
   }
   .sensitive span {
-    color: var(--muted);
-    max-width: 320px;
+    color: var(--ink-muted);
+    font-weight: 600;
   }
 </style>

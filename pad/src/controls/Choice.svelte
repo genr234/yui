@@ -61,21 +61,23 @@
     gap: 10px;
     min-height: 60px;
     padding: 12px 16px;
-    border: 0;
+    border: 2px solid var(--kit-key-line);
     border-radius: var(--yui-radius-hero);
-    background: var(--surface-2);
-    color: var(--fg);
-    font-weight: 700;
+    background: linear-gradient(180deg, #fff 0 50%, var(--kit-key) 50%);
+    color: var(--ink);
+    font-weight: 800;
     font-size: 1.05rem;
     text-align: left;
-    box-shadow: 0 var(--yui-lip) 0 rgba(0, 0, 0, 0.4), 0 0 0 1px var(--line) inset;
-    transition: transform var(--yui-press) var(--yui-ease-out);
+    box-shadow: 0 var(--yui-lip) 0 var(--kit-key-lip);
+    transition: transform var(--yui-press) var(--yui-ease-out), box-shadow var(--yui-press) var(--yui-ease-out);
   }
   button:active {
     transform: translateY(var(--yui-lip));
+    box-shadow: none;
   }
   button.selected {
-    box-shadow: 0 var(--yui-lip) 0 rgba(0, 0, 0, 0.4), 0 0 0 3px var(--opt, var(--player)) inset;
+    border-color: var(--opt, var(--player));
+    box-shadow: 0 var(--yui-lip) 0 var(--opt, var(--player)), inset 0 0 0 2px var(--opt, var(--player));
   }
   .swatch {
     flex: 0 0 auto;
@@ -83,6 +85,7 @@
     height: 22px;
     border-radius: 50%;
     background: var(--opt);
+    box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.2);
   }
   .label {
     overflow: hidden;

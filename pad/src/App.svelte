@@ -140,7 +140,7 @@
       </section>
     {:else if screen === 'not_found' || screen === 'ended'}
       <section class="center">
-        <div class="glyph" aria-hidden="true">{screen === 'ended' ? '✓' : '?'}</div>
+        <div class="glyph kit-panel" aria-hidden="true">{screen === 'ended' ? '✓' : '?'}</div>
         <h1>{screen === 'ended' ? 'Thanks for playing' : 'Session not found'}</h1>
         <p class="muted">
           {screen === 'ended'
@@ -150,7 +150,7 @@
       </section>
     {:else if screen === 'kicked'}
       <section class="center">
-        <div class="glyph" aria-hidden="true">✕</div>
+        <div class="glyph kit-panel bad" aria-hidden="true">✕</div>
         <h1>You were removed</h1>
         <p class="muted">The host removed you from this session. Ask them to let you back in, then scan the QR code again.</p>
       </section>
@@ -172,6 +172,7 @@
         <h1>Join {info?.kiosk_name ?? 'the game'}</h1>
         <p class="muted">Pick a name, a colour and an avatar.</p>
 
+        <div class="card kit-panel">
         <label class="field">
           <span>Your name</span>
           <input bind:value={name} maxlength="20" autocomplete="nickname" autocapitalize="words" placeholder="Player" />
@@ -214,6 +215,7 @@
         {:else if !enteringCode}
           <button class="link account-link" type="button" on:click={() => (enteringCode = true)}>Use my Yui account</button>
         {/if}
+        </div>
 
         <!-- Pinned to the bottom of the screen so Join is reachable on short phones. -->
         <div class="join-bar">
@@ -224,8 +226,8 @@
     {/if}
     {#if screen === 'join' && enteringCode}
       <div class="scrim" role="presentation" on:click|self={() => (enteringCode = false)}>
-        <div class="sheet" role="dialog" aria-modal="true" aria-label="Use my Yui account">
-          <h2>Use my Yui account</h2>
+        <div class="sheet kit-panel" role="dialog" aria-modal="true" aria-label="Use my Yui account">
+          <h2 class="band">Use my Yui account</h2>
           <CodeEntry
             submitLabel="Use this code"
             onCancel={() => (enteringCode = false)}
@@ -279,67 +281,99 @@
       calc(-1 * max(20px, env(safe-area-inset-left)));
     padding: 16px max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom))
       max(20px, env(safe-area-inset-left));
-    background: linear-gradient(180deg, rgba(13, 24, 37, 0), #0d1825 22px);
+    background: linear-gradient(180deg, rgba(42, 132, 203, 0), var(--kit-sky-deep) 22px);
   }
   .join-bar .primary {
     width: 100%;
+    min-height: 64px;
+    font-size: 1.3rem;
   }
+  /* A tab chip, like the tabs on a game options panel. */
   .eyebrow {
+    align-self: flex-start;
     margin: 0;
-    color: var(--yui-blue-soft);
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    font-size: 0.8rem;
+    padding: 6px 14px;
+    border: 2px solid var(--yui-blue-lip);
+    border-radius: var(--yui-radius-control);
+    background: linear-gradient(180deg, #4cb4f2 0 50%, var(--kit-blue) 50%);
+    color: #fff;
+    font-weight: 800;
+    font-size: 0.85rem;
+    letter-spacing: 0.04em;
+    box-shadow: 0 3px 0 var(--yui-blue-lip);
+  }
+  .card {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    padding: 18px 16px 20px;
   }
   .glyph {
     font-size: 3rem;
-    font-weight: 800;
-    width: 96px;
-    height: 96px;
+    font-weight: 900;
+    width: 104px;
+    height: 104px;
     display: grid;
     place-items: center;
-    border-radius: var(--yui-radius-shell);
-    background: var(--yui-chrome-fill);
-    box-shadow: 0 0 0 1px var(--line) inset;
+    color: var(--kit-green);
+  }
+  .glyph.bad {
+    color: var(--kit-red);
   }
   .field {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    font-weight: 700;
+    font-weight: 800;
   }
   .field small {
-    font-weight: 600;
+    font-weight: 700;
   }
   .chips {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 12px;
+    gap: 12px 10px;
   }
   .chip {
-    aspect-ratio: 1.6;
-    border: 3px solid transparent;
-    border-radius: var(--yui-radius-hero);
-    background: var(--chip);
-    box-shadow: 0 var(--yui-lip) 0 rgba(0, 0, 0, 0.35);
+    --edge: color-mix(in srgb, var(--chip), #000 28%);
+    position: relative;
+    aspect-ratio: 1.5;
     padding: 0;
+    border: 2px solid var(--edge);
+    border-radius: var(--yui-radius-hero);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--chip), #fff 16%) 0 48%, var(--chip) 48%);
+    box-shadow: 0 var(--yui-lip) 0 var(--edge);
+    transition: transform var(--yui-press) var(--yui-ease-out), box-shadow var(--yui-press) var(--yui-ease-out);
   }
   .chip.selected {
-    border-color: #fff;
-    transform: translateY(-2px);
+    transform: translateY(var(--yui-lip));
+    box-shadow: 0 0 0 var(--edge), 0 0 0 3px #fff, 0 0 0 5px var(--edge);
+  }
+  /* A check on the picked colour. */
+  .chip.selected::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 46%;
+    width: 9px;
+    height: 17px;
+    border: solid #fff;
+    border-width: 0 4px 4px 0;
+    transform: translate(-50%, -50%) rotate(45deg);
   }
   .chip:disabled {
-    opacity: 0.22;
-    box-shadow: none;
+    opacity: 0.25;
+    filter: saturate(0.2);
   }
   .err {
     margin: 0;
     padding: 10px 14px;
-    border-radius: var(--yui-radius-card);
-    background: rgba(216, 74, 74, 0.16);
-    color: #ff9a9a;
-    font-weight: 600;
+    border: 2px solid #b8263a;
+    border-radius: var(--yui-radius-hero);
+    background: var(--kit-red);
+    color: #fff;
+    font-weight: 800;
+    box-shadow: 0 3px 0 #b8263a;
   }
   .account-switch {
     display: flex;
@@ -348,8 +382,9 @@
     gap: 14px;
     min-height: 56px;
     padding: 10px 14px;
+    border: 2px solid var(--kit-key-line);
     border-radius: var(--yui-radius-hero);
-    background: var(--yui-chrome-fill);
+    background: #fff;
   }
   .account-switch span {
     display: flex;
@@ -360,15 +395,6 @@
   .account-switch small {
     font-weight: 600;
   }
-  .account-switch input {
-    flex: 0 0 auto;
-    width: 52px;
-    height: 32px;
-    min-height: 0;
-    padding: 0;
-    margin: 0;
-    accent-color: var(--accent);
-  }
   .account-note {
     margin: 0;
     display: flex;
@@ -376,7 +402,7 @@
     justify-content: space-between;
     gap: 12px;
     color: var(--muted);
-    font-weight: 600;
+    font-weight: 700;
   }
   .link {
     flex: 0 0 auto;
@@ -384,9 +410,12 @@
     padding: 0 12px;
     border: 0;
     background: none;
-    color: var(--yui-blue-soft);
+    color: var(--kit-blue);
     font: inherit;
-    font-weight: 700;
+    font-weight: 800;
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 4px;
   }
   .account-link {
     align-self: center;
@@ -400,8 +429,6 @@
     align-items: flex-end;
     justify-content: center;
     background: var(--yui-scrim);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
   }
   .sheet {
     width: 100%;
@@ -409,14 +436,23 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
-    padding: 20px max(20px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom))
-      max(20px, env(safe-area-inset-left));
+    padding: 0 max(18px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom))
+      max(18px, env(safe-area-inset-left));
+    border-bottom: 0;
     border-radius: var(--yui-radius-shell) var(--yui-radius-shell) 0 0;
-    background-color: #142233;
-    box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--line) inset;
+    overflow: hidden;
   }
-  .sheet h2 {
-    margin: 0;
+  /* The coloured title strip across the top of a panel. */
+  .band {
+    margin: 0 calc(-1 * max(18px, env(safe-area-inset-left))) 4px;
+    padding: 14px 18px;
+    border-bottom: 2px solid var(--yui-blue-lip);
+    background: linear-gradient(180deg, #4cb4f2 0 50%, var(--kit-blue) 50%);
+    color: #fff;
+    font-size: 1.2rem;
+    font-weight: 800;
+    text-align: center;
+    text-shadow: 0 2px 0 var(--yui-blue-lip);
   }
   .demo {
     position: relative;
@@ -441,8 +477,8 @@
     width: 48px;
     height: 48px;
     border-radius: 50%;
-    border: 6px solid var(--yui-chrome-fill);
-    border-top-color: var(--accent);
+    border: 7px solid rgba(255, 255, 255, 0.3);
+    border-top-color: #fff;
     animation: spin 0.8s linear infinite;
   }
   @keyframes spin {

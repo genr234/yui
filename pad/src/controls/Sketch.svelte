@@ -238,8 +238,9 @@
   }
   canvas {
     display: block;
+    border: 3px solid var(--kit-panel-line);
     border-radius: var(--yui-radius-card);
-    box-shadow: 0 0 0 1px var(--line);
+    box-shadow: 0 var(--yui-lip) 0 var(--kit-panel-lip);
     touch-action: none;
     -webkit-touch-callout: none;
   }
@@ -261,7 +262,7 @@
   }
   button {
     border: 0;
-    color: var(--fg);
+    color: var(--ink);
     font: inherit;
     font-weight: 700;
     touch-action: manipulation;
@@ -273,44 +274,54 @@
     width: 44px;
     height: 44px;
     border-radius: 50%;
+    border: 3px solid #fff;
     background: var(--c);
-    box-shadow: 0 0 0 1px var(--line);
+    box-shadow: 0 3px 0 rgba(14, 64, 112, 0.35);
   }
   .chip.selected {
-    box-shadow: 0 0 0 3px var(--bg), 0 0 0 6px var(--fg);
+    transform: translateY(3px);
+    box-shadow: 0 0 0 3px var(--ink);
   }
   .size {
     width: 44px;
     height: 44px;
+    border: 2px solid var(--kit-key-line);
     border-radius: 50%;
-    background: var(--surface-2);
+    background: var(--kit-key);
     display: grid;
     place-items: center;
-    box-shadow: 0 0 0 1px var(--line) inset;
+    box-shadow: 0 3px 0 var(--kit-key-lip);
   }
   .size span {
     display: block;
     border-radius: 50%;
-    background: var(--fg);
+    background: var(--ink);
   }
   .size.selected {
-    box-shadow: 0 0 0 3px var(--player) inset;
+    transform: translateY(3px);
+    border-color: var(--player);
+    box-shadow: inset 0 0 0 2px var(--player);
   }
   .act {
     min-width: 88px;
     min-height: 48px;
     padding: 0 16px;
+    border: 2px solid var(--kit-key-line);
     border-radius: var(--yui-radius-hero);
-    background: var(--surface-2);
-    box-shadow: 0 var(--yui-lip) 0 rgba(0, 0, 0, 0.4), 0 0 0 1px var(--line) inset;
+    background: linear-gradient(180deg, #fff 0 50%, var(--kit-key) 50%);
+    box-shadow: 0 var(--yui-lip) 0 var(--kit-key-lip);
   }
   .act:active {
     transform: translateY(var(--yui-lip));
+    box-shadow: none;
   }
   .act:disabled {
     opacity: 0.5;
   }
   .act.armed {
-    background: var(--yui-red);
+    border-color: #b8263a;
+    background: var(--kit-red);
+    color: #fff;
+    box-shadow: 0 var(--yui-lip) 0 #b8263a;
   }
 </style>

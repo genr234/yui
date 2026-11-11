@@ -52,8 +52,9 @@
     place-items: center;
     min-height: 56px;
     border-radius: var(--yui-radius-card);
-    border: 2px dashed var(--line);
+    border: 2px dashed rgba(255, 255, 255, 0.7);
     color: var(--muted);
+    font-weight: 700;
     font-size: 0.85rem;
     cursor: grab;
     touch-action: none;

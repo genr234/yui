@@ -83,8 +83,8 @@
     min-width: 120px;
     min-height: 140px;
     border-radius: var(--yui-radius-shell);
-    background: radial-gradient(circle at 50% 50%, var(--yui-chrome-fill), transparent 70%);
-    box-shadow: 0 0 0 1px var(--line) inset;
+    background: rgba(255, 255, 255, 0.1);
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.25);
     touch-action: none;
     user-select: none;
     -webkit-user-select: none;
@@ -97,9 +97,11 @@
     transform: translate(-50%, -50%);
     pointer-events: none;
   }
+  /* A sunken well the knob rides in. */
   .ring {
-    border: 2px solid var(--line);
-    background: rgba(0, 0, 0, 0.18);
+    border: 2px solid var(--kit-panel-line);
+    background: var(--kit-well);
+    box-shadow: inset 0 6px 0 rgba(58, 65, 81, 0.14), 0 3px 0 rgba(255, 255, 255, 0.35);
   }
   .ring.idle {
     left: 50%;
@@ -112,14 +114,17 @@
   .knob {
     width: 64px;
     height: 64px;
-    background: var(--surface-2);
-    box-shadow: 0 var(--yui-lip) 0 rgba(0, 0, 0, 0.4), 0 0 0 1px var(--line) inset;
+    border: 2px solid var(--kit-key-line);
+    background: linear-gradient(180deg, #fff 0 50%, var(--kit-key) 50%);
+    box-shadow: 0 var(--yui-lip) 0 var(--kit-key-lip), inset 0 0 0 6px rgba(58, 65, 81, 0.05);
   }
   .knob.idle {
     left: 50%;
     top: 50%;
   }
   .active .knob {
-    background: var(--player);
+    border-color: color-mix(in srgb, var(--player), #000 26%);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--player), #fff 16%) 0 50%, var(--player) 50%);
+    box-shadow: 0 var(--yui-lip) 0 color-mix(in srgb, var(--player), #000 26%), inset 0 0 0 3px rgba(255, 255, 255, 0.3);
   }
 </style>

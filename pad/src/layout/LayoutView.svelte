@@ -110,6 +110,7 @@
   .lv-text.large {
     color: var(--fg);
     font-size: 1.5rem;
-    font-weight: 700;
+    font-weight: 900;
+    text-shadow: 0 2px 0 var(--kit-sky-line);
   }
 </style>
