@@ -61,3 +61,14 @@ func TestContainsType(t *testing.T) {
 		t.Fatal("ContainsType")
 	}
 }
+
+func TestPresetActionsAreOptionalAndFiltered(t *testing.T) {
+	node := PresetWithActions(PresetGamepad, nil, nil, map[string]string{"South": "Accelerate", "Dpad": "Steer", "Bogus": "x", "East": ""})
+	actions, ok := node.Props["actions"].(map[string]any)
+	if !ok || len(actions) != 2 || actions["South"] != "Accelerate" || actions["Dpad"] != "Steer" {
+		t.Fatalf("actions = %#v", node.Props["actions"])
+	}
+	if plain := Preset(PresetGamepad, nil, nil); len(plain.Props) != 1 {
+		t.Fatalf("plain preset gained props: %#v", plain.Props)
+	}
+}

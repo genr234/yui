@@ -4,6 +4,10 @@
   import { sketchState } from './controls/sketch'
   import LayoutView from './layout/LayoutView.svelte'
   import HomeSheet from './HomeSheet.svelte'
+  import GuideSheet from './GuideSheet.svelte'
+  import ConnSteps from './ConnSteps.svelte'
+  import Icon from './Icon.svelte'
+  import { guideEntries, hasButtons } from './layout/guide'
   import ProfileSheet from './ProfileSheet.svelte'
   import { enqueueAsk, type ProfileAsk } from './account'
   import Avatar from './Avatar.svelte'
@@ -71,6 +75,7 @@
   // True while an app or native game owns the phones (kiosk `system` `playing`).
   let playing = false
   let homeOpen = false
+  let guideOpen = false
   let volume = loadVolume()
   setMasterVolume(volume)
   let vibration = vibrationEnabled()
@@ -299,6 +304,9 @@
   $: motionReady = $motionView.status === 'on' && $motionView.gyro
   $: shown = tree ? expandTree(tree, { landscape, motionReady }) : null
   $: info = scanTree(shown)
+  $: guide = guideEntries(shown)
+  // Nothing to explain without buttons: no "?", and a stale sheet closes.
+  $: if (!hasButtons(guide)) guideOpen = false
   $: needsGate = wantsMotion(tree) && $motionView.status === 'needs-permission'
   // Outside the reactive flush: setWanted updates motionView, which the
   // statements above read, and a store change mid-flush would not re-run them.
@@ -319,8 +327,14 @@
     unlockAudio()
     void playSpeaker()
     model.releaseAll()
+    guideOpen = false
     homeOpen = true
     send({ t: 'system', action: 'home' })
+  }
+  function openGuide() {
+    pressTick()
+    model.releaseAll()
+    guideOpen = true
   }
   function resume() {
     homeOpen = false
@@ -414,14 +428,21 @@
         title={player.speaker_channel ? `This phone plays the ${player.speaker_channel} channel` : 'This phone plays the sound'}
         aria-label={player.speaker_channel ? `${player.speaker_channel} speaker` : 'Speaker'}
       >
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z" /></svg>
+        <Icon name="sound" size={18} />
         {#if player.speaker_channel}<b class="channel" aria-hidden="true">{player.speaker_channel === 'left' ? 'L' : 'R'}</b>{/if}
       </span>
     {/if}
     <span class="conn {conn}" title={connLabel}><span class="dot"></span><span class="txt">{connLabel}</span></span>
-    <button class="home" type="button" aria-label="Home" on:click={openHome}>
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" /></svg>
-    </button>
+    <!-- Round kit buttons. Features add their own white .tool button inside .tools
+         (reactions, snapshot, ...); Home stays the yellow one at the far right. -->
+    <div class="tools">
+      {#if hasButtons(guide)}
+        <button class="tool" type="button" aria-label="What the buttons do" on:click={openGuide}><span class="q" aria-hidden="true">?</span></button>
+      {/if}
+      <button class="home" type="button" aria-label="Home" on:click={openHome}>
+        <Icon name="menu" size={22} />
+      </button>
+    </div>
   </header>
 
   <main class="stage">
@@ -448,9 +469,12 @@
           <span class="badge-name">{player.name}</span>
           <div class="badge"><small>{player.host ? 'Host' : 'Player'}</small>{player.slot ? `P${player.slot}` : '—'}</div>
         </div>
-        <h1>{conn === 'online' || conn === 'fallback' ? "You're in" : connLabel + '…'}</h1>
+        <h1>{conn === 'online' || conn === 'fallback' ? "You're in" : conn === 'reconnecting' ? 'Reconnecting' : 'Connecting'}</h1>
+        <ConnSteps {conn} />
         <p class="muted">
-          {player.host ? "You're the host. " : ''}Waiting for {kioskName || 'the kiosk'}…
+          {player.host ? "You're the host. " : ''}{conn === 'online' || conn === 'fallback'
+            ? `Waiting for ${kioskName || 'the kiosk'} to start something.`
+            : `Getting you to ${kioskName || 'the kiosk'}.`}
         </p>
       </section>
     {/if}
@@ -510,6 +534,9 @@
       onAccountForget={accountForget}
       onAccountLink={accountLink}
     />
+  {/if}
+  {#if guideOpen && !homeOpen}
+    <GuideSheet entries={guide} onClose={() => (guideOpen = false)} />
   {/if}
   {#if asks.length > 0 && player.account_linked}
     <ProfileSheet ask={asks[0]} account={accountName} busy={askBusy} onAnswer={answerAsk} />
@@ -624,10 +651,8 @@
     line-height: 1;
     color: var(--ink);
   }
-  .speaker-badge svg {
-    width: 18px;
-    height: 18px;
-    fill: var(--ink);
+  .speaker-badge {
+    color: var(--ink);
   }
   .sound-gate {
     --b: var(--player);
@@ -665,10 +690,38 @@
     transform: translateY(3px);
     box-shadow: 0 0 0 var(--edge), inset 0 0 0 3px rgba(255, 255, 255, 0.45);
   }
-  .home svg {
-    width: 22px;
-    height: 22px;
-    fill: #7a5600;
+  .home {
+    color: #7a5600;
+  }
+  .tools {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  /* Neutral round header buttons: the white sibling of Home. */
+  .tool {
+    --edge: var(--kit-key-lip);
+    width: 38px;
+    height: 38px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 2px solid var(--kit-key-line);
+    border-radius: 50%;
+    background: linear-gradient(180deg, #fff 0 50%, var(--kit-key) 50%);
+    color: var(--ink);
+    box-shadow: 0 3px 0 var(--edge);
+    transition: transform var(--yui-press) var(--yui-ease-out), box-shadow var(--yui-press) var(--yui-ease-out);
+  }
+  .tool:active {
+    transform: translateY(3px);
+    box-shadow: 0 0 0 var(--edge);
+  }
+  .tool .q {
+    font-size: 1.25rem;
+    font-weight: 900;
+    line-height: 1;
   }
   .stage {
     position: relative;
@@ -696,6 +749,13 @@
   .landscape .home {
     width: 38px;
     height: 38px;
+  }
+  .landscape .tool {
+    width: 32px;
+    height: 32px;
+  }
+  .landscape .tools {
+    gap: 6px;
   }
   .landscape .layout {
     padding: 10px 18px 12px;

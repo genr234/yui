@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte'
   import { capture, usePad } from './context'
+  import Icon from '../Icon.svelte'
   import { SketchEngine, catmullRom, fitAspect, normalize, scaleSize, sketchState, type Stroke } from './sketch'
 
   export let props: Record<string, unknown>
@@ -207,8 +208,8 @@
           </button>
         {/each}
       </div>
-      <button type="button" class="act" disabled={disabled || !canUndo} on:click={undo}>Undo</button>
-      <button type="button" class="act" class:armed disabled={disabled} on:click={clear}>{armed ? 'Tap again' : 'Clear'}</button>
+      <button type="button" class="act" disabled={disabled || !canUndo} on:click={undo}><Icon name="arrow_rotate" size={18} />Undo</button>
+      <button type="button" class="act" class:armed disabled={disabled} on:click={clear}><Icon name="cross" size={16} />{armed ? 'Tap again' : 'Clear'}</button>
     </div>
   </div>
 </div>
@@ -303,6 +304,11 @@
     box-shadow: inset 0 0 0 2px var(--player);
   }
   .act {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-weight: 800;
     min-width: 88px;
     min-height: 48px;
     padding: 0 16px;

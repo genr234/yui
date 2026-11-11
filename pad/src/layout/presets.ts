@@ -6,6 +6,9 @@ import { BIT, type ButtonName } from '../controls/sink'
  * props:{name, labels, hide}}`; the pad expands it here because only the pad
  * knows the phone's orientation. Every press goes into the input frame bits.
  *
+ * `props.actions` (optional) names what buttons do for the button guide; it
+ * ends up as `hint` on the expanded nodes.
+ *
  * Pad-internal props used by the expansion (also honoured if an app sends
  * them): button `shape` ("round" | "pill") and `size` ("small" | "large"),
  * d-pad `rotate` (90 = screen-up reports Right, for a remote held sideways)
@@ -39,7 +42,7 @@ export const DEFAULT_LABELS: Record<ButtonName, string> = {
   Recenter: 'Recenter',
 }
 
-type Opts = { labels: Record<string, string>; hide: Set<string>; base: string }
+type Opts = { labels: Record<string, string>; actions: Record<string, string>; hide: Set<string>; base: string }
 
 function opts(props: Record<string, unknown>): Opts {
   const labels: Record<string, string> = {}
@@ -48,9 +51,16 @@ function opts(props: Record<string, unknown>): Opts {
       if (typeof v === 'string' || typeof v === 'number') labels[k] = String(v)
     }
   }
+  // Optional `actions` (button name or Dpad/Stick -> what it does) feed the button guide as node `hint`s.
+  const actions: Record<string, string> = {}
+  if (props.actions && typeof props.actions === 'object' && !Array.isArray(props.actions)) {
+    for (const [k, v] of Object.entries(props.actions as Record<string, unknown>)) {
+      if (typeof v === 'string' && v) actions[k] = v
+    }
+  }
   const hide = new Set(Array.isArray(props.hide) ? props.hide.filter((x): x is string => typeof x === 'string') : [])
   const base = typeof props.id === 'string' && props.id ? props.id : 'preset'
-  return { labels, hide, base }
+  return { labels, actions, hide, base }
 }
 
 const row = (children: (Node | null)[], props: Record<string, unknown> = {}): Node => ({
@@ -74,6 +84,7 @@ function btn(o: Opts, name: ButtonName, extra: Record<string, unknown> = {}): No
       label: o.labels[name] ?? DEFAULT_LABELS[name],
       bit: BIT[name],
       variant: 'secondary',
+      ...(o.actions[name] ? { hint: o.actions[name] } : {}),
       ...extra,
     },
   }
@@ -82,7 +93,7 @@ function btn(o: Opts, name: ButtonName, extra: Record<string, unknown> = {}): No
 function dpad(o: Opts, extra: Record<string, unknown> = {}): Node | null {
   const dirs = (['Up', 'Down', 'Left', 'Right'] as const).filter((d) => !o.hide.has(d)).map((d) => d.toLowerCase())
   if (!dirs.length) return null
-  return { type: 'dpad', props: { id: `${o.base}.dpad`, mode: 'bits', dirs, ...extra } }
+  return { type: 'dpad', props: { id: `${o.base}.dpad`, mode: 'bits', dirs, ...(o.actions.Dpad ? { hint: o.actions.Dpad } : {}), ...extra } }
 }
 
 /** Four face buttons as a diamond (North top, South bottom). Nulls keep their cell empty. */
@@ -100,7 +111,10 @@ function face(o: Opts, size?: string): Node | null {
 function stick(o: Opts): Node | null {
   // `hide: ["LeftStick"]` leaves the stick out (systems with only a d-pad).
   if (o.hide.has('LeftStick')) return null
-  return { type: 'stick', props: { id: `${o.base}.stick`, side: 'left', click_bit: o.hide.has('L3') ? undefined : BIT.L3 } }
+  return {
+    type: 'stick',
+    props: { id: `${o.base}.stick`, side: 'left', click_bit: o.hide.has('L3') ? undefined : BIT.L3, ...(o.actions.Stick ? { hint: o.actions.Stick } : {}) },
+  }
 }
 
 const small = { shape: 'pill', size: 'small' }
