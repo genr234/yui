@@ -47,6 +47,10 @@
     return ((node as YuiNode).props?.[name] as T | undefined) ?? fallback;
   }
 
+  function aspectProp(): string | number | undefined {
+    return prop<string | number>("aspect");
+  }
+
   function layoutStyle(value: YuiNode) {
     const props = value.props ?? {};
     const style: string[] = [];
@@ -574,6 +578,7 @@
     input={booleanProp("input")}
     fill={booleanProp("fill")}
     title={stringProp("title")}
+    aspect={aspectProp()}
     style={booleanProp("fill") ? "" : embedShellStyle()}
   />
 {:else if node.type === "embed"}

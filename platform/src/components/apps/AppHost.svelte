@@ -16,6 +16,7 @@
     controllersHostFor,
     keymapNeedsRegion,
   } from "../../sdk/apps/controllers";
+  import { setBarsApp } from "../../sdk/game-rect";
   import YuiNodeView from "./YuiNodeView.svelte";
 
   export let devApp: YuiDevApp;
@@ -672,6 +673,7 @@ post({ type: "ready" });
   }
 
   $: if (devApp) {
+    setBarsApp({ id: devApp.id, name: devApp.name, bars: devApp.app.bars });
     const nextMountedId = `${devApp.id}:${instanceKey}`;
     if (nextMountedId !== mountedId) {
       mountedId = nextMountedId;
@@ -680,6 +682,7 @@ post({ type: "ready" });
   }
 
   onDestroy(() => {
+    setBarsApp(null);
     clearLoadTimers();
     window.clearInterval(regionTimer);
     sendToSandbox({ type: "dispose" });

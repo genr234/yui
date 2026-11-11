@@ -1,6 +1,7 @@
 import App from "./App.svelte";
 import appsCss from "./styles/apps.css?inline";
 import attractCss from "./styles/attract.css?inline";
+import barsCss from "./styles/bars.css?inline";
 import baseCss from "./styles/base.css?inline";
 import dashboardCss from "./styles/dashboard.css?inline";
 import interactionsCss from "./styles/interactions.css?inline";
@@ -29,6 +30,7 @@ const css = [
 	pluginsCss,
 	yuiAppCss,
 	interactionsCss,
+	barsCss,
 	padCursorCss,
 	attractCss,
 ].join("\n");

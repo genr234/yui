@@ -59,6 +59,9 @@ export function validateSimpleApp(value: unknown): asserts value is YuiSimpleApp
 	if (app.permissions && (!Array.isArray(app.permissions) || app.permissions.some((permission) => !isValidPermission(permission)))) {
 		throw new Error("YUI_INVALID_APP: invalid permission declaration");
 	}
+	if (app.bars !== undefined && typeof app.bars !== "boolean") {
+		throw new Error("YUI_INVALID_APP: bars must be true or false");
+	}
 	if (app.web !== undefined) validateWebManifest(app.web, app.permissions ?? []);
 	if (app.controllers !== undefined) {
 		validateControllersManifest(app.controllers);
