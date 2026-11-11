@@ -542,3 +542,34 @@ func TestSlotOf(t *testing.T) {
 		t.Fatal("spectator has a pad")
 	}
 }
+
+func TestActivityFiresOnPlayerInputNotOnSensorNoise(t *testing.T) {
+	calls := 0
+	r, err := New(Config{Activity: func() { calls++ }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &fakeSession{}
+	r.Attach(s)
+
+	// The first packet only sets the baseline.
+	s.fireInput("p1", protocol.InputState{Seq: 1})
+	// Sensor and counter changes only: a phone lying on the table.
+	s.fireInput("p1", protocol.InputState{Seq: 2, TMs: 16, Gyro: [3]float32{0.1, 0, 0}, Accel: [3]float32{0, 9.8, 0}})
+	if calls != 0 {
+		t.Fatalf("activity fired %d times for sensor noise", calls)
+	}
+	s.fireInput("p1", protocol.InputState{Seq: 3, Buttons: protocol.ButtonSouth})
+	s.fireInput("p1", protocol.InputState{Seq: 4, Buttons: protocol.ButtonSouth, LX: 2000})
+	s.fireInput("p1", protocol.InputState{Seq: 5, Buttons: protocol.ButtonSouth, LX: 2000, PX: 10})
+	if calls != 3 {
+		t.Fatalf("activity fired %d times, want 3 (button, stick, pointer)", calls)
+	}
+
+	// A player who leaves and comes back starts from a fresh baseline.
+	s.firePlayer(session.PlayerLeft, protocol.Player{ID: "p1"})
+	s.fireInput("p1", protocol.InputState{Seq: 1, Buttons: protocol.ButtonEast})
+	if calls != 3 {
+		t.Fatalf("activity fired on a rejoining player's first packet")
+	}
+}
