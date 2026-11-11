@@ -1,0 +1,21 @@
+{
+  "name": "@yui/avatar",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./atlas.png": "./src/atlas.png"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "build:embed": "bun build src/embed.ts --outfile ../controller/internal/webapps/avatar.js --format esm --minify --banner '// Generated from avatar/ by `just build-avatar`. Do not edit.' && cp src/atlas.png ../controller/internal/webapps/avatar-atlas.png"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.1.0",
+    "typescript": "^5.4.5"
+  }
+}

@@ -30,6 +30,15 @@ import (
 //go:embed embed.js
 var embedJS []byte
 
+// The shared avatar renderer for app pages (<yui-avatar>) and its sprite
+// atlas, generated from avatar/ by `just build-avatar`.
+//
+//go:embed avatar.js
+var avatarJS []byte
+
+//go:embed avatar-atlas.png
+var avatarAtlas []byte
+
 const (
 	// AssetTokenTTL is how long an /_asset/<token> URL stays valid.
 	AssetTokenTTL = 12 * time.Hour
@@ -295,6 +304,14 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		h.Set("Content-Type", "application/javascript; charset=utf-8")
 		h.Set("Cache-Control", "no-cache")
 		http.ServeContent(w, r, "embed.js", time.Time{}, bytes.NewReader(embedJS))
+	case len(segs) == 2 && segs[0] == "_yui" && segs[1] == "avatar.js":
+		h.Set("Content-Type", "application/javascript; charset=utf-8")
+		h.Set("Cache-Control", "no-cache")
+		http.ServeContent(w, r, "avatar.js", time.Time{}, bytes.NewReader(avatarJS))
+	case len(segs) == 2 && segs[0] == "_yui" && segs[1] == "avatar-atlas.png":
+		h.Set("Content-Type", "image/png")
+		h.Set("Cache-Control", "no-cache")
+		http.ServeContent(w, r, "avatar-atlas.png", time.Time{}, bytes.NewReader(avatarAtlas))
 	case len(segs) == 2 && segs[0] == "_asset":
 		s.serveAsset(w, r, key, segs[1])
 	case len(segs) >= 2 && segs[0] == "_runtime":

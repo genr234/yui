@@ -297,6 +297,38 @@ class PlayerTest < ActiveSupport::TestCase
     end
   end
 
+  test "avatar can be a creature, with or without a photo" do
+    play_session = start_session
+    recipe = "yui:c1:1.0.3.0.2.1.2.4:33-38-13,67-38-13:50-70:50-55"
+
+    [ recipe, "yui:c1:5.7.14.4.3.6.5.5::0-100:100-0", "#{recipe}|#{jpeg_avatar}" ].each do |avatar|
+      player, = join_player(play_session, avatar: avatar)
+      assert_equal avatar, player.avatar
+      play_session.kick!(player)
+    end
+  end
+
+  test "rejects creatures that are off-format or out of range" do
+    play_session = start_session
+    recipe = "yui:c1:1.0.3.0.2.1.2.4:33-38-13:50-70:50-55"
+    png = "data:image/png;base64,#{Base64.strict_encode64("\x89PNG\r\n".b)}"
+    invalid = [
+      "yui:c1:", "yui:c2:1.0.3.0.2.1.2.4::50-70:50-55", "yui:c1:6.0.3.0.2.1.2.4::50-70:50-55",
+      "yui:c1:1.8.3.0.2.1.2.4::50-70:50-55", "yui:c1:1.0.3.0.2.1.2::50-70:50-55",
+      "yui:c1:1.0.3.0.2.1.2.4:1-1-4,1-1-4,1-1-4,1-1-4:50-70:50-55", "yui:c1:1.0.3.0.2.1.2.4:33-38-41:50-70:50-55",
+      "yui:c1:1.0.3.0.2.1.2.4:33-38-3:50-70:50-55", "yui:c1:1.0.3.0.2.1.2.4::50-101:50-55",
+      "yui:c1:1.0.3.0.2.1.2.4::50-70:50-55:extra", "#{recipe}\n<script>", "#{recipe}|#{png}",
+      "#{recipe}|javascript:alert(1)", "#{recipe}|#{jpeg_avatar}|#{jpeg_avatar}",
+      "#{recipe}|#{jpeg_avatar(bytes: Player::AVATAR_IMAGE_MAX_BYTES)}"
+    ]
+    invalid.each do |avatar|
+      error = assert_raises(ActiveRecord::RecordInvalid, "accepted #{avatar[0, 60].inspect}") do
+        join_player(play_session, avatar: avatar)
+      end
+      assert error.record.errors.key?(:avatar)
+    end
+  end
+
   test "the player json carries the avatar" do
     player, = join_player(start_session, avatar: "\u{1F98A}")
     assert_equal "\u{1F98A}", player.as_player_json[:avatar]

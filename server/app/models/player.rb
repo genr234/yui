@@ -10,12 +10,27 @@ class Player < ApplicationRecord
   # PRESENCE_TOUCH while subscribed.
   PRESENCE_TIMEOUT = 90.seconds
   PRESENCE_TOUCH = 30.seconds
-  # Avatars (contracts §2): one emoji, or a small selfie the pad crops to
-  # ~96x96. Kept only while the session runs (PlaySession#end! clears them).
+  # Avatars (contracts §2): a creature built from parts (optionally with a
+  # selfie that fills its body), or from older pads one emoji or a small round
+  # selfie. Kept only while the session runs (PlaySession#end! clears them).
   AVATAR_EMOJI_MAX_BYTES = 16
   AVATAR_IMAGE_MAX_BYTES = 12.kilobytes
   AVATAR_IMAGE_PATTERN = %r{\Adata:image/(jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})\z}
   AVATAR_EMOJI_PATTERN = /\p{Extended_Pictographic}|\p{Regional_Indicator}/
+  # yui:c1:<8 part numbers>:<up to 3 eyes x-y-r>:<mouth x-y>:<nose x-y>[|<selfie>]
+  # Mirrors avatar/src/format.ts.
+  AVATAR_CREATURE_PREFIX = "yui:c1:"
+  AVATAR_CREATURE_PATTERN = %r{
+    \Ayui:c1:
+    (?<parts>\d{1,3}(?:\.\d{1,3}){7}):
+    (?<eyes>(?:\d{1,3}-\d{1,3}-\d{1,3}(?:,\d{1,3}-\d{1,3}-\d{1,3}){0,2})?):
+    (?<mouth>\d{1,3}-\d{1,3}):
+    (?<nose>\d{1,3}-\d{1,3})
+    (?:\|(?<photo>data:[^|]+))?\z
+  }x
+  # How many choices each part has: body, eye style, mouth, nose, brow, top, arms, legs.
+  AVATAR_CREATURE_PART_COUNTS = [ 6, 8, 15, 5, 4, 7, 6, 6 ].freeze
+  AVATAR_EYE_RADIUS = (4..40)
 
   belongs_to :play_session
   # Set while the player plays as a Yui account (plan 10); never sent to the kiosk.
@@ -32,7 +47,7 @@ class Player < ApplicationRecord
   validates :speaker_channel, inclusion: { in: SPEAKER_CHANNELS }, allow_nil: true
   validates :slot, inclusion: { in: SLOTS }, allow_nil: true
   validates :token_digest, presence: true
-  validate :avatar_is_emoji_or_selfie
+  validate :avatar_is_known_kind
 
   def self.digest_token(token)
     Digest::SHA256.hexdigest(token.to_s)
@@ -179,11 +194,33 @@ class Player < ApplicationRecord
 
   private
 
-  def avatar_is_emoji_or_selfie
+  def avatar_is_known_kind
     return if avatar.nil?
-    return if avatar.start_with?("data:") ? selfie_avatar?(avatar) : emoji_avatar?(avatar)
 
-    errors.add(:avatar, :invalid)
+    valid =
+      if avatar.start_with?(AVATAR_CREATURE_PREFIX) then creature_avatar?(avatar)
+      elsif avatar.start_with?("data:") then selfie_avatar?(avatar)
+      else emoji_avatar?(avatar)
+      end
+    errors.add(:avatar, :invalid) unless valid
+  end
+
+  # A creature recipe with every number in range. Its optional photo is held
+  # to the selfie rules, and the whole string to the same size cap.
+  def creature_avatar?(value)
+    return false if value.bytesize > AVATAR_IMAGE_MAX_BYTES
+
+    match = AVATAR_CREATURE_PATTERN.match(value)
+    return false unless match
+
+    parts = match[:parts].split(".").map(&:to_i)
+    return false unless parts.each_with_index.all? { |part, i| part < AVATAR_CREATURE_PART_COUNTS[i] }
+
+    eyes = match[:eyes].split(",").map { |eye| eye.split("-").map(&:to_i) }
+    return false unless eyes.all? { |x, y, r| x <= 100 && y <= 100 && AVATAR_EYE_RADIUS.cover?(r) }
+    return false unless [ match[:mouth], match[:nose] ].all? { |at| at.split("-").map(&:to_i).all? { |n| n <= 100 } }
+
+    match[:photo].nil? || selfie_avatar?(match[:photo])
   end
 
   # A single grapheme, no ASCII at all (so no letters, digits or markup), that

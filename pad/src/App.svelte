@@ -4,10 +4,11 @@
   import { ApiError, codeFromPath, friendlyError, getInfo, join, linkAccount, qrTokenFromQuery, simSlotFromQuery, type SessionInfo } from './api'
   import { COLOR_NAMES, colorHex } from './colors'
   import Pad from './Pad.svelte'
-  import AvatarPicker from './AvatarPicker.svelte'
+  import Avatar from './Avatar.svelte'
+  import CreatureBuilder from './CreatureBuilder.svelte'
   import CodeEntry from './CodeEntry.svelte'
-  import { AVATAR_EMOJIS } from './avatar'
   import Icon from './Icon.svelte'
+  import { rememberAvatar, startingAvatar } from './avatar'
   import { demoGamepad, demoRemote, demoShell, demoTree } from './layout/demo'
   import { unlockAudio } from './platform/sound'
 
@@ -32,16 +33,17 @@
     }
   })()
   let color = ''
-  // A remembered emoji (selfies are never stored on the phone).
-  let avatar: string | null = (() => {
-    if (simSlot) return null
+  // The creature this phone made last time, or a random one to start from.
+  // (A selfie on it is never stored on the phone.)
+  const storage = (() => {
     try {
-      const saved = localStorage.getItem('yui_pad_avatar')
-      return saved && (AVATAR_EMOJIS as readonly string[]).includes(saved) ? saved : null
+      return localStorage
     } catch {
       return null
     }
   })()
+  let avatar: string | null = simSlot ? null : startingAvatar(storage)
+  let building = false
   let busy = false
   // Plan 10: play as the phone's linked account (on by default), or link now with a phone code.
   let useAccountOn = true
@@ -96,8 +98,7 @@
       if (!simSlot) {
         try {
           localStorage.setItem('yui_pad_name', name.trim())
-          if (avatar && (AVATAR_EMOJIS as readonly string[]).includes(avatar)) localStorage.setItem('yui_pad_avatar', avatar)
-          else localStorage.removeItem('yui_pad_avatar')
+          rememberAvatar(localStorage, avatar)
         } catch {
           /* storage unavailable */
         }
@@ -171,7 +172,7 @@
       <form class="join" on:submit|preventDefault={submit}>
         <p class="eyebrow">Yui Pad</p>
         <h1>Join {info?.kiosk_name ?? 'the game'}</h1>
-        <p class="muted">Pick a name, a colour and an avatar.</p>
+        <p class="muted">Pick a name and a colour, and make your creature.</p>
 
         <div class="card kit-panel">
         <label class="field">
@@ -199,9 +200,12 @@
           </div>
         </div>
 
-        <div class="field" style="--player:{colorHex(color)}">
-          <span>Avatar <small class="muted">optional</small></span>
-          <AvatarPicker bind:value={avatar} disabled={busy} />
+        <div class="field">
+          <span>Your creature</span>
+          <button type="button" class="creature" disabled={busy} on:click={() => (building = true)}>
+            <Avatar {avatar} color={colorHex(color)} view="full" size={72} />
+            <span class="creature-cta">{avatar ? 'Change it' : 'Make one'}<small class="muted">Parts, googly eyes, even your face</small></span>
+          </button>
         </div>
 
         {#if accountName}
@@ -225,6 +229,17 @@
           <button class="primary" type="submit" disabled={!canJoin}>{busy ? 'Joining…' : 'Join'}</button>
         </div>
       </form>
+    {/if}
+    {#if screen === 'join' && building}
+      <CreatureBuilder
+        value={avatar}
+        color={colorHex(color)}
+        onCancel={() => (building = false)}
+        onDone={(next) => {
+          avatar = next
+          building = false
+        }}
+      />
     {/if}
     {#if screen === 'join' && enteringCode}
       <div class="scrim" role="presentation" on:click|self={() => (enteringCode = false)}>
@@ -270,6 +285,35 @@
   }
   .join {
     justify-content: center;
+  }
+  .creature {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    padding: 8px 14px 8px 10px;
+    border: 2px solid var(--kit-key-line);
+    border-radius: var(--yui-radius-hero);
+    background: linear-gradient(180deg, #fff 0 50%, var(--kit-key) 50%);
+    box-shadow: 0 var(--yui-lip) 0 var(--kit-key-lip);
+    color: var(--ink);
+    font: inherit;
+    text-align: left;
+  }
+  .creature:active:not(:disabled) {
+    transform: translateY(var(--yui-lip));
+    box-shadow: none;
+  }
+  .creature-cta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-weight: 800;
+    font-size: 1.05rem;
+  }
+  .creature-cta small {
+    font-size: 0.8rem;
+    font-weight: 600;
   }
   .join-bar {
     position: sticky;

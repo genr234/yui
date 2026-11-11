@@ -1,4 +1,7 @@
+import { configureAvatars } from "../../avatar/src";
+import avatarAtlas from "../../avatar/src/atlas.png";
 import App from "./App.svelte";
+import { platformAssetUrl } from "./assets";
 import appsCss from "./styles/apps.css?inline";
 import attractCss from "./styles/attract.css?inline";
 import barsCss from "./styles/bars.css?inline";
@@ -69,6 +72,7 @@ function mount() {
 	shadow.append(style, target);
 	document.documentElement.appendChild(host);
 
+	configureAvatars({ atlasUrl: platformAssetUrl(avatarAtlas) });
 	const app = new App({ target });
 	window.__YUI_APP__ = {
 		destroy: () => {

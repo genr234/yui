@@ -5,6 +5,7 @@
     "": {
       "name": "yui-pad",
       "dependencies": {
+        "@yui/avatar": "file:../avatar",
         "@yui/protocol": "file:../protocol",
       },
       "devDependencies": {
@@ -137,6 +138,8 @@
     "@types/estree": ["@types/estree@1.0.10", "", {}, "sha512-lTyOMnOcmRBzdCv6/4zUZCrEhV0xrqQiUZBZtVcbmLHBXKLnN8q89v/wKRF/Q0HbwVsqbIG3o5HDoFl9sduM+g=="],
 
     "@types/node": ["@types/node@26.6.6", "", { "dependencies": { "undici-types": "~8.9.0" } }, "sha512-MzQj+8Kx3XI40OmUAE6Qoh58ZMNstNNMwn2nfd3qWsfe7nDNSqJNzes4njhz6AHwrSHOffSLwXU6yb474Q4aog=="],
+
+    "@yui/avatar": ["@yui/avatar@file:../avatar", { "devDependencies": { "@types/bun": "^1.1.0", "typescript": "^5.4.5" } }],
 
     "@yui/protocol": ["@yui/protocol@file:../protocol", { "devDependencies": { "@types/bun": "^1.1.0", "typescript": "^5.4.5" } }],
 

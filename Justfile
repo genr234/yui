@@ -19,6 +19,8 @@ help:
   @echo "  just dev-pad            Run the pad Vite dev server (proxies /play, /cable to Rails)"
   @echo "  just build-pad          Build the pad app into server/public/pad"
   @echo "  just test-protocol      Run the shared protocol tests"
+  @echo "  just build-avatar       Rebuild the avatar renderer served to app pages"
+  @echo "  just test-avatar        Run the shared avatar tests"
   @echo "  just dev                Run controller + platform + server dev servers"
   @echo "  just dev-platform       Run the Vite dev server only"
   @echo "  just dev-controller     Run the Go controller only"
@@ -44,6 +46,7 @@ deps-platform:
 
 deps-pad:
   cd {{protocol_dir}} && bun install
+  cd {{root_dir}}/avatar && bun install
   cd {{pad_dir}} && bun install
 
 deps-server:
@@ -95,6 +98,13 @@ build-pad:
 test-protocol:
   cd {{protocol_dir}} && bun test
 
+# Rebuilds the avatar renderer that app pages load from /_yui/avatar.js.
+build-avatar:
+  cd {{root_dir}}/avatar && bun run build:embed
+
+test-avatar:
+  cd {{root_dir}}/avatar && bun test
+
 build-server: build-pad
   docker build --pull -t {{server_image}} {{server_dir}}
 
@@ -120,6 +130,7 @@ check:
   cd {{installer_dir}} && go build ./...
   cd {{platform_dir}} && bun run build
   cd {{protocol_dir}} && bun test
+  cd {{root_dir}}/avatar && bun test
   cd {{pad_dir}} && bun test
   cd {{pad_dir}} && bun run build
   cd {{controller_dir}} && go test ./internal/pad/...

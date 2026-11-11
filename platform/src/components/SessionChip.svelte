@@ -6,7 +6,8 @@
 	import XIcon from "lucide-svelte/icons/x";
 	import UserCheckIcon from "lucide-svelte/icons/user-check";
 	import JoinSteps from "./JoinSteps.svelte";
-	import { avatarKind, linkQuality, pad, padAction, playerSwatch, type PadPlayer, type PadState } from "../sdk/pad";
+	import { joltAvatars, mountAvatar, parseAvatar, type AvatarProps } from "../../../avatar/src";
+	import { linkQuality, pad, padAction, playerSwatch, type PadPlayer, type PadState } from "../sdk/pad";
 
 	/** Session and roster, owned by the top bar. */
 	export let padState: PadState = { session: null, players: [] };
@@ -14,6 +15,17 @@
 	export let arrived: Record<string, boolean> = {};
 
 	const slots = [1, 2, 3, 4];
+
+	/** Draws a player's avatar with the shared renderer (creature, selfie or emoji; never HTML). */
+	function avatarView(node: HTMLElement, props: AvatarProps) {
+		const handle = mountAvatar(node, props);
+		return { update: handle.update, destroy: handle.destroy };
+	}
+	const hasAvatar = (player: PadPlayer | undefined) => !!player && parseAvatar(player.avatar).kind !== "none";
+	/** The colour a creature wears: a real colour, since a canvas can't read CSS variables. */
+	const creatureColor = (player: PadPlayer) => playerSwatch[player.color ?? ""] ?? "#2f76dc";
+	// A player arriving gives every creature's eyes a little shake.
+	$: if (Object.keys(arrived).length) joltAvatars((Math.random() - 0.5) * 6, -5);
 
 	let open = false;
 	let wrap: HTMLDivElement | undefined;
@@ -138,7 +150,7 @@
 			<span class="session-squares" aria-hidden="true">
 				{#each slots as slot}
 					{@const player = playerBySlot.get(slot)}
-					{@const avatar = player ? avatarKind(player.avatar) : null}
+					{@const avatar = hasAvatar(player)}
 					<span
 						class="player-square"
 						class:open={!player}
@@ -148,10 +160,8 @@
 						title={squareTitle(slot)}
 						style={player ? `background: ${swatch(player)}` : ""}
 					>
-						{#if avatar?.kind === "image"}
-							<img class="player-avatar" src={avatar.src} alt="" draggable="false" />
-						{:else if avatar}
-							<span class="player-avatar emoji">{avatar.text}</span>
+						{#if player && avatar}
+							<span class="player-avatar" use:avatarView={{ avatar: player.avatar, color: creatureColor(player) }}></span>
 						{:else}
 							P{slot}
 						{/if}
@@ -193,14 +203,11 @@
 			<ul class="session-players" aria-label="Players">
 				{#each slots as slot}
 					{@const player = playerBySlot.get(slot)}
-					{@const avatar = player ? avatarKind(player.avatar) : null}
+					{@const avatar = hasAvatar(player)}
 					<li class="session-player" class:empty={!player}>
 						<span class="session-slot" class:has-avatar={avatar} style={player ? `background: ${swatch(player)}` : ""}>
-							{#if avatar?.kind === "image"}
-								<img class="player-avatar" src={avatar.src} alt="" draggable="false" />
-								<span class="session-slot-tag">P{slot}</span>
-							{:else if avatar}
-								<span class="player-avatar emoji">{avatar.text}</span>
+							{#if player && avatar}
+								<span class="player-avatar" use:avatarView={{ avatar: player.avatar, color: creatureColor(player) }}></span>
 								<span class="session-slot-tag">P{slot}</span>
 							{:else}
 								P{slot}

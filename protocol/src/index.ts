@@ -23,8 +23,8 @@ export interface Player {
    */
   speaker_channel?: SpeakerChannel | null;
   /**
-   * An emoji, or a selfie as a `data:image/jpeg|webp;base64,` URL (contracts §2).
-   * Render it as an image only when `avatarImage` returns a URL; otherwise as text.
+   * A creature recipe, or from older pads an emoji or a selfie data URL
+   * (contracts §2). Render it with `@yui/avatar`, never as HTML.
    */
   avatar?: string | null;
   /** This player plays as a Yui account this session (plan 10). Never says which account. */

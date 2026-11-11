@@ -1,8 +1,13 @@
 import './styles.css'
+import { configureAvatars } from '@yui/avatar'
+import atlasUrl from '@yui/avatar/atlas.png'
 import App from './App.svelte'
+import { followDeviceGravity } from './platform/avatarMotion'
 import { installGestureGuards } from './platform/lockdown'
 
 installGestureGuards()
+configureAvatars({ atlasUrl })
+followDeviceGravity()
 
 const app = new App({ target: document.getElementById('app')! })
 

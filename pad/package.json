@@ -10,6 +10,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@yui/avatar": "file:../avatar",
     "@yui/protocol": "file:../protocol"
   },
   "devDependencies": {

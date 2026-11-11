@@ -1,15 +1,20 @@
 import { describe, expect, test } from 'bun:test'
+import { encodeCreature } from '@yui/avatar'
 import {
-  SELFIE_BACKGROUND,
   SELFIE_MAX_CHARS,
   avatarImage,
   cameraErrorMessage,
-  drawRoundSelfie,
+  creatureOf,
+  drawSelfie,
   encodeSelfie,
+  rememberAvatar,
   squareCrop,
+  startingAvatar,
   stopStream,
+  withSelfie,
   type SelfieContext,
 } from './avatar'
+import { faceSpots } from './face/face'
 
 describe('squareCrop', () => {
   test('centres the square on landscape and portrait frames', () => {
@@ -19,34 +24,70 @@ describe('squareCrop', () => {
   })
 })
 
-describe('drawRoundSelfie', () => {
-  test('fills the corners, clips a circle and draws the mirrored centre square', () => {
+describe('drawSelfie', () => {
+  test('draws the mirrored centre square', () => {
     const calls: string[] = []
     const ctx: SelfieContext = {
-      fillStyle: '',
-      fillRect: (...a) => calls.push(`fillRect ${a.join(',')}`),
       save: () => calls.push('save'),
       restore: () => calls.push('restore'),
-      beginPath: () => calls.push('beginPath'),
-      arc: (x, y, r) => calls.push(`arc ${x},${y},${r}`),
-      clip: () => calls.push('clip'),
       translate: (...a) => calls.push(`translate ${a.join(',')}`),
       scale: (...a) => calls.push(`scale ${a.join(',')}`),
       drawImage: (_img, ...a) => calls.push(`drawImage ${a.join(',')}`),
     }
-    drawRoundSelfie(ctx, {} as CanvasImageSource, 640, 480, 96)
-    expect(ctx.fillStyle).toBe(SELFIE_BACKGROUND)
-    expect(calls).toEqual([
-      'fillRect 0,0,96,96',
-      'save',
-      'beginPath',
-      'arc 48,48,48',
-      'clip',
-      'translate 96,0',
-      'scale -1,1',
-      'drawImage 80,0,480,480,0,0,96,96',
-      'restore',
-    ])
+    drawSelfie(ctx, {} as CanvasImageSource, 640, 480, 128)
+    expect(calls).toEqual(['save', 'translate 128,0', 'scale -1,1', 'drawImage 80,0,480,480,0,0,128,128', 'restore'])
+  })
+})
+
+describe('creature avatars', () => {
+  const memory = () => {
+    const data = new Map<string, string>()
+    return {
+      data,
+      getItem: (k: string) => data.get(k) ?? null,
+      setItem: (k: string, v: string) => void data.set(k, v),
+      removeItem: (k: string) => void data.delete(k),
+    }
+  }
+  const JPEG = 'data:image/jpeg;base64,/9j/4AAQ'
+
+  test('a new phone starts with a random creature to build on', () => {
+    const avatar = startingAvatar(memory(), () => 0.5)
+    expect(creatureOf(avatar)).not.toBeNull()
+    expect(startingAvatar(null, () => 0.5)).toBe(avatar)
+  })
+
+  test('the creature is remembered without its photo; old emoji are dropped', () => {
+    const store = memory()
+    const creature = { ...creatureOf(startingAvatar(store, () => 0.2))!, photo: JPEG }
+    rememberAvatar(store, encodeCreature(creature))
+    expect(store.data.get('yui_pad_avatar')).toBe(encodeCreature({ ...creature, photo: null }))
+    expect(startingAvatar(store)).toBe(encodeCreature({ ...creature, photo: null }))
+
+    rememberAvatar(store, null)
+    expect(store.data.has('yui_pad_avatar')).toBe(false)
+    store.data.set('yui_pad_avatar', '🦊')
+    expect(creatureOf(startingAvatar(store, () => 0.5))).not.toBeNull()
+  })
+
+  test('a selfie moves the eyes, nose and mouth onto the face', () => {
+    const base = { ...creatureOf(startingAvatar(null, () => 0.5))!, body: 1 } // body 1 is square: its box is the photo
+    const spots = faceSpots({ x: 0.5, y: 0.5, size: 0.6 })
+    const c = withSelfie(base, JPEG, spots)
+    expect(c.photo).toBe(JPEG)
+    expect(c.eyes.length).toBe(2)
+    expect(c.eyes[0].x).toBeLessThan(50)
+    expect(c.eyes[1].x).toBeGreaterThan(50)
+    expect(c.eyes[0].y).toBeLessThan(c.noseAt.y)
+    expect(c.noseAt.y).toBeLessThan(c.mouthAt.y)
+    expect(creatureOf(encodeCreature(c))).toEqual(c)
+
+    // On a tall body the photo is wider than the body, so the face spreads out.
+    const tall = withSelfie({ ...base, body: 4 }, JPEG, spots)
+    expect(tall.eyes[1].x - tall.eyes[0].x).toBeGreaterThan(c.eyes[1].x - c.eyes[0].x)
+
+    // No face found: only the photo changes.
+    expect(withSelfie(base, JPEG, null)).toEqual({ ...base, photo: JPEG })
   })
 })
 
@@ -58,10 +99,10 @@ describe('encodeSelfie', () => {
     const url = encodeSelfie((type, q) => {
       expect(type).toBe('image/jpeg')
       tried.push(q)
-      return jpeg(q > 0.6 ? SELFIE_MAX_CHARS : 4000)
+      return jpeg(q > 0.6 ? SELFIE_MAX_CHARS + 1 : 4000)
     })
     expect(url).toBe(jpeg(4000))
-    expect(tried).toEqual([0.82, 0.72, 0.62, 0.5])
+    expect(tried).toEqual([0.8, 0.7, 0.6])
   })
 
   test('gives up when nothing fits or the browser made a PNG', () => {
@@ -83,12 +124,12 @@ describe('avatarImage', () => {
 })
 
 describe('camera helpers', () => {
-  test('error messages fall back to the emoji choices', () => {
+  test('error messages say the builder still works', () => {
     expect(cameraErrorMessage({ name: 'NotAllowedError' })).toContain('blocked')
     expect(cameraErrorMessage({ name: 'NotFoundError' })).toContain('No front camera')
     expect(cameraErrorMessage({ name: 'NotReadableError' })).toContain('busy')
-    expect(cameraErrorMessage(new Error('x'))).toContain('emoji')
-    expect(cameraErrorMessage(null)).toContain('emoji')
+    expect(cameraErrorMessage(new Error('x'))).toContain('build your creature')
+    expect(cameraErrorMessage(null)).toContain('build your creature')
   })
 
   test('stopStream stops every track', () => {
