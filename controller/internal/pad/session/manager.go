@@ -390,6 +390,21 @@ func (m *Manager) SendControl(playerID string, msg any) error {
 	return m.sendControl(playerID, msg)
 }
 
+// DirectControl reports whether SendControl reaches the player over their
+// WebRTC control data channel. It is false on the signaling-cable fallback,
+// which must not carry bulk data such as snapshots.
+func (m *Manager) DirectControl(playerID string) bool {
+	m.mu.Lock()
+	st := m.players[playerID]
+	peer := m.peers[playerID]
+	fallback := st != nil && st.fallback
+	if peer != nil && peer.fallback.Load() {
+		fallback = true
+	}
+	m.mu.Unlock()
+	return !fallback && peer.controlReady()
+}
+
 // Snapshot copies the roster and the current join URL.
 func (m *Manager) Snapshot() Snapshot {
 	m.mu.Lock()

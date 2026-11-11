@@ -47,7 +47,10 @@ func (r *Registry) Native() *native.Manager {
 		VirtualPads: r.dsuResolver(),
 		Focus:       native.SystemFocus{FallbackPID: r.focusFallbackPID},
 		Placer:      native.SystemPlacer{},
-		OnWindow:    func(ev native.WindowEvent) { r.Emit("native.window", ev) },
+		OnWindow: func(ev native.WindowEvent) {
+			r.nativeWin.set(ev)
+			r.Emit("native.window", ev)
+		},
 		OnStatus: func(st native.Status) {
 			nativeWakeLock(useractivity.Default(), st)
 			r.Emit("native.status", st)

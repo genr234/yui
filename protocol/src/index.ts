@@ -175,6 +175,31 @@ export interface Players {
   players: Peer[];
 }
 
+/** pad -> kiosk: take a picture of the game area and send it to this phone. */
+export interface Snap {
+  t: "snap";
+}
+/** kiosk -> pad: answer to `snap`. With `ok`, `chunks` `snap_chunk` messages follow. */
+export interface SnapResult {
+  t: "snap_result";
+  id: string;
+  ok: boolean;
+  /** Text to show the player when `ok` is false. */
+  error?: string;
+  mime?: string;
+  /** JPEG size in bytes. */
+  size?: number;
+  chunks?: number;
+  w?: number;
+  h?: number;
+}
+/** kiosk -> pad: one base64 slice of a snapshot, in order from seq 0. */
+export interface SnapChunk {
+  t: "snap_chunk";
+  id: string;
+  seq: number;
+  data: string;
+}
 export interface Ping {
   t: "ping";
   id: number | string;
@@ -209,6 +234,9 @@ export type ControlMessage =
   | Poke
   | Poked
   | Players
+  | Snap
+  | SnapResult
+  | SnapChunk
   | Ping
   | Pong
   | Idle;
@@ -451,6 +479,19 @@ export function parseControl(json: string): ControlMessage {
         if (!(p.slot === null || isNum(p.slot))) fail("players: slot must be number or null");
         if (!isBool(p.pokes)) fail("players: pokes must be a boolean");
       }
+      break;
+    case "snap":
+      break;
+    case "snap_result":
+      if (!isStr(m.id) || m.id === "") fail("snap_result: id must be a non-empty string");
+      if (!isBool(m.ok)) fail("snap_result: ok must be a boolean");
+      if (m.error !== undefined && !isStr(m.error)) fail("snap_result: error must be a string");
+      if (m.ok && (!isNum(m.chunks) || m.chunks < 1 || !isNum(m.size) || m.size < 1)) fail("snap_result: chunks and size required");
+      break;
+    case "snap_chunk":
+      if (!isStr(m.id) || m.id === "") fail("snap_chunk: id must be a non-empty string");
+      if (!isNum(m.seq) || m.seq < 0) fail("snap_chunk: seq must be >= 0");
+      if (!isStr(m.data)) fail("snap_chunk: data must be a string");
       break;
     case "idle":
       if (!isNum(m.ends_in) || m.ends_in < 0) fail("idle: ends_in must be a non-negative number");

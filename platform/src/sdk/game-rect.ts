@@ -136,3 +136,18 @@ export const barsApp: Readable<BarsApp | null> = { subscribe: activeApp.subscrib
 
 /** True while an app has the shell fullscreen (`yui:shell-fullscreen`). */
 export const shellFullscreenState: Readable<boolean> = { subscribe: shellFullscreen.subscribe };
+
+// "Snap the screen": the controller reads this global over CDP when a phone
+// asks for a picture, to clip the page screenshot to the game. null = the
+// whole page.
+declare global {
+	interface Window {
+		__yuiGameRect?: Rect | null;
+	}
+}
+if (typeof window !== "undefined") {
+	window.__yuiGameRect = null;
+	gameRect.subscribe((rect) => {
+		window.__yuiGameRect = rect ? { x: rect.x, y: rect.y, w: rect.w, h: rect.h } : null;
+	});
+}

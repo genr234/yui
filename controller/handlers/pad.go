@@ -498,6 +498,7 @@ func (r *Registry) padHub() *router.Router {
 		// (screensaver, vendor "no mouse for 5 min" Chrome killers) would
 		// fire mid-game without this.
 		Activity: useractivity.Default().Touch,
+		Snap:     r.snapGameArea,
 		ProfileReply: func(playerID string, reply protocol.ProfileReply) {
 			r.profileReplied(playerID, reply)
 		},

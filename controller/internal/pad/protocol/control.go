@@ -165,6 +165,34 @@ type Players struct {
 	Players []Peer `json:"players"`
 }
 
+// Snap (pad → kiosk) asks for a picture of the game area (contracts §3 "snap").
+type Snap struct {
+	T string `json:"t"`
+}
+
+// SnapResult (kiosk → pad) answers a Snap. With OK it announces Chunks
+// SnapChunk messages that carry the JPEG (Size bytes); without, Error is the
+// text to show the player.
+type SnapResult struct {
+	T      string `json:"t"`
+	ID     string `json:"id"`
+	OK     bool   `json:"ok"`
+	Error  string `json:"error,omitempty"`
+	Mime   string `json:"mime,omitempty"`
+	Size   int    `json:"size,omitempty"`
+	Chunks int    `json:"chunks,omitempty"`
+	W      int    `json:"w,omitempty"`
+	H      int    `json:"h,omitempty"`
+}
+
+// SnapChunk (kiosk → pad) is one base64 slice of a snapshot, in order.
+type SnapChunk struct {
+	T    string `json:"t"`
+	ID   string `json:"id"`
+	Seq  int    `json:"seq"`
+	Data string `json:"data"`
+}
+
 // Ping and Pong share a shape; ID may be a number or string on the wire.
 type Ping struct {
 	T  string `json:"t"`
@@ -418,6 +446,35 @@ func ParseControl(data []byte) (any, error) {
 			if p.ID == "" || p.Name == "" || p.Color == "" {
 				return nil, wrap(errors.New("bad player"))
 			}
+		}
+		return m, nil
+	case "snap":
+		return Snap{T: "snap"}, nil
+	case "snap_result":
+		if err := need("id", "ok"); err != nil {
+			return nil, wrap(err)
+		}
+		var m SnapResult
+		if err := decode(data, &m); err != nil {
+			return nil, wrap(err)
+		}
+		if m.ID == "" {
+			return nil, wrap(errors.New("id required"))
+		}
+		if m.OK && (m.Chunks < 1 || m.Size < 1) {
+			return nil, wrap(errors.New("chunks and size required"))
+		}
+		return m, nil
+	case "snap_chunk":
+		if err := need("id", "seq", "data"); err != nil {
+			return nil, wrap(err)
+		}
+		var m SnapChunk
+		if err := decode(data, &m); err != nil {
+			return nil, wrap(err)
+		}
+		if m.ID == "" || m.Seq < 0 {
+			return nil, wrap(errors.New("bad id or seq"))
 		}
 		return m, nil
 	case "ping", "pong":

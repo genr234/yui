@@ -10,11 +10,13 @@ package router
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"sync"
+	"time"
 
 	"kiosk/controller/internal/pad/hub"
 	"kiosk/controller/internal/pad/protocol"
@@ -82,6 +84,9 @@ type Config struct {
 	Pads    Pads
 	// ProfileReply receives a phone's profile_reply (plan 10).
 	ProfileReply func(playerID string, reply protocol.ProfileReply)
+	// Snap captures the game area as a JPEG for "snap" requests. nil turns
+	// the feature off (phones get an error).
+	Snap func(ctx context.Context) (SnapImage, error)
 	// StartURL is the page the remote's Home button loads.
 	StartURL string
 	// Activity is called when a player presses something, moves a stick or
@@ -103,6 +108,12 @@ type Router struct {
 	playing   bool
 	lastInput map[string]protocol.InputState // per player, for Activity
 
+	// Snap the screen: per-phone rate limit and in-flight flag (mu).
+	snapLast map[string]time.Time
+	snapBusy map[string]bool
+	snapSeq  int
+	now      func() time.Time // test clock; nil = time.Now
+
 	// pushMu orders layout sends so versions reach each phone increasing.
 	pushMu   sync.Mutex
 	version  int
@@ -115,7 +126,7 @@ type Router struct {
 // New builds the stack with the shell provider at the bottom and registers
 // the adapters.
 func New(cfg Config) (*Router, error) {
-	r := &Router{cfg: cfg, players: map[string]protocol.Player{}, sent: map[string][]byte{}, lastInput: map[string]protocol.InputState{}, soc: newSocial()}
+	r := &Router{cfg: cfg, players: map[string]protocol.Player{}, sent: map[string][]byte{}, lastInput: map[string]protocol.InputState{}, soc: newSocial(), snapLast: map[string]time.Time{}, snapBusy: map[string]bool{}}
 	deps := shell.Deps{
 		IsHost:   r.IsHost,
 		HostName: r.hostName,
@@ -352,6 +363,7 @@ func (r *Router) forget(id string) {
 	r.mu.Lock()
 	delete(r.players, id)
 	delete(r.lastInput, id)
+	delete(r.snapLast, id)
 	r.mu.Unlock()
 	r.soc.forget(id)
 	r.pushMu.Lock()
@@ -382,6 +394,9 @@ func (r *Router) onControl(playerID string, msg any) {
 			return
 		}
 		err = r.stack.System(playerID, m)
+	case protocol.Snap:
+		r.onSnap(playerID)
+		return
 	case protocol.ProfileReply:
 		if r.cfg.ProfileReply != nil {
 			r.cfg.ProfileReply(playerID, m)

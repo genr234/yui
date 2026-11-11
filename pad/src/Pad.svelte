@@ -11,6 +11,8 @@
   import Icon from './Icon.svelte'
   import { guideEntries, hasButtons } from './layout/guide'
   import ProfileSheet from './ProfileSheet.svelte'
+  import SnapOverlay from './SnapOverlay.svelte'
+  import { SnapReceiver, blobToDataUrl } from './platform/snap'
   import { enqueueAsk, type ProfileAsk } from './account'
   import Avatar from './Avatar.svelte'
   import SimGyro from './SimGyro.svelte'
@@ -160,6 +162,7 @@
   }
 
   function onControl(msg: ControlMessage) {
+    if (snapRx.handle(msg)) return
     switch (msg.t) {
       case 'welcome':
         player = msg.player
@@ -211,6 +214,77 @@
           setMasterVolume(volume)
         }
         return
+    }
+  }
+
+  // ---------------------------------------------------- snap the screen
+  let snapBusy = false
+  let snapCard: { url: string; blob: Blob; w?: number; h?: number } | null = null
+  let snapToast = ''
+  let snapFlash = 0
+  let snapToastTimer: ReturnType<typeof setTimeout> | null = null
+  function showSnapToast(text: string) {
+    snapToast = text
+    if (snapToastTimer) clearTimeout(snapToastTimer)
+    snapToastTimer = setTimeout(() => (snapToast = ''), 3000)
+  }
+  const snapRx = new SnapReceiver({
+    done: async (shot) => {
+      try {
+        snapCard = { url: await blobToDataUrl(shot.blob), blob: shot.blob, w: shot.w, h: shot.h }
+      } catch {
+        showSnapToast("Couldn't show the snapshot")
+      }
+      snapBusy = false
+    },
+    fail: (text) => {
+      snapBusy = false
+      showSnapToast(text)
+    },
+  })
+
+  /** Local demo: pretend the kiosk answered with a picture. */
+  function demoSnap() {
+    const c = document.createElement('canvas')
+    c.width = 360
+    c.height = 640
+    const g = c.getContext('2d')!
+    const grad = g.createLinearGradient(0, 0, 360, 640)
+    grad.addColorStop(0, '#4fb0ee')
+    grad.addColorStop(1, '#ffc627')
+    g.fillStyle = grad
+    g.fillRect(0, 0, 360, 640)
+    g.fillStyle = '#fff'
+    g.font = 'bold 40px sans-serif'
+    g.fillText('Demo snap', 70, 330)
+    c.toBlob(
+      (blob) => {
+        if (!blob) return snapRx.cancel(), (snapBusy = false)
+        snapBusy = false
+        snapRx.cancel()
+        void blobToDataUrl(blob).then((url) => (snapCard = { url, blob, w: 360, h: 640 }))
+      },
+      'image/jpeg',
+      0.8,
+    )
+  }
+
+  function takeSnap() {
+    if (snapBusy) return
+    if (sensitive) return showSnapToast('Snapshots are off while someone is typing a password')
+    if (!snapRx.begin()) return
+    snapBusy = true
+    snapFlash++
+    pressTick()
+    if (demoTree) {
+      send({ t: 'snap' })
+      setTimeout(demoSnap, 500)
+      return
+    }
+    if (!session?.send({ t: 'snap' })) {
+      snapRx.cancel()
+      snapBusy = false
+      showSnapToast('Not connected to the screen')
     }
   }
 
@@ -458,6 +532,8 @@
     if (idleTimer) clearTimeout(idleTimer)
     if (toastTimer) clearTimeout(toastTimer)
     session?.stop()
+    snapRx.cancel()
+    if (snapToastTimer) clearTimeout(snapToastTimer)
     loop.dispose()
     motion.stop()
   })
@@ -499,6 +575,9 @@
       {#if hasButtons(guide)}
         <button class="tool" type="button" aria-label="What the buttons do" on:click={openGuide}><span class="q" aria-hidden="true">?</span></button>
       {/if}
+      <button class="tool" class:busy={snapBusy} type="button" aria-label="Snap the screen" disabled={snapBusy} on:click={takeSnap}>
+        {#if snapBusy}<span class="spin" aria-hidden="true"></span>{:else}<Icon name="crosshair" size={20} />{/if}
+      </button>
       <button class="home" type="button" aria-label="Home" on:click={openHome}>
         <Icon name="menu" size={22} />
       </button>
@@ -575,6 +654,8 @@
       </div>
     {/if}
   </main>
+
+  <SnapOverlay card={snapCard} toast={snapToast} flash={snapFlash} onClose={() => (snapCard = null)} />
 
   {#if homeOpen}
     <HomeSheet
@@ -785,6 +866,19 @@
   .tool:active {
     transform: translateY(3px);
     box-shadow: 0 0 0 var(--edge);
+  }
+  .tool .spin {
+    width: 18px;
+    height: 18px;
+    border: 3px solid var(--kit-key-line);
+    border-top-color: var(--kit-blue);
+    border-radius: 50%;
+    animation: snap-spin 700ms linear infinite;
+  }
+  @keyframes snap-spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
   .tool .q {
     font-size: 1.25rem;

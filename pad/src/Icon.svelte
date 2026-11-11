@@ -9,7 +9,7 @@
   const urls: Record<string, string> = {}
   for (const [path, url] of Object.entries(files)) urls[path.replace(/^.*icon_|\.svg$/g, '')] = url
 
-  export type IconName = 'menu' | 'sound' | 'checkmark' | 'cross' | 'search' | 'arrow_rotate' | 'play' | 'star' | 'talk'
+  export type IconName = 'menu' | 'sound' | 'checkmark' | 'cross' | 'search' | 'arrow_rotate' | 'play' | 'star' | 'talk' | 'crosshair'
 </script>
 
 <script lang="ts">

@@ -2,9 +2,13 @@
 
 package remotecontrol
 
-import "errors"
+import "image"
 
 // CaptureDesktop is only implemented on Windows, where kiosks run.
 func CaptureDesktop(int) (Desktop, error) {
-	return Desktop{}, errors.New("desktop capture is only supported on Windows")
+	return Desktop{}, ErrDesktopUnsupported
+}
+
+func grabDesktop() (*image.RGBA, image.Point, error) {
+	return nil, image.Point{}, ErrDesktopUnsupported
 }
