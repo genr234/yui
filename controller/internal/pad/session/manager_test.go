@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -37,6 +38,9 @@ type fakeRails struct {
 	reject  bool
 	status  int
 	gone    bool
+	// passStatus/passBody make POST .../pass_seat fail (0 means 204).
+	passStatus int
+	passBody   string
 }
 
 func newFake(t *testing.T) *fakeRails {
@@ -153,6 +157,9 @@ func (f *fakeRails) member(w http.ResponseWriter, r *http.Request) {
 		f.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(sess)
+	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/pass_seat") && f.passStatus != 0:
+		w.WriteHeader(f.passStatus)
+		_, _ = w.Write([]byte(f.passBody))
 	case r.Method == http.MethodPost:
 		w.WriteHeader(http.StatusNoContent)
 	default:

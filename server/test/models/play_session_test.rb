@@ -207,4 +207,92 @@ class PlaySessionTest < ActiveSupport::TestCase
       assert_not play_session.reload.active?
     end
   end
+
+  def seated_pair
+    play_session = start_session
+    giver, = join_player(play_session, name: "Ana")
+    4.times { |n| join_player(play_session, name: "Fill#{n}") } # fills 2-4, one spectator left over
+    spectator = play_session.players.active.find_by(slot: nil)
+    spectator.mark_connected!("s")
+    [ play_session, giver.reload, spectator.reload ]
+  end
+
+  test "pass_seat! swaps the slot and keeps host and speaker with the person" do
+    play_session, giver, spectator = seated_pair
+    assert giver.host?
+    assert giver.speaker?
+
+    assert_broadcasts(PlaySessionChannel.broadcasting_for(play_session), 2) do
+      play_session.pass_seat!(giver, spectator, slot: 1)
+    end
+
+    assert_equal 1, spectator.reload.slot
+    assert_nil giver.reload.slot
+    assert giver.host?
+    assert giver.speaker?
+    assert_not spectator.host?
+    assert_equal [ 1, 2, 3, 4 ], play_session.players.active.where.not(slot: nil).order(:slot).pluck(:slot)
+  end
+
+  test "pass_seat! refuses a recipient who is seated, disconnected, kicked or the giver" do
+    play_session, giver, spectator = seated_pair
+    seated = play_session.players.active.find_by(slot: 2)
+    seated.mark_connected!("x")
+
+    error = assert_raises(PlaySession::SeatPassError) { play_session.pass_seat!(giver, seated) }
+    assert_equal :recipient_not_spectator, error.code
+    assert_equal 1, giver.reload.slot, "a refused pass changes nothing"
+    assert_equal 2, seated.reload.slot
+
+    spectator.update!(connected: false)
+    error = assert_raises(PlaySession::SeatPassError) { play_session.pass_seat!(giver, spectator) }
+    assert_equal :recipient_not_spectator, error.code
+    assert_equal 1, giver.reload.slot
+
+    spectator.update!(connected: true)
+    play_session.kick!(spectator)
+    assert_raises(PlaySession::SeatPassError) { play_session.pass_seat!(giver, spectator) }
+    assert_equal 1, giver.reload.slot
+
+    assert_equal :same_player, assert_raises(PlaySession::SeatPassError) { play_session.pass_seat!(giver, giver) }.code
+  end
+
+  test "pass_seat! refuses when the giver lost the seat to a new joiner" do
+    play_session = start_session
+    giver, = join_player(play_session, name: "Ana")
+    3.times { |n| join_player(play_session, name: "Fill#{n}") }
+    spectator, = join_player(play_session, name: "Dee")
+    late, = join_player(play_session, name: "Late")
+    [ spectator, late ].each { |player| player.mark_connected!("c") }
+
+    # Ana goes stale; the longest-waiting connected spectator (Dee) gets slot 1.
+    giver.update_columns(last_seen_at: 10.minutes.ago)
+    play_session.release_stale_players!
+    assert_nil giver.reload.slot
+    assert_equal 1, spectator.reload.slot
+
+    error = assert_raises(PlaySession::SeatPassError) { play_session.pass_seat!(giver, late, slot: 1) }
+    assert_equal :giver_not_seated, error.code
+    assert_equal 1, spectator.reload.slot
+
+    # Slot taken by a different holder than the offer was made for.
+    other = play_session.players.active.find_by(slot: 2)
+    error = assert_raises(PlaySession::SeatPassError) { play_session.pass_seat!(other, late, slot: 1) }
+    assert_equal :seat_changed, error.code
+    assert_equal 2, other.reload.slot
+    assert_nil late.reload.slot
+  end
+
+  test "a unique-index collision rolls the whole pass back" do
+    play_session, giver, spectator = seated_pair
+    # Simulate a joiner grabbing slot 1 between the two updates.
+    Player.connection.execute("CREATE TRIGGER grab_seat AFTER UPDATE OF slot ON players WHEN NEW.slot IS NULL AND OLD.slot = 1 " \
+      "BEGIN UPDATE players SET slot = 1 WHERE id = #{play_session.players.active.find_by(slot: 4).id}; END")
+    error = assert_raises(PlaySession::SeatPassError) { play_session.pass_seat!(giver, spectator, slot: 1) }
+    assert_equal :seat_changed, error.code
+    assert_equal 1, giver.reload.slot
+    assert_nil spectator.reload.slot
+  ensure
+    Player.connection.execute("DROP TRIGGER IF EXISTS grab_seat")
+  end
 end

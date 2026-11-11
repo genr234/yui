@@ -51,6 +51,14 @@ func (m *Manager) handleControl(playerID string, raw []byte, gen int, fromCable 
 			return
 		}
 		m.forwardControl(playerID, msg)
+	case protocol.SeatOffer:
+		m.noteAction()
+		m.offerSeat(playerID, typed.To)
+	case protocol.SeatAnswer:
+		m.noteAction()
+		m.answerSeat(playerID, typed.From, typed.Accept)
+	case protocol.SeatCancel:
+		m.cancelSeat(playerID)
 	default:
 		m.forwardControl(playerID, msg)
 	}

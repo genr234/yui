@@ -290,7 +290,7 @@ export default {
 
     // A phone that joins while a game runs gets the next free Wii Remote.
     async function joinMidGame(player) {
-      if (state.phase !== "playing" || state.slots[player.id] !== undefined) return;
+      if (state.phase !== "playing" || state.slots[player.id] !== undefined || yielded.has(player.id)) return;
       const slot = freeSlot();
       if (slot < 0) return;
       try {
@@ -305,13 +305,48 @@ export default {
       }
     }
 
+    // The Yui seat each player held at the last roster update. When a seat is
+    // passed to someone else (Home > Give my seat) the new holder takes over
+    // the same Wii Remote, mid-game: the controller moves the virtual pad.
+    let seats = {};
+    const yielded = new Set(); // players who handed their seat away: they watch
+    let following = Promise.resolve();
+
+    function followSeats(players) {
+      const handoffs = seatHandoffs(seats, players, state.slots);
+      seats = {};
+      for (const player of players) {
+        if (player.slot === null || player.slot === undefined) continue;
+        seats[player.id] = player.slot;
+        yielded.delete(player.id);
+      }
+      for (const handoff of handoffs) yielded.add(handoff.giver);
+      if (handoffs.length && state.phase === "playing") {
+        following = following.then(() => moveRemotes(handoffs)).catch((error) => ctx.log.warn("seat handoff failed", errorText(error)));
+      }
+      return new Set(handoffs.map((handoff) => handoff.to));
+    }
+
+    async function moveRemotes(handoffs) {
+      for (const { giver, to, remote } of handoffs) {
+        const player = pad.players.find((candidate) => candidate.id === to);
+        if (state.phase !== "playing" || state.slots[giver] !== remote || !player) continue;
+        // Attaching moves the remote: the giver's pad is released with it.
+        await attachPlayer(player, remote);
+        const slots = { ...state.slots };
+        delete slots[giver];
+        state.slots = slots;
+      }
+    }
+
     pad.on("join", (player) => joinMidGame(player));
     pad.on("leave", (player) => {
       if (state.slots[player.id] !== undefined) detachPlayer(player);
     });
     pad.on("players", () => {
       maybeStartPending();
-      if (state.phase === "playing") for (const player of pad.players) if (player.connected) joinMidGame(player);
+      const taking = followSeats(pad.players);
+      if (state.phase === "playing") for (const player of pad.players) if (player.connected && !taking.has(player.id)) joinMidGame(player);
     });
 
     // ---- the phone's Home sheet --------------------------------------------
@@ -906,3 +941,21 @@ function selectRuntime(assets) {
 	return { id: String(chosen.id), version: version(chosen), pinned: Boolean(pinned) };
 }
 // </generated:dolphin-config>
+
+/**
+ * Seats passed since `seats` (player id -> Yui seat): a player who lost their
+ * seat while a Wii Remote is theirs hands that remote to whoever holds the
+ * seat now. Returns [{ giver, to, remote }].
+ */
+function seatHandoffs(seats, players, remotes) {
+	const out = [];
+	for (const giver of players) {
+		const before = seats[giver.id];
+		if (before === undefined || giver.slot === before) continue;
+		const remote = remotes[giver.id];
+		if (remote === undefined) continue;
+		const taker = players.find((player) => player.id !== giver.id && player.slot === before && player.connected);
+		if (taker && remotes[taker.id] !== remote) out.push({ giver: giver.id, to: taker.id, remote });
+	}
+	return out;
+}

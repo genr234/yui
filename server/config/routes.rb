@@ -64,6 +64,7 @@ Rails.application.routes.draw do
           post "players/:player_id/kick", to: "players#kick", as: :kick_player
           post "players/:player_id/host", to: "players#host", as: :host_player
           post "players/:player_id/speaker", to: "players#speaker", as: :speaker_player
+          post "players/:player_id/pass_seat", to: "players#pass_seat", as: :pass_seat_player
           get "players/:player_id/profiles/:app_id", to: "profiles#show", as: :player_profile,
             constraints: { app_id: /[A-Za-z0-9._-]+/ }, format: false
           put "players/:player_id/profiles/:app_id", to: "profiles#update",

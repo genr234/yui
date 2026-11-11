@@ -218,6 +218,53 @@ export interface Idle {
   ends_in: number;
 }
 
+// ---- seat passing (contracts §3 "Seat passing")
+
+/** The little one phone may know about another player while seats are passed. */
+export interface SeatMate {
+  id: string;
+  name: string;
+  color: Color | string;
+  avatar?: string | null;
+}
+/** pad -> kiosk: the sender offers their seat to the spectator `to`. */
+export interface SeatOffer {
+  t: "seat_offer";
+  to: string;
+}
+/** kiosk -> pad (recipient): an offer, open for `expires_in` seconds. */
+export interface SeatOffered {
+  t: "seat_offered";
+  from: SeatMate;
+  slot: number;
+  expires_in: number;
+}
+/** pad -> kiosk (recipient): answers the offer made by player `from` (their id). */
+export interface SeatAnswer {
+  t: "seat_answer";
+  from: string;
+  accept: boolean;
+}
+/** pad -> kiosk (giver): withdraw the pending offer. */
+export interface SeatCancel {
+  t: "seat_cancel";
+}
+export type SeatResultKind = "pending" | "accepted" | "declined" | "expired" | "cancelled" | "failed";
+/**
+ * kiosk -> pad: how an offer went. `role` is the receiving phone's own role.
+ * "pending" goes to the giver only (the offer is out); every other result is final
+ * and goes to both phones. `other` is the other party; `reason` explains "failed".
+ */
+export interface SeatResult {
+  t: "seat_result";
+  result: SeatResultKind;
+  role: "giver" | "recipient";
+  slot: number;
+  other?: SeatMate;
+  expires_in?: number;
+  reason?: string;
+}
+
 export type ControlMessage =
   | Hello
   | Welcome
@@ -239,7 +286,12 @@ export type ControlMessage =
   | SnapChunk
   | Ping
   | Pong
-  | Idle;
+  | Idle
+  | SeatOffer
+  | SeatOffered
+  | SeatAnswer
+  | SeatCancel
+  | SeatResult;
 
 // ---------------------------------------------------------------- input codec
 
@@ -378,6 +430,16 @@ function checkPlayer(p: unknown, where: string): void {
   if (!(p.account_linked === undefined || isBool(p.account_linked))) fail(`${where}: player.account_linked must be a boolean`);
 }
 
+function checkSeatMate(p: unknown, where: string): void {
+  if (!isObj(p)) fail(`${where}: must be an object`);
+  if (!isStr(p.id) || p.id === "") fail(`${where}: id must be a non-empty string`);
+  if (!isStr(p.name)) fail(`${where}: name must be a string`);
+  if (!isStr(p.color)) fail(`${where}: color must be a string`);
+  if (!(p.avatar === undefined || p.avatar === null || isStr(p.avatar))) fail(`${where}: avatar must be a string or null`);
+}
+
+const SEAT_RESULTS = ["pending", "accepted", "declined", "expired", "cancelled", "failed"];
+
 function checkNode(n: unknown, depth = 0): void {
   if (depth > 32) fail("layout: tree too deep");
   if (!isObj(n)) fail("layout: node must be an object");
@@ -495,6 +557,26 @@ export function parseControl(json: string): ControlMessage {
       break;
     case "idle":
       if (!isNum(m.ends_in) || m.ends_in < 0) fail("idle: ends_in must be a non-negative number");
+      break;
+    case "seat_cancel":
+      break;
+    case "seat_offer":
+      if (!isStr(m.to) || m.to === "") fail("seat_offer: to must be a non-empty string");
+      break;
+    case "seat_offered":
+      checkSeatMate(m.from, "seat_offered: from");
+      if (!isNum(m.slot) || m.slot < 1) fail("seat_offered: slot must be a number >= 1");
+      if (!isNum(m.expires_in) || m.expires_in < 0) fail("seat_offered: expires_in must be a non-negative number");
+      break;
+    case "seat_answer":
+      if (!isStr(m.from) || m.from === "") fail("seat_answer: from must be a non-empty string");
+      if (!isBool(m.accept)) fail("seat_answer: accept must be a boolean");
+      break;
+    case "seat_result":
+      if (!isStr(m.result) || !SEAT_RESULTS.includes(m.result)) fail("seat_result: bad result");
+      if (m.role !== "giver" && m.role !== "recipient") fail("seat_result: role must be giver or recipient");
+      if (!isNum(m.slot)) fail("seat_result: slot must be a number");
+      if (m.other !== undefined) checkSeatMate(m.other, "seat_result: other");
       break;
     case "ping":
     case "pong":

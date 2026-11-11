@@ -21,6 +21,11 @@ const valid: Record<string, unknown> = {
   poked: { t: "poked", from: "7" },
   players: { t: "players", players: [{ id: "8", name: "Bo", color: "red", slot: 2, avatar: null, pokes: true }, { id: "9", name: "Cy", color: "green", slot: null, pokes: false }] },
   system_pokes: { t: "system", action: "pokes", value: false },
+  seat_offer: { t: "seat_offer", to: "8" },
+  seat_offered: { t: "seat_offered", from: { id: "7", name: "Ana", color: "blue" }, slot: 1, expires_in: 20 },
+  seat_answer: { t: "seat_answer", from: "7", accept: true },
+  seat_cancel: { t: "seat_cancel" },
+  seat_result: { t: "seat_result", result: "accepted", role: "giver", slot: 1, other: { id: "8", name: "Dee", color: "red" } },
   ping: { t: "ping", id: 1, ts: 1700000000000 },
   pong: { t: "pong", id: 1, ts: 1700000000001 },
 };
@@ -44,6 +49,10 @@ const invalid: Record<string, string> = {
   poke_no_to: '{"t":"poke"}',
   poked_no_from: '{"t":"poked"}',
   players_bad: '{"t":"players","players":[{"id":1}]}',
+  seat_offer_no_to: '{"t":"seat_offer"}',
+  seat_answer_no_accept: '{"t":"seat_answer","from":"7"}',
+  seat_offered_bad_slot: '{"t":"seat_offered","from":{"id":"7","name":"Ana","color":"blue"},"slot":0,"expires_in":20}',
+  seat_result_bad_result: '{"t":"seat_result","result":"maybe","role":"giver","slot":1}',
   ping_no_ts: '{"t":"ping","id":1}',
   array: "[1,2]",
 };

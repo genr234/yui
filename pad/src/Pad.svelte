@@ -13,6 +13,8 @@
   import ProfileSheet from './ProfileSheet.svelte'
   import SnapOverlay from './SnapOverlay.svelte'
   import { SnapReceiver, blobToDataUrl } from './platform/snap'
+  import SeatOfferCard from './SeatOfferCard.svelte'
+  import { emptySeat, seatExpire, seatReduce, secondsLeft, spectatorsOf, type SeatState } from './seatPass'
   import { enqueueAsk, type ProfileAsk } from './account'
   import Avatar from './Avatar.svelte'
   import SimGyro from './SimGyro.svelte'
@@ -161,9 +163,42 @@
     if (idleLeft > 0) idleTimer = setTimeout(tickIdle, 1000)
   }
 
+  // ------------------------------------------------------------ pass your seat
+  let seat: SeatState = emptySeat
+  let seatNow = Date.now()
+  let seatTimer: ReturnType<typeof setInterval> | undefined
+  /** Every change goes through here so the countdown ticks only while an offer is open. */
+  function setSeat(next: SeatState) {
+    seat = next
+    const active = !!(next.incoming || next.outgoing)
+    if (active && !seatTimer) {
+      seatTimer = setInterval(() => {
+        seatNow = Date.now()
+        setSeat(seatExpire(seat, seatNow))
+      }, 500)
+    } else if (!active && seatTimer) {
+      clearInterval(seatTimer)
+      seatTimer = undefined
+    }
+  }
+  onDestroy(() => seatTimer && clearInterval(seatTimer))
+  function offerSeat(to: string) {
+    send({ t: 'seat_offer', to })
+  }
+  function answerSeat(accept: boolean) {
+    if (!seat.incoming) return
+    send({ t: 'seat_answer', from: seat.incoming.from.id, accept })
+    setSeat({ ...seat, incoming: null }) // the kiosk's seat_result confirms
+  }
+
   function onControl(msg: ControlMessage) {
     if (snapRx.handle(msg)) return
     switch (msg.t) {
+      case 'seat_offered':
+      case 'seat_result':
+        seatNow = Date.now()
+        setSeat(seatReduce(seat, msg, seatNow))
+        return
       case 'welcome':
         player = msg.player
         kioskName = msg.kiosk_name
@@ -676,6 +711,12 @@
       onAccountLink={accountLink}
       {allowPokes}
       onPokes={changePokes}
+      spectators={spectatorsOf(peers)}
+      {seat}
+      seatSeconds={seat.outgoing ? secondsLeft(seat.outgoing.until, seatNow) : 0}
+      onSeatOffer={offerSeat}
+      onSeatCancel={() => send({ t: 'seat_cancel' })}
+      onSeatDismiss={() => setSeat({ ...seat, result: null })}
     />
   {/if}
   {#if reactOpen && !homeOpen}
@@ -686,6 +727,14 @@
   {/if}
   {#if guideOpen && !homeOpen}
     <GuideSheet entries={guide} onClose={() => (guideOpen = false)} />
+  {/if}
+  {#if seat.incoming}
+    <SeatOfferCard
+      from={seat.incoming.from}
+      slot={seat.incoming.slot}
+      secondsLeft={secondsLeft(seat.incoming.until, seatNow)}
+      onAnswer={answerSeat}
+    />
   {/if}
   {#if asks.length > 0 && player.account_linked}
     <ProfileSheet ask={asks[0]} account={accountName} busy={askBusy} onAnswer={answerAsk} />

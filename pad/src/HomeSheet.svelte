@@ -1,11 +1,13 @@
 <script lang="ts">
-  import type { Player } from '@yui/protocol'
+  import type { Player, Peer } from '@yui/protocol'
   import { colorHex } from './colors'
   import Avatar from './Avatar.svelte'
   import AvatarPicker from './AvatarPicker.svelte'
   import CodeEntry from './CodeEntry.svelte'
   import { friendlyError } from './api'
   import Icon, { type IconName } from './Icon.svelte'
+  import SeatGive from './SeatGive.svelte'
+  import { emptySeat, type SeatState } from './seatPass'
 
   export let player: Player
   export let kioskName = ''
@@ -33,6 +35,14 @@
   export let onAccountForget: () => Promise<void> = async () => {}
   /** Redeem a phone code. */
   export let onAccountLink: (code: string) => Promise<void> = async () => {}
+
+  /** Pass your seat (see seatPass.ts): spectators this phone may offer its seat to. */
+  export let spectators: Peer[] = []
+  export let seat: SeatState = emptySeat
+  export let seatSeconds = 0
+  export let onSeatOffer: (to: string) => void = () => {}
+  export let onSeatCancel: () => void = () => {}
+  export let onSeatDismiss: () => void = () => {}
 
   // Tabs. The last one stays selected for the rest of this browser session.
   type Tab = 'game' | 'sound' | 'you'
@@ -170,6 +180,9 @@
         Per-feature rows go here (one row per feature, e.g. reactions, snapshot,
         game-specific options). Keep Resume/Close first and Quit game last.
       -->
+      {#if player.slot || seat.outgoing || seat.result}
+        <SeatGive {spectators} {seat} secondsLeft={seatSeconds} onOffer={onSeatOffer} onCancel={onSeatCancel} onDismissResult={onSeatDismiss} />
+      {/if}
 
       {#if playing}
         <button class="danger-btn" on:click={quit}>{confirmQuit ? 'Tap again to quit' : 'Quit game'}</button>
