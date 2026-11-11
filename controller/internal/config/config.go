@@ -41,8 +41,12 @@ type Config struct {
 	// PadEmptyMinutes ends a play session nobody is connected to (default
 	// 5; EventIdleMinutes in event mode). PadIdleMinutes ends one whose
 	// phones are connected but unused (default 15). Negative: never.
-	PadEmptyMinutes  int             `json:"pad_empty_minutes,omitempty"`
-	PadIdleMinutes   int             `json:"pad_idle_minutes,omitempty"`
+	PadEmptyMinutes int `json:"pad_empty_minutes,omitempty"`
+	PadIdleMinutes  int `json:"pad_idle_minutes,omitempty"`
+	// IdleTools are programs (exe names) paused while an app or a play
+	// session holds a wake lock, for idle tools that ignore injected input.
+	// Unset: useractivity.DefaultIdleTools; an empty list pauses none.
+	IdleTools        []string        `json:"idle_tools"`
 	EventIdleMinutes int             `json:"event_idle_minutes"`
 	AdminPIN         PINHash         `json:"admin_pin,omitempty"`
 	ServerURL        string          `json:"server_url,omitempty"`

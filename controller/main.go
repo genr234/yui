@@ -26,6 +26,7 @@ import (
 	"kiosk/controller/internal/supervisor"
 	"kiosk/controller/internal/telemetry"
 	"kiosk/controller/internal/updater"
+	"kiosk/controller/internal/useractivity"
 	"kiosk/controller/internal/version"
 )
 
@@ -84,6 +85,11 @@ func run() error {
 			log.Printf("error closing log file: %v", err)
 		}
 	}(logFile)
+
+	// Idle tools paused for wake locks; a crash while one was held left
+	// them paused.
+	useractivity.SetIdleTools(cfg.IdleTools)
+	useractivity.ResumeIdleTools()
 
 	defer func() {
 		if value := recover(); value != nil {

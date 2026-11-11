@@ -361,8 +361,14 @@ func (r *Registry) startPadSession() (session.Snapshot, error) {
 	r.padDone = done
 	r.padMu.Unlock()
 
+	// A play session is the kiosk in use even when the phones send nothing
+	// Windows can see (idle tools ignore injected input). The session's own
+	// empty and inactive timeouts bound the hold.
+	hold := useractivity.Default().AcquirePinned("pad", "play session")
+
 	go func() {
 		defer close(done)
+		defer useractivity.Default().Release(hold.ID)
 		err := mgr.Run(ctx)
 		hub.Detach(mgr)
 		errCh <- err

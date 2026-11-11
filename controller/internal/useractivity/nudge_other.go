@@ -8,3 +8,6 @@ type osPlatform struct{}
 
 func (osPlatform) Nudge() error        { return nil }
 func (osPlatform) SetAwake(bool) error { return nil }
+
+// ResumeIdleTools does nothing outside Windows.
+func ResumeIdleTools() {}

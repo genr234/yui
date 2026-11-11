@@ -16,9 +16,11 @@
 //     hold is active the display and system stay on, the screensaver is kept
 //     closed and the nudge repeats every Interval. A hold is a lease: it ends
 //     when released, and also by itself when its owner stops renewing it
-//     (the app closed, the page reloaded or Chrome died). When the last hold
-//     ends, the OS's own idle behaviour comes back untouched; nothing is
-//     changed persistently, so even a controller crash leaves no trace.
+//     (the app closed, the page reloaded or Chrome died). Idle tools that
+//     ignore injected input (see DefaultIdleTools) are paused meanwhile.
+//     When the last hold ends, the OS's own idle behaviour comes back
+//     untouched; nothing is changed persistently, and the controller resumes
+//     idle tools at start in case it crashed while holding.
 package useractivity
 
 import (
