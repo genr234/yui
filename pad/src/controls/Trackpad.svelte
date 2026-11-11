@@ -2,6 +2,7 @@
   import { onDestroy } from 'svelte'
   import { TrackpadDriver } from './drivers'
   import { capture, localPoint, usePad } from './context'
+  import Art from './Art.svelte'
 
   export let props: Record<string, unknown>
   export let style = ''
@@ -58,32 +59,43 @@
   on:pointercancel={(e) => up(e, true)}
   on:lostpointercapture={(e) => up(e, true)}
 >
-  <span class="label">{fingers === 2 ? 'Scrolling' : label}</span>
-  {#if dot}<span class="dot" style="left:{dot[0]}px;top:{dot[1]}px"></span>{/if}
-  {#if mode === 'absolute'}<span class="cross"></span>{/if}
+  <span class="plate"><Art name="button_square_wide" mode="nine" cx={12} cy={12} s={1.25} lit={fingers > 0} /></span>
+  <span class="surface">
+    <span class="label">{fingers === 2 ? 'Scrolling' : label}</span>
+    {#if dot}<span class="dot" style="left:{dot[0]}px;top:{dot[1]}px"></span>{/if}
+    {#if mode === 'absolute'}<span class="cross"></span>{/if}
+  </span>
 </div>
 
 <style>
+  /* The pack's square panel, sunken: a pale rim round a grey well that lights its edge while touched. */
   .pad {
+    --k-rim: #f4f6fa;
+    --k-face: var(--kit-well);
+    --k-mark: var(--kit-panel-line);
+    --k-lip: var(--kit-panel-lip);
     position: relative;
     flex: 1;
     min-height: 96px;
-    border: 2px solid var(--kit-panel-line);
-    border-radius: var(--yui-radius-shell);
-    background: var(--kit-panel);
-    box-shadow: 0 var(--yui-lip) 0 var(--kit-panel-lip), inset 0 6px 0 rgba(58, 65, 81, 0.07);
     touch-action: none;
     user-select: none;
     -webkit-user-select: none;
+  }
+  .plate {
+    position: absolute;
+    inset: 0;
+    filter: drop-shadow(0 var(--yui-lip) 0 var(--k-lip));
+  }
+  .surface {
+    position: absolute;
+    inset: 0;
+    border-radius: var(--yui-radius-shell);
     overflow: hidden;
     display: grid;
     place-items: center;
   }
-  .pad.touching {
-    border-color: var(--player);
-  }
   .label {
-    padding: 0 20px;
+    padding: 0 28px;
     text-align: center;
     color: var(--ink-muted);
     font-weight: 800;
@@ -96,7 +108,8 @@
     border-radius: 50%;
     transform: translate(-50%, -50%);
     background: var(--player);
-    opacity: 0.45;
+    border: 3px solid rgba(255, 255, 255, 0.7);
+    opacity: 0.6;
     pointer-events: none;
   }
   .cross {

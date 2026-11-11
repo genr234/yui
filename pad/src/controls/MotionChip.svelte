@@ -1,5 +1,6 @@
 <script lang="ts">
   import { capture, usePad } from './context'
+  import Art from './Art.svelte'
 
   export let props: Record<string, unknown>
   export let style = ''
@@ -39,21 +40,27 @@
 
 <div class="chip" {style}>
   <span class="state" class:on={$motion.status === 'on'}>
+    <span class="plate"><Art name="button_circle_wide" mode="cap" cx={32} glow={false} /></span>
     <span class="dot"></span>
-    {#if $motion.status === 'on'}
-      Motion on{pointer ? ' · pointer' : ''}
-    {:else if $motion.status === 'denied'}
-      Motion blocked
-    {:else if $motion.status === 'unsupported'}
-      No motion sensor
-    {:else}
-      Motion off
-    {/if}
+    <span class="txt">
+      {#if $motion.status === 'on'}
+        Motion on{pointer ? ' · pointer' : ''}
+      {:else if $motion.status === 'denied'}
+        Motion blocked
+      {:else if $motion.status === 'unsupported'}
+        No motion sensor
+      {:else}
+        Motion off
+      {/if}
+    </span>
   </span>
   {#if note}<span class="note">{note}</span>{/if}
   {#if $motion.status === 'on'}
     {#if !$motion.calibrated}
-      <button type="button" class="mini" disabled={calibrating} on:click={calibrate}>Calibrate</button>
+      <button type="button" class="mini" disabled={calibrating} on:click={calibrate}>
+        <span class="plate"><Art name="button_circle_wide" mode="cap" cx={32} glow={false} /></span>
+        <span class="txt">Calibrate</span>
+      </button>
     {/if}
     <button
       type="button"
@@ -63,8 +70,11 @@
       on:pointerup={up}
       on:pointercancel={up}
       on:lostpointercapture={up}
-      on:contextmenu|preventDefault>Recenter</button
+      on:contextmenu|preventDefault
     >
+      <span class="plate"><Art name="button_circle_wide" mode="cap" cx={32} lit={pressing.size > 0} /></span>
+      <span class="txt">Recenter</span>
+    </button>
   {/if}
 </div>
 
@@ -72,30 +82,45 @@
   .chip {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     flex-wrap: wrap;
     justify-content: center;
     min-height: 44px;
+    padding-bottom: 4px;
   }
-  .state {
+  .state,
+  .mini {
+    position: relative;
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 14px;
-    border: 2px solid var(--kit-key-line);
-    border-radius: 999px;
-    background: var(--kit-key);
-    color: var(--ink-muted);
+    min-height: 44px;
+    padding: 6px 20px;
+    border: 0;
+    background: none;
+    color: var(--ink);
+    font: inherit;
     font-size: 0.9rem;
     font-weight: 800;
-    box-shadow: 0 3px 0 var(--kit-key-lip);
+  }
+  .plate {
+    position: absolute;
+    inset: 0;
+    filter: drop-shadow(0 3px 0 var(--k-lip));
+  }
+  .state {
+    color: var(--ink-muted);
   }
   .state.on {
     color: var(--ink);
   }
+  .dot,
+  .txt {
+    position: relative;
+  }
   .dot {
-    width: 9px;
-    height: 9px;
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
     background: var(--kit-panel-line);
   }
@@ -108,21 +133,17 @@
     font-size: 0.85rem;
   }
   .mini {
-    min-height: 44px;
-    padding: 8px 16px;
-    border: 2px solid var(--kit-key-line);
-    border-radius: 999px;
-    background: linear-gradient(180deg, #fff 0 50%, var(--kit-key) 50%);
-    color: var(--ink);
-    font-weight: 800;
-    box-shadow: 0 3px 0 var(--kit-key-lip);
     touch-action: none;
+    transition: transform 50ms var(--yui-ease-out);
+  }
+  .mini:disabled {
+    opacity: 0.6;
   }
   .mini.pressed {
+    --k-lip: transparent;
+    --k-face: var(--player);
+    --k-rim: color-mix(in srgb, var(--player), #fff 34%);
     transform: translateY(3px);
-    border-color: color-mix(in srgb, var(--player), #000 26%);
-    background: var(--player);
     color: #fff;
-    box-shadow: none;
   }
 </style>

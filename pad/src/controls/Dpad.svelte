@@ -2,12 +2,23 @@
   import { onDestroy } from 'svelte'
   import { DpadDriver, type Dir } from './drivers'
   import { capture, localPoint, usePad } from './context'
+  import Art from './Art.svelte'
 
   export let props: Record<string, unknown>
   export let style = ''
 
   const { sink } = usePad()
   const ALL: Dir[] = ['up', 'down', 'left', 'right']
+  // Where each arm sits in the cross art (fractions of the 128-unit file), so one
+  // recoloured copy of the d-pad can be clipped to a single arm to light it.
+  type Rect = [number, number, number, number]
+  const ARM: Record<Dir, Rect> = {
+    up: [0.305, 0, 0.695, 0.305],
+    down: [0.305, 0.695, 0.695, 1],
+    left: [0, 0.305, 0.305, 0.695],
+    right: [0.695, 0.305, 1, 0.695],
+  }
+  const HUB: Rect = [0.305, 0.305, 0.695, 0.695]
 
   $: id = typeof props.id === 'string' ? props.id : ''
   $: mode = props.mode === 'events' ? ('events' as const) : ('bits' as const)
@@ -58,10 +69,22 @@
   on:pointercancel={up}
   on:lostpointercapture={up}
 >
-  {#each ALL as d}
-    <span class="arm {d}" class:lit={screenLit.includes(d)} class:off={rotate === 0 && !allowed.includes(d)}></span>
-  {/each}
-  <span class="hub"></span>
+  <span class="stack">
+    {#if rotate === 90 || allowed.length === ALL.length}
+      <Art name="dpad" glow={false} />
+    {:else}
+      <!-- Directions left out of the layout stay on the cross but dimmed. -->
+      <span class="piece" class:off={false}><Art name="dpad" glow={false} part={HUB} /></span>
+      {#each ALL as d}
+        <span class="piece" class:off={!allowed.includes(d)}><Art name="dpad" glow={false} part={ARM[d]} /></span>
+      {/each}
+    {/if}
+    {#each ALL as d}
+      {#if screenLit.includes(d)}
+        <span class="piece k-player"><Art name="dpad" part={ARM[d]} lit /></span>
+      {/if}
+    {/each}
+  </span>
 </div>
 
 <style>
@@ -79,100 +102,18 @@
     -webkit-user-select: none;
     flex: 0 1 auto;
   }
-  /* One white cross on a lip; arms light up in the player's colour. */
-  .arm,
-  .hub {
-    position: absolute;
-    background: linear-gradient(180deg, #fff, var(--kit-key));
-    border: 2px solid var(--kit-key-line);
-    box-shadow: 0 var(--yui-lip) 0 var(--kit-key-lip);
-    pointer-events: none;
-    transition: background 50ms, transform 50ms, box-shadow 50ms;
-  }
-  .hub {
-    left: 33.3%;
-    top: 33.3%;
-    width: 33.4%;
-    height: 33.4%;
-    border: 0;
-    background: var(--kit-key);
-    box-shadow: 0 var(--yui-lip) 0 var(--kit-key-lip);
-    z-index: 1;
-  }
-  .hub::after {
-    content: '';
-    position: absolute;
-    inset: 26%;
-    border-radius: 50%;
-    background: var(--kit-well);
-    box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.1);
-  }
-  .arm.up,
-  .arm.down {
-    left: 33.3%;
-    width: 33.4%;
-    height: 36%;
-  }
-  .arm.left,
-  .arm.right {
-    top: 33.3%;
-    height: 33.4%;
-    width: 36%;
-  }
-  .arm.up {
-    top: 0;
-    border-bottom: 0;
-    border-radius: var(--yui-radius-hero) var(--yui-radius-hero) 0 0;
-    box-shadow: none;
-  }
-  .arm.down {
-    bottom: 0;
-    border-top: 0;
-    border-radius: 0 0 var(--yui-radius-hero) var(--yui-radius-hero);
-  }
-  .arm.left {
-    left: 0;
-    border-right: 0;
-    border-radius: var(--yui-radius-hero) 0 0 var(--yui-radius-hero);
-  }
-  .arm.right {
-    right: 0;
-    border-left: 0;
-    border-radius: 0 var(--yui-radius-hero) var(--yui-radius-hero) 0;
-  }
-  .arm::after {
-    content: '';
+  /* The pack's cross on a lip; a pressed arm is a copy of the art in the player's colour with the glow outline. */
+  .stack {
     position: absolute;
     inset: 0;
-    margin: auto;
-    width: 0;
-    height: 0;
-    border: 11px solid transparent;
+    filter: drop-shadow(0 var(--yui-lip) 0 var(--k-lip));
+    pointer-events: none;
   }
-  .arm.up::after {
-    border-bottom-color: var(--kit-blue);
-    border-top-width: 0;
+  .piece {
+    position: absolute;
+    inset: 0;
   }
-  .arm.down::after {
-    border-top-color: var(--kit-blue);
-    border-bottom-width: 0;
-  }
-  .arm.left::after {
-    border-right-color: var(--kit-blue);
-    border-left-width: 0;
-  }
-  .arm.right::after {
-    border-left-color: var(--kit-blue);
-    border-right-width: 0;
-  }
-  .arm.lit {
-    background: var(--player);
-    border-color: color-mix(in srgb, var(--player), #000 26%);
-  }
-  .arm.lit::after {
-    filter: brightness(0) invert(1);
-  }
-  .arm.off {
+  .piece.off {
     opacity: 0.35;
   }
 </style>

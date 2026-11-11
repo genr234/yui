@@ -84,6 +84,9 @@
     max-width: 100%;
     aspect-ratio: 1;
     margin: auto;
+    /* Narrow phones: give way to the stick beside it instead of running off the screen. */
+    flex-shrink: 1;
+    min-width: 0;
     grid-template-rows: repeat(3, minmax(0, 1fr));
     place-items: center;
   }

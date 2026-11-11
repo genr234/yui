@@ -3,6 +3,7 @@
   import { StickDriver } from './drivers'
   import { capture, localPoint, usePad } from './context'
   import { validBit } from './sink'
+  import Art from './Art.svelte'
 
   export let props: Record<string, unknown>
   export let style = ''
@@ -65,18 +66,20 @@
   on:lostpointercapture={(e) => up(e, true)}
 >
   {#if active}
-    <span class="ring" style="left:{base[0]}px;top:{base[1]}px;width:{radius * 2}px;height:{radius * 2}px"></span>
-    <span
-      class="knob"
-      style="left:{base[0] + knob[0] * radius}px;top:{base[1] - knob[1] * radius}px"
-    ></span>
+    <span class="ring" style="left:{base[0]}px;top:{base[1]}px;width:{radius * 2 + 44}px;height:{radius * 2 + 44}px">
+      <Art name="joystick_circle_pad_a" glow={false} />
+    </span>
+    <span class="knob k-player" style="left:{base[0] + knob[0] * radius}px;top:{base[1] - knob[1] * radius}px">
+      <Art name="joystick_circle_nub_a" lit />
+    </span>
   {:else}
-    <span class="ring idle"></span>
-    <span class="knob idle"></span>
+    <span class="ring idle"><Art name="joystick_circle_pad_a" glow={false} /></span>
+    <span class="knob idle"><Art name="joystick_circle_nub_a" glow={false} /></span>
   {/if}
 </div>
 
 <style>
+  /* A faint touch zone; the pack's joystick pad and nub ride inside it. */
   .stick {
     position: relative;
     flex: 1;
@@ -93,38 +96,26 @@
   .ring,
   .knob {
     position: absolute;
-    border-radius: 50%;
     transform: translate(-50%, -50%);
     pointer-events: none;
   }
-  /* A sunken well the knob rides in. */
   .ring {
-    border: 2px solid var(--kit-panel-line);
-    background: var(--kit-well);
-    box-shadow: inset 0 6px 0 rgba(58, 65, 81, 0.14), 0 3px 0 rgba(255, 255, 255, 0.35);
+    filter: drop-shadow(0 var(--yui-lip) 0 var(--k-lip));
   }
   .ring.idle {
     left: 50%;
     top: 50%;
-    width: 64%;
+    width: min(116px, 92%);
     aspect-ratio: 1;
-    max-height: 90%;
-    max-width: 90%;
+    max-height: 92%;
   }
   .knob {
-    width: 64px;
-    height: 64px;
-    border: 2px solid var(--kit-key-line);
-    background: linear-gradient(180deg, #fff 0 50%, var(--kit-key) 50%);
-    box-shadow: 0 var(--yui-lip) 0 var(--kit-key-lip), inset 0 0 0 6px rgba(58, 65, 81, 0.05);
+    width: 56px;
+    height: 56px;
+    filter: drop-shadow(0 var(--yui-lip) 0 var(--k-lip));
   }
   .knob.idle {
     left: 50%;
     top: 50%;
-  }
-  .active .knob {
-    border-color: color-mix(in srgb, var(--player), #000 26%);
-    background: linear-gradient(180deg, color-mix(in srgb, var(--player), #fff 16%) 0 50%, var(--player) 50%);
-    box-shadow: 0 var(--yui-lip) 0 color-mix(in srgb, var(--player), #000 26%), inset 0 0 0 3px rgba(255, 255, 255, 0.3);
   }
 </style>

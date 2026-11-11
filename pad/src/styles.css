@@ -56,6 +56,16 @@
   --accent: var(--kit-blue);
   --accent-lip: var(--yui-blue-lip);
   --player: var(--kit-blue);
+  /* Kenney control art palette (controls/art.ts): neutral by default, .k-player recolours */
+  --k-rim: #f2f6f7;
+  --k-face: #dce2e4;
+  --k-mark: var(--kit-blue);
+  --k-edge: #cedde0;
+  --k-shine: #fff;
+  --k-lip: var(--kit-key-lip);
+  --k-ink: var(--ink);
+  --k-hl: #ffc933;
+  --k-hl-line: #ffe272;
   --yui-chrome-fill: rgba(255, 255, 255, 0.18);
   --yui-chrome-active: rgba(255, 255, 255, 0.3);
   color-scheme: light;
@@ -312,4 +322,28 @@ input[type='range']::-moz-range-thumb {
   height: 1px;
   opacity: 0;
   pointer-events: none;
+}
+
+/*
+ * Kenney control art (see controls/art.ts). The inlined SVGs use these classes;
+ * a control sets the --k-* colours (or adds .k-player for the player's colour).
+ */
+.k {
+  display: block;
+  overflow: hidden;
+}
+.k .k-rim { fill: var(--k-rim); }
+.k .k-face { fill: var(--k-face); }
+.k .k-mark { fill: var(--k-mark); }
+.k .k-edge { stroke: var(--k-edge); }
+.k .k-shine { stroke: var(--k-shine); }
+.k .k-hl { fill: var(--k-hl); }
+.k .k-hl-line { stroke: var(--k-hl-line); }
+.k-player {
+  --k-face: var(--player);
+  --k-rim: color-mix(in srgb, var(--player), #fff 34%);
+  --k-mark: #fff;
+  --k-edge: color-mix(in srgb, var(--player), #000 18%);
+  --k-lip: color-mix(in srgb, var(--player), #000 40%);
+  --k-ink: #fff;
 }
