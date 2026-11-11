@@ -137,3 +137,16 @@ test("app.yui.js embeds the current systems.js (run bun run sync)", () => {
 	const app = readFileSync(join(dir, "app.yui.js"), "utf8");
 	expect(withEmbedded(app, readFileSync(join(dir, "web/systems.js"), "utf8"))).toBe(app);
 });
+
+describe("embed aspect", () => {
+	test("every system has a usable screen aspect, the lobby is portrait", () => {
+		for (const system of s.SYSTEMS) {
+			const [w, h] = system.aspect.split(":").map(Number);
+			expect(w / h).toBeGreaterThan(1);
+			expect(w / h).toBeLessThan(2);
+		}
+		expect(s.embedAspect(s.systemFor("gba"))).toBe("3:2");
+		expect(s.embedAspect(s.systemFor("gbc"))).toBe("10:9");
+		expect(s.embedAspect(null)).toBe(s.LOBBY_ASPECT);
+	});
+});

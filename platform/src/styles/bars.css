@@ -91,3 +91,409 @@
 	transform: translateY(3px);
 	border-bottom-width: 2px;
 }
+
+/* ---- Social layer: seat chips, balloons, combo, hype, join corner ---------
+ * Sized for a TV across a room; everything scales with --unit (chip height / 84). */
+.picked-by {
+	min-width: 0;
+	font-size: 15px;
+	font-weight: 700;
+	line-height: 1.15;
+	text-shadow: 0 2px 0 rgba(14, 64, 112, 0.45);
+}
+
+.picked-by strong {
+	display: block;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 22px;
+	font-weight: 800;
+}
+
+.seats {
+	position: absolute;
+	inset: 0;
+	box-sizing: border-box;
+	padding: 12px 16px;
+	display: flex;
+	flex-direction: column;
+	justify-content: flex-end;
+	gap: 8px;
+	pointer-events: none;
+}
+
+.seat-grid {
+	display: grid;
+	justify-content: center;
+}
+
+/* Chips sit left while the join corner holds the right edge. */
+.seat-grid.with-join {
+	justify-content: start;
+}
+
+.seat {
+	position: relative;
+	height: var(--chip-h);
+}
+
+.seat-watch-row {
+	display: flex;
+}
+
+.watch-pill {
+	position: relative;
+	padding: 4px 16px 6px;
+	border: 3px solid #b9bfcd;
+	border-bottom: 5px solid #9ea5b7;
+	border-radius: 999px;
+	font-size: 20px;
+	font-weight: 800;
+	color: #3a4151;
+	background: #e5e8ef;
+}
+
+.seat-chip {
+	--u: var(--unit, 1);
+	position: relative;
+	box-sizing: border-box;
+	width: 100%;
+	height: 100%;
+	display: grid;
+	grid-template-columns: auto 1fr;
+	grid-template-rows: 1fr auto;
+	align-items: center;
+	column-gap: calc(10px * var(--u));
+	padding: calc(10px * var(--u)) calc(12px * var(--u)) calc(6px * var(--u));
+	border: calc(3px * var(--u)) solid #b9bfcd;
+	border-bottom-width: calc(6px * var(--u));
+	border-bottom-color: #9ea5b7;
+	border-radius: calc(16px * var(--u));
+	color: #3a4151;
+	background: #e5e8ef;
+	overflow: hidden;
+	transition: filter 0.2s, opacity 0.2s;
+}
+
+/* The player's colour as a band along the top, like the pad's coloured caps. */
+.seat-chip::before {
+	content: "";
+	position: absolute;
+	inset: 0 0 auto 0;
+	height: calc(8px * var(--u));
+	background: var(--seat);
+}
+
+.seat-chip.away {
+	opacity: 0.55;
+	filter: grayscale(0.7);
+}
+
+.seat-avatar {
+	display: grid;
+	place-items: center;
+	box-sizing: border-box;
+	width: calc(46px * var(--u));
+	height: calc(46px * var(--u));
+	border: calc(3px * var(--u)) solid rgba(0, 0, 0, 0.18);
+	border-radius: 50%;
+	font-size: calc(18px * var(--u));
+	font-weight: 800;
+	color: #fff;
+	background: var(--seat);
+	overflow: hidden;
+}
+
+.seat-avatar img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+.seat-avatar .emoji {
+	font-size: calc(26px * var(--u));
+	line-height: 1;
+}
+
+.seat-text {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	line-height: 1.1;
+}
+
+.seat-text strong {
+	font-size: calc(21px * var(--u));
+	font-weight: 800;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.seat-text span {
+	font-size: calc(14px * var(--u));
+	font-weight: 700;
+	color: #6a7287;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.seat-dots {
+	grid-column: 1 / -1;
+	display: flex;
+	justify-content: space-between;
+	gap: calc(4px * var(--u));
+	padding-top: calc(4px * var(--u));
+}
+
+.seat-dot {
+	flex: 1 1 0;
+	max-width: calc(26px * var(--u));
+	height: calc(10px * var(--u));
+	border-radius: 999px;
+	background: #c4c9d5;
+	transition: background 0.06s, transform 0.06s;
+}
+
+.seat-dot.on {
+	transform: scale(1.15);
+	box-shadow: 0 0 0 calc(2px * var(--u)) rgba(255, 255, 255, 0.8);
+}
+.seat-dot.on.dot-dpad { background: #3d9de0; }
+.seat-dot.on.dot-south { background: #3fbf6a; }
+.seat-dot.on.dot-east { background: #e5484d; }
+.seat-dot.on.dot-west { background: #3d9de0; }
+.seat-dot.on.dot-north { background: #f5b928; }
+.seat-dot.on.dot-shoulder { background: #8e6bd8; }
+.seat-dot.on.dot-menu { background: #3a4151; }
+
+/* Poke: the chip shakes, and the sender's coloured hand taps its corner. */
+.seat-chip.poked {
+	animation: seat-wiggle 0.9s ease-in-out both;
+}
+
+.seat-poke {
+	position: absolute;
+	top: calc(10px * var(--u));
+	right: calc(8px * var(--u));
+	display: grid;
+	place-items: center;
+	width: calc(40px * var(--u));
+	height: calc(40px * var(--u));
+	border-radius: 50%;
+	background: #fff;
+	box-shadow: 0 calc(3px * var(--u)) 0 rgba(0, 0, 0, 0.2);
+	animation: seat-hand 0.9s ease-out both;
+}
+
+@keyframes seat-wiggle {
+	0%, 100% { transform: none; }
+	12% { transform: translateX(-8px) rotate(-3deg); }
+	27% { transform: translateX(8px) rotate(3deg); }
+	42% { transform: translateX(-6px) rotate(-2deg); }
+	57% { transform: translateX(6px) rotate(2deg); }
+	72% { transform: translateX(-3px) rotate(-1deg); }
+	87% { transform: translateX(3px) rotate(1deg); }
+}
+
+@keyframes seat-hand {
+	0% { opacity: 0; transform: translateX(-36px) scale(0.6); }
+	20% { opacity: 1; transform: translateX(0) scale(1.15); }
+	35% { transform: scale(1); }
+	80% { opacity: 1; }
+	100% { opacity: 0; }
+}
+
+/* Rising balloons: anchored at the top centre of the chip (or pill), floating up. */
+.bubble-layer {
+	position: absolute;
+	left: 50%;
+	top: 0;
+	width: 0;
+	height: 0;
+	z-index: 5;
+	overflow: visible;
+}
+
+.bubble {
+	position: absolute;
+	left: 0;
+	bottom: 0;
+	width: 64px;
+	height: 76px;
+	transform: translate(calc(-50% + var(--dx, 0px)), 0);
+	filter: drop-shadow(0 4px 0 rgba(14, 64, 112, 0.35));
+	animation: bubble-rise 1.8s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+@keyframes bubble-rise {
+	0% { opacity: 0; transform: translate(calc(-50% + var(--dx, 0px)), 10px) scale(0.3); }
+	10% { opacity: 1; transform: translate(calc(-50% + var(--dx, 0px)), -8px) scale(1.25); }
+	20% { transform: translate(calc(-50% + var(--dx, 0px)), -16px) scale(0.95); }
+	28% { transform: translate(calc(-50% + var(--dx, 0px)), -24px) scale(1); }
+	70% { opacity: 1; }
+	100% { opacity: 0; transform: translate(calc(-50% + var(--dx, 0px)), -105px) scale(1); }
+}
+
+/* Combo banner over the title, and the hype meter along the top bar's lower edge. */
+.hype {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+}
+
+.combo {
+	position: absolute;
+	left: 50%;
+	top: 46%;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 6px 20px 6px 14px;
+	border: 4px solid #b9bfcd;
+	border-bottom-width: 8px;
+	border-bottom-color: #9ea5b7;
+	border-radius: 24px;
+	color: #3a4151;
+	background: #e5e8ef;
+	transform: translate(-50%, -50%);
+	animation: combo-pop 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+
+.combo-emote {
+	width: 64px;
+	height: 76px;
+	margin-top: -6px;
+}
+
+.combo-count {
+	font-size: 52px;
+	font-weight: 900;
+	line-height: 1;
+	color: #e5484d;
+	text-shadow: 0 4px 0 rgba(0, 0, 0, 0.12);
+}
+
+@keyframes combo-pop {
+	0% { opacity: 0; transform: translate(-50%, -50%) scale(0.2) rotate(-8deg); }
+	60% { opacity: 1; transform: translate(-50%, -50%) scale(1.15) rotate(3deg); }
+	100% { opacity: 1; transform: translate(-50%, -50%) scale(1) rotate(0); }
+}
+
+.hype-meter {
+	position: absolute;
+	left: 50%;
+	bottom: 12px;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	width: min(78%, 520px);
+	transform: translateX(-50%);
+	opacity: 0;
+	transition: opacity 0.4s;
+}
+
+.hype-meter.on {
+	opacity: 1;
+}
+
+.hype-label {
+	font-size: 22px;
+	font-weight: 900;
+	letter-spacing: 0.08em;
+	text-shadow: 0 3px 0 rgba(14, 64, 112, 0.45);
+}
+
+.hype-track {
+	flex: 1;
+	height: 24px;
+	box-sizing: border-box;
+	border: 3px solid #b9bfcd;
+	border-bottom: 5px solid #9ea5b7;
+	border-radius: 999px;
+	background: #e5e8ef;
+	overflow: hidden;
+}
+
+.hype-fill {
+	display: block;
+	height: 100%;
+	border-radius: 999px;
+	background: linear-gradient(180deg, #ffd35c 0 50%, #f5b928 50%);
+	transition: width 0.12s linear, background 0.3s;
+}
+
+.hype-meter[data-level="warm"] .hype-fill {
+	background: linear-gradient(180deg, #ffa24d 0 50%, #f58220 50%);
+}
+
+.hype-meter[data-level="hot"] .hype-fill {
+	background: linear-gradient(180deg, #ff6b78 0 50%, #e5484d 50%);
+}
+
+/* Join corner: bottom right. */
+.join-corner {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 2px;
+	padding: 6px 10px 8px;
+	border: 3px solid #b9bfcd;
+	border-bottom: 6px solid #9ea5b7;
+	border-radius: 16px;
+	color: #3a4151;
+	background: #e5e8ef;
+	line-height: 1.15;
+}
+
+.join-qr-frame {
+	display: grid;
+	border-radius: 8px;
+	overflow: hidden;
+}
+
+.join-corner strong {
+	font-size: 17px;
+	font-weight: 800;
+}
+
+.join-corner span {
+	font-size: 14px;
+	font-weight: 700;
+	color: #6a7287;
+}
+
+/* Reduced motion: balloons, the combo and pokes only fade. */
+@media (prefers-reduced-motion: reduce) {
+	.bubble {
+		animation: bubble-fade 1.8s linear both;
+		transform: translate(calc(-50% + var(--dx, 0px)), -20px);
+	}
+	.combo {
+		animation: bubble-fade 0.6s linear both;
+	}
+	.seat-chip.poked {
+		animation: none;
+		box-shadow: 0 0 0 4px #fff;
+	}
+	.seat-poke {
+		animation: bubble-fade 0.9s linear both;
+	}
+	.seat-dot.on {
+		transform: none;
+	}
+	.hype-fill,
+	.hype-meter,
+	.seat-dot {
+		transition: none;
+	}
+}
+
+@keyframes bubble-fade {
+	0% { opacity: 0; }
+	15% { opacity: 1; }
+	70% { opacity: 1; }
+	100% { opacity: 0; }
+}

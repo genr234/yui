@@ -32,40 +32,48 @@ const POSITION_TO_RETROPAD = {
 const ALL_BUTTONS = Object.keys(PAD_BITS);
 
 /**
- * id: Yui's metadata.platform; core: EmulatorJS's EJS_core; cores: the
+ * id: Yui's metadata.platform; aspect: the screen's width:height as the player sees it (the letterbox bars use it); core: EmulatorJS's EJS_core; cores: the
  * core files the runtime needs; ports: how many players at once; labels:
  * what the phone shows; buttons: which positions the system has (the rest
  * are hidden); analog: the left stick goes to the core as a stick (else it
  * drives the d-pad); rewindOn: the free button that holds rewind.
  */
 const SYSTEMS = [
-	{ id: "nes", name: "NES", core: "nes", cores: ["fceumm"], ports: 2, color: "#c8102e",
+	{ id: "nes", aspect: "4:3", name: "NES", core: "nes", cores: ["fceumm"], ports: 2, color: "#c8102e",
 		labels: { South: "B", East: "A" }, buttons: ["South", "East", "Select", "Start"], rewindOn: "L2" },
-	{ id: "snes", name: "Super NES", core: "snes", cores: ["snes9x"], ports: 2, color: "#6a5acd",
+	{ id: "snes", aspect: "4:3", name: "Super NES", core: "snes", cores: ["snes9x"], ports: 2, color: "#6a5acd",
 		labels: { South: "B", East: "A", West: "Y", North: "X", L1: "L", R1: "R" },
 		buttons: ["South", "East", "West", "North", "L1", "R1", "Select", "Start"] },
-	{ id: "gb", name: "Game Boy", core: "gb", cores: ["gambatte"], ports: 1, color: "#8b956d",
+	{ id: "gb", aspect: "10:9", name: "Game Boy", core: "gb", cores: ["gambatte"], ports: 1, color: "#8b956d",
 		labels: { South: "B", East: "A" }, buttons: ["South", "East", "Select", "Start"], rewindOn: "L2" },
-	{ id: "gbc", name: "Game Boy Color", core: "gb", cores: ["gambatte"], ports: 1, color: "#7b3fa0",
+	{ id: "gbc", aspect: "10:9", name: "Game Boy Color", core: "gb", cores: ["gambatte"], ports: 1, color: "#7b3fa0",
 		labels: { South: "B", East: "A" }, buttons: ["South", "East", "Select", "Start"], rewindOn: "L2" },
-	{ id: "gba", name: "Game Boy Advance", core: "gba", cores: ["mgba"], ports: 1, color: "#4b3c9e",
+	{ id: "gba", aspect: "3:2", name: "Game Boy Advance", core: "gba", cores: ["mgba"], ports: 1, color: "#4b3c9e",
 		labels: { South: "B", East: "A", L1: "L", R1: "R" }, buttons: ["South", "East", "L1", "R1", "Select", "Start"] },
-	{ id: "genesis", name: "Mega Drive", core: "segaMD", cores: ["genesis_plus_gx"], ports: 2, color: "#1f1f1f",
+	{ id: "genesis", aspect: "4:3", name: "Mega Drive", core: "segaMD", cores: ["genesis_plus_gx"], ports: 2, color: "#1f1f1f",
 		labels: { West: "A", South: "B", East: "C", L1: "X", North: "Y", R1: "Z", Start: "Start", Select: "Mode" },
 		buttons: ["West", "South", "East", "L1", "North", "R1", "Start", "Select"], rewindOn: "L2" },
-	{ id: "sms", name: "Master System", core: "segaMS", cores: ["smsplus", "genesis_plus_gx"], ports: 2, color: "#d22630",
+	{ id: "sms", aspect: "4:3", name: "Master System", core: "segaMS", cores: ["smsplus", "genesis_plus_gx"], ports: 2, color: "#d22630",
 		labels: { South: "1", East: "2", Start: "Pause" }, buttons: ["South", "East", "Start"], rewindOn: "L2" },
-	{ id: "gg", name: "Game Gear", core: "segaGG", cores: ["genesis_plus_gx"], ports: 1, color: "#2b2b2b",
+	{ id: "gg", aspect: "10:9", name: "Game Gear", core: "segaGG", cores: ["genesis_plus_gx"], ports: 1, color: "#2b2b2b",
 		labels: { South: "1", East: "2", Start: "Start" }, buttons: ["South", "East", "Start"], rewindOn: "L2" },
-	{ id: "pce", name: "PC Engine", core: "pce", cores: ["mednafen_pce"], ports: 1, color: "#e8e8e8",
+	{ id: "pce", aspect: "4:3", name: "PC Engine", core: "pce", cores: ["mednafen_pce"], ports: 1, color: "#e8e8e8",
 		labels: { South: "II", East: "I", Select: "Select", Start: "Run" }, buttons: ["South", "East", "Select", "Start"], rewindOn: "L2" },
-	{ id: "atari2600", name: "Atari 2600", core: "atari2600", cores: ["stella2014"], ports: 2, color: "#7a4a1d",
+	{ id: "atari2600", aspect: "4:3", name: "Atari 2600", core: "atari2600", cores: ["stella2014"], ports: 2, color: "#7a4a1d",
 		labels: { South: "Fire", Select: "Select", Start: "Reset" }, buttons: ["South", "Select", "Start"], rewindOn: "L2" },
-	{ id: "lynx", name: "Lynx", core: "lynx", cores: ["handy"], ports: 1, color: "#3a3a3a",
+	{ id: "lynx", aspect: "80:51", name: "Lynx", core: "lynx", cores: ["handy"], ports: 1, color: "#3a3a3a",
 		labels: { South: "B", East: "A", L1: "Opt 1", R1: "Opt 2", Start: "Pause" }, buttons: ["South", "East", "L1", "R1", "Start"] },
 ];
 
 const DPAD = ["Up", "Down", "Left", "Right"];
+
+/** Aspect for the lobby page: the kiosk's own portrait shape, so the picker fills the screen. */
+const LOBBY_ASPECT = "9:16";
+
+/** The embed's aspect: the running system's screen, or the picker's while in the lobby. */
+function embedAspect(system) {
+	return system?.aspect ?? LOBBY_ASPECT;
+}
 
 function systemFor(platform) {
 	const id = String(platform ?? "").toLowerCase();
@@ -260,5 +268,5 @@ function libraryIdFor(assetId) {
 export {
 	EMULATORJS_VERSION, EMULATORJS_RUNTIME, RETROPAD, PAD_BITS, POSITION_TO_RETROPAD, SYSTEMS,
 	systemFor, phonePreset, createInputMapper, titleHue, tileSvg, saveKeyBase, stateKey, sramKey,
-	statesFor, nextStateSlot, assignPorts, selectGames, fetchLabel, libraryIdFor,
+	statesFor, nextStateSlot, embedAspect, LOBBY_ASPECT, assignPorts, selectGames, fetchLabel, libraryIdFor,
 };
