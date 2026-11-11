@@ -97,7 +97,9 @@ body {
 .badge-pill b { font-family: var(--pixel); font-size: 11px; color: var(--accent); }
 
 .avatar { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 17px; font-weight: 700; color: #fff; overflow: hidden; flex: none; }
-.avatar img { width: 100%; height: 100%; object-fit: cover; }
+.avatar yui-avatar { width: 100%; height: 100%; }
+/* A creature wears the player's colour, so it sits on a white plate. */
+.avatar yui-avatar[data-avatar-kind="creature"] { box-sizing: border-box; padding: 8%; background: #fff; border-radius: 50%; }
 .avatar.big { width: 84px; height: 84px; font-size: 42px; }
 
 /* ---- overlays -------------------------------------------------------- */

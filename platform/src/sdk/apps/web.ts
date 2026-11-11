@@ -362,6 +362,7 @@ export function createWebHost(app: YuiSimpleApp, ensure: Ensure, controllers?: C
 			color: player.color,
 			host: Boolean(player.host),
 			connected: player.connected !== false,
+			avatar: typeof player.avatar === "string" ? player.avatar : null,
 		}));
 	}
 

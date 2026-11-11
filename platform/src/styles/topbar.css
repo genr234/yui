@@ -341,7 +341,7 @@ button.topbar-chip {
 	border-radius: 8px;
 }
 
-.session-slot.has-avatar .player-avatar.emoji {
+.session-slot.has-avatar .player-avatar[data-avatar-kind="emoji"] {
 	font-size: 19px;
 }
 
@@ -514,8 +514,15 @@ button.topbar-chip {
 	line-height: 1;
 }
 
-.player-avatar.emoji {
+.player-avatar[data-avatar-kind="emoji"] {
 	font-size: 15px;
+}
+
+/* A creature wears the player's colour, so it sits on a white plate. */
+.player-avatar[data-avatar-kind="creature"] {
+	box-sizing: border-box;
+	padding: 2px;
+	background: #fff;
 }
 
 .player-square.open {

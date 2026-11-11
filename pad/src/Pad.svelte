@@ -9,6 +9,7 @@
   import Avatar from './Avatar.svelte'
   import SimGyro from './SimGyro.svelte'
   import { colorHex } from './colors'
+  import { rememberAvatar } from './avatar'
   import { cableUrl, forgetAccount, getIce, grantProfile, linkAccount, simSlotFromQuery, updateAvatar, useAccount } from './api'
   import { InputModel } from './input/model'
   import { InputLoop } from './input/loop'
@@ -233,6 +234,7 @@
       return
     }
     player = (await updateAvatar(code, avatar)).player
+    if (!sim) rememberAvatar(localStorage, avatar)
   }
 
   function startSession() {
@@ -404,7 +406,7 @@
 <div class="pad" class:landscape style="--player:{swatch}">
   <header>
     <span class="slot" class:with-avatar={!!player.avatar}
-      ><Avatar avatar={player.avatar} size={26} />{player.slot ? `P${player.slot}` : 'Spectator'}</span
+      ><Avatar avatar={player.avatar} color={swatch} size={26} />{player.slot ? `P${player.slot}` : 'Spectator'}</span
     >
     <span class="name">{player.name}</span>
     {#if player.speaker}
@@ -443,7 +445,7 @@
       <section class="waiting">
         <div class="badge-card" class:with-avatar={!!player.avatar}>
           {#if player.avatar}
-            <div class="big-avatar"><Avatar avatar={player.avatar} size={96} /></div>
+            <div class="big-avatar"><Avatar avatar={player.avatar} color={swatch} size={96} /></div>
           {/if}
           <span class="badge-name">{player.name}</span>
           <div class="badge"><small>{player.host ? 'Host' : 'Player'}</small>{player.slot ? `P${player.slot}` : '—'}</div>

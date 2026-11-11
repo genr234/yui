@@ -12,7 +12,7 @@
  * without a kiosk). The demo bridge points `webapps.origin` here.
  */
 import { createReadStream, existsSync, readdirSync, readFileSync, rmSync, statSync, cpSync, mkdirSync, copyFileSync } from "node:fs";
-import { extname, join, resolve, sep } from "node:path";
+import { dirname, extname, join, resolve, sep } from "node:path";
 import type { Plugin } from "vite";
 
 type WebApp = { id: string; dir: string };
@@ -108,6 +108,9 @@ function demoAssets(root: string) {
 		});
 }
 
+/** Files served at `_yui/<name>` on every app origin besides embed.js (see controller/internal/webapps). */
+const yuiFiles = ["avatar.js", "avatar-atlas.png"];
+
 export function yuiAppWeb(options: { appsRoot: string; embedJs: string; demoRoot: string }): Plugin {
 	let outDir = "";
 	return {
@@ -126,6 +129,8 @@ export function yuiAppWeb(options: { appsRoot: string; embedJs: string; demoRoot
 			}
 			mkdirSync(target, { recursive: true });
 			copyFileSync(options.embedJs, join(target, "embed.js"));
+			// The avatar renderer for app pages sits next to the embed helper.
+			for (const name of yuiFiles) copyFileSync(join(dirname(options.embedJs), name), join(target, name));
 		},
 		configureServer(server) {
 			const runtimes = join(options.demoRoot, ".demo-runtimes");
@@ -147,6 +152,7 @@ export function yuiAppWeb(options: { appsRoot: string; embedJs: string; demoRoot
 				const [, appId, rest] = match;
 				let file: string | null = null;
 				if (rest === "_yui/embed.js") file = options.embedJs;
+				else if (rest.startsWith("_yui/") && yuiFiles.includes(rest.slice("_yui/".length))) file = join(dirname(options.embedJs), rest.slice("_yui/".length));
 				else if (rest.startsWith("_runtime/")) {
 					const [, name, ...tail] = rest.split("/");
 					file = name ? inside(resolve(runtimes, name), tail.join("/") || "index.html") : null;

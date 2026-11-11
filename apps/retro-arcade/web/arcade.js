@@ -345,16 +345,15 @@ async function resume(countdown) {
 function fillAvatar(el, player) {
   el.replaceChildren();
   if (!player) return;
-  el.style.background = player.swatch || "#5b4bd6";
-  const avatar = String(player.avatar || "");
-  if (/^data:image\/(png|jpeg|webp);base64,/.test(avatar)) {
-    const img = document.createElement("img");
-    img.alt = "";
-    img.src = avatar;
-    el.append(img);
-  } else {
-    el.textContent = avatar || String(player.name || "?").slice(0, 1).toUpperCase();
-  }
+  const color = player.swatch || "#5b4bd6";
+  el.style.background = color;
+  // <yui-avatar> (from _yui/avatar.js) draws a creature, selfie or emoji, and
+  // the player's initial when there is none.
+  const avatar = document.createElement("yui-avatar");
+  avatar.setAttribute("avatar", String(player.avatar || ""));
+  avatar.setAttribute("color", color);
+  avatar.setAttribute("fallback", String(player.name || "?").slice(0, 1).toUpperCase());
+  el.append(avatar);
 }
 
 function renderBadges() {

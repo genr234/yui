@@ -2,7 +2,7 @@
   import type { Player } from '@yui/protocol'
   import { colorHex } from './colors'
   import Avatar from './Avatar.svelte'
-  import AvatarPicker from './AvatarPicker.svelte'
+  import CreatureBuilder from './CreatureBuilder.svelte'
   import CodeEntry from './CodeEntry.svelte'
   import { friendlyError } from './api'
 
@@ -35,21 +35,23 @@
   // A role change from the kiosk (or a failed ask) re-enables the buttons.
   $: ((player.speaker, player.speaker_channel), (speakerAsked = ''))
   let editingAvatar = false
-  let draftAvatar: string | null = null
   let savingAvatar = false
   let avatarError = ''
 
   function editAvatar() {
-    draftAvatar = player.avatar ?? null
     avatarError = ''
     editingAvatar = true
   }
 
-  async function saveAvatar() {
+  async function saveAvatar(next: string) {
+    if (next === (player.avatar ?? null)) {
+      editingAvatar = false
+      return
+    }
     savingAvatar = true
     avatarError = ''
     try {
-      await onAvatar(draftAvatar)
+      await onAvatar(next)
       editingAvatar = false
     } catch {
       avatarError = "Couldn't save that avatar. Try again."
@@ -103,33 +105,32 @@
   }
 </script>
 
+{#if editingAvatar}
+  <CreatureBuilder
+    value={player.avatar ?? null}
+    color={colorHex(player.color)}
+    busy={savingAvatar}
+    error={avatarError}
+    doneLabel="Save"
+    onCancel={() => (editingAvatar = false)}
+    onDone={saveAvatar}
+  />
+{/if}
+
 <div class="scrim" role="presentation" on:click|self={onResume}>
   <div class="sheet kit-panel" role="dialog" aria-modal="true" aria-label="Home" style="--player:{colorHex(player.color)}">
     <header>
       <span class="slot" class:with-avatar={!!player.avatar}
-        ><Avatar avatar={player.avatar} size={40} />{player.slot ? `P${player.slot}` : 'Spectator'}</span
+        ><Avatar avatar={player.avatar} color={colorHex(player.color)} size={40} />{player.slot ? `P${player.slot}` : 'Spectator'}</span
       >
       <div class="who">
         <strong>{player.name}</strong>
         <span class="muted">{kioskName || 'Yui'}{player.host ? ' · host' : ''}</span>
       </div>
       {#if !editingAvatar}
-        <button class="link" type="button" on:click={editAvatar}>{player.avatar ? 'Change avatar' : 'Add avatar'}</button>
+        <button class="link" type="button" on:click={editAvatar}>{player.avatar ? 'Change creature' : 'Make a creature'}</button>
       {/if}
     </header>
-
-    {#if editingAvatar}
-      <section class="avatar-edit" aria-label="Avatar">
-        <AvatarPicker bind:value={draftAvatar} disabled={savingAvatar} />
-        {#if avatarError}<p class="err" role="alert">{avatarError}</p>{/if}
-        <div class="avatar-actions">
-          <button class="secondary" type="button" disabled={savingAvatar} on:click={() => (editingAvatar = false)}>Cancel</button>
-          <button class="primary" type="button" disabled={savingAvatar || draftAvatar === (player.avatar ?? null)} on:click={saveAvatar}
-            >{savingAvatar ? 'Saving…' : 'Save avatar'}</button
-          >
-        </div>
-      </section>
-    {/if}
 
     <button class="primary big" on:click={onResume}>{playing ? 'Resume' : 'Close'}</button>
 
@@ -309,20 +310,6 @@
   .link:active {
     transform: translateY(3px);
     box-shadow: none;
-  }
-  .avatar-edit {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    padding: 12px;
-    border: 2px solid var(--kit-key-line);
-    border-radius: var(--yui-radius-hero);
-    background: #fff;
-  }
-  .avatar-actions {
-    display: grid;
-    grid-template-columns: 1fr 1.4fr;
-    gap: 10px;
   }
   .err {
     margin: 0;

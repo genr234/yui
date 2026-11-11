@@ -18,7 +18,8 @@ type Player struct {
 	// AccountLinked: this player is playing as a Yui account this session.
 	// Never the account itself (plan 10, P5).
 	AccountLinked bool `json:"account_linked"`
-	// Avatar is an emoji or a small data:image/jpeg|webp;base64 selfie
+	// Avatar is a creature recipe ("yui:c1:…", optionally with a selfie), or
+	// from older pads an emoji or a small data:image/jpeg|webp;base64 selfie
 	// (contracts §2). Rails clears it when the session ends.
 	Avatar string `json:"avatar,omitempty"`
 }

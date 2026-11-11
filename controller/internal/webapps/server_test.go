@@ -334,6 +334,14 @@ func TestEmbedHelperServedToEveryBundle(t *testing.T) {
 			t.Errorf("%s: body is not the embed helper", app)
 		}
 	}
+	// The avatar renderer and its atlas ride along the same way.
+	host := hostOf(f.origin("dev.demo"))
+	if rec := f.do("GET", host, "/_yui/avatar.js", nil); rec.Code != 200 || !strings.Contains(rec.Body.String(), "yui-avatar") {
+		t.Errorf("avatar.js: %d", rec.Code)
+	}
+	if rec := f.do("GET", host, "/_yui/avatar-atlas.png", nil); rec.Code != 200 || rec.Header().Get("Content-Type") != "image/png" {
+		t.Errorf("avatar-atlas.png: %d %q", rec.Code, rec.Header().Get("Content-Type"))
+	}
 	if rec := f.do("GET", hostOf(f.origin("dev.demo")), "/_yui/other.js", nil); rec.Code != 404 {
 		t.Errorf("unknown _yui path: %d", rec.Code)
 	}
