@@ -215,9 +215,11 @@
           <button class="link account-link" type="button" on:click={() => (enteringCode = true)}>Use my Yui account</button>
         {/if}
 
-        {#if error}<p class="err" role="alert">{error}</p>{/if}
-
-        <button class="primary" type="submit" disabled={!canJoin}>{busy ? 'Joining…' : 'Join'}</button>
+        <!-- Pinned to the bottom of the screen so Join is reachable on short phones. -->
+        <div class="join-bar">
+          {#if error}<p class="err" role="alert">{error}</p>{/if}
+          <button class="primary" type="submit" disabled={!canJoin}>{busy ? 'Joining…' : 'Join'}</button>
+        </div>
       </form>
     {/if}
     {#if screen === 'join' && enteringCode}
@@ -265,6 +267,23 @@
   .join {
     justify-content: center;
   }
+  .join-bar {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    /* Sit above the home indicator, and fade the form out behind the button. */
+    margin: 0 calc(-1 * max(20px, env(safe-area-inset-right))) calc(-1 * max(20px, env(safe-area-inset-bottom)))
+      calc(-1 * max(20px, env(safe-area-inset-left)));
+    padding: 16px max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom))
+      max(20px, env(safe-area-inset-left));
+    background: linear-gradient(180deg, rgba(13, 24, 37, 0), #0d1825 22px);
+  }
+  .join-bar .primary {
+    width: 100%;
+  }
   .eyebrow {
     margin: 0;
     color: var(--yui-blue-soft);
@@ -299,7 +318,7 @@
     gap: 12px;
   }
   .chip {
-    aspect-ratio: 1;
+    aspect-ratio: 1.6;
     border: 3px solid transparent;
     border-radius: var(--yui-radius-hero);
     background: var(--chip);

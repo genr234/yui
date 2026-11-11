@@ -56,7 +56,9 @@ body {
   margin: 0;
   max-width: 100%;
   min-height: 100%;
-  overflow-x: hidden;
+  /* clip, not hidden: hidden on both html and body makes body its own scroll
+     box, which breaks page scrolling on some phones and position: sticky. */
+  overflow-x: clip;
   background: #0d1825;
   background-image: var(--yui-chrome);
   background-attachment: fixed;
