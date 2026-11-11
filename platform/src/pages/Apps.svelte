@@ -317,7 +317,7 @@
                   <span>Join on your phone</span>
                   <strong>{padState.session.code}</strong>
                 </span>
-                <JoinQr value={padState.session.join_url} label={`QR code to join session ${padState.session.code}`} />
+                <JoinQr value={padState.session.join_url} quiet={2} label={`QR code to join session ${padState.session.code}`} />
               </button>
             {/if}
           </div>

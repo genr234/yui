@@ -43,7 +43,7 @@ func PadCommands() []Command {
 }
 
 func emptyPadSnapshot() session.Snapshot {
-	return session.Snapshot{Players: []session.Player{}}
+	return session.EmptySnapshot()
 }
 
 // BindPadLifecycle ties play sessions to the controller process. Cancelling
@@ -72,6 +72,7 @@ func (r *Registry) BindPadLifecycle(ctx context.Context) {
 // whatever network they are on.
 func runHotspot(mgr *session.Manager, code, configDir string, done <-chan struct{}) {
 	ssid, password := hotspot.SSID(code), hotspot.Password()
+	mgr.SetWiFiPending(true)
 	hotspotMu.Lock()
 	hotspotGen++
 	gen := hotspotGen
@@ -82,6 +83,7 @@ func runHotspot(mgr *session.Manager, code, configDir string, done <-chan struct
 	}
 	if err != nil {
 		log.Printf("pad hotspot: %v", err)
+		mgr.SetWiFiPending(false)
 	} else {
 		log.Printf("pad hotspot: %s %s", ssid, band)
 		mgr.SetWiFi(session.NewWiFi(ssid, password))

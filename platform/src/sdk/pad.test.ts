@@ -152,3 +152,28 @@ describe("avatarKind", () => {
 		expect(avatarKind(42)).toBeNull();
 	});
 });
+
+describe("shared pad state", () => {
+	test("a late, older snapshot does not replace a newer one", () => {
+		const seen: Array<string | null> = [];
+		const off = pad.onState((state) => seen.push(state.session?.code ?? null));
+		const push = listeners.get("pad.players")!;
+		push({ session: { code: "NEWW", join_url: "https://yui.example/j?t=B" }, players: [], seq: 101 });
+		// The last session's final snapshot, delivered late.
+		push({ session: null, players: [], seq: 100 });
+		push({ session: { code: "NEWW", join_url: "https://yui.example/j?t=C" }, players: [], seq: 102 });
+		expect(seen).toEqual(["NEWW", "NEWW"]);
+		off();
+	});
+
+	test("command replies reach every view, not only the caller", async () => {
+		const seen: Array<string | null> = [];
+		const off = pad.onState((state) => seen.push(state.session?.code ?? null));
+		fail = null;
+		const started = pad.run("start");
+		release({ session: { code: "RPLY", join_url: "https://yui.example/j" }, players: [], seq: 500 });
+		await started;
+		expect(seen).toEqual(["RPLY"]);
+		off();
+	});
+});

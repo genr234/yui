@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { onDestroy } from "svelte";
-	import JoinQr from "./JoinQr.svelte";
-	import WifiQr from "./WifiQr.svelte";
+	import JoinSteps from "./JoinSteps.svelte";
+	import type { PadState } from "../sdk/pad";
 	import AppIcon from "./apps/AppIcon.svelte";
 	import { nextSlide, type ShowcaseEntry } from "../attract";
 	import type { YuiDevApp } from "../sdk/apps";
 
 	/** Event mode's full-screen loop. App.svelte decides when it is shown. */
 	export let shown = false;
-	export let session: { code: string; join_url: string; wifi?: { ssid: string; qr: string } } | null = null;
+	export let session: PadState["session"] = null;
 	export let entries: ShowcaseEntry<YuiDevApp>[] = [];
 
 	/** How long each cover stays up. */
@@ -77,22 +77,19 @@
 			<h1>Play with your phone</h1>
 			<p class="attract-sub">No app, no account. Point your camera at the code.</p>
 			<div class="attract-join">
-				{#if session?.wifi}
-					<div class="attract-qr">
-						<WifiQr wifi={session.wifi} size={220} />
-					</div>
-				{/if}
-				<div class="attract-qr">
-					{#if session?.join_url}
-						<JoinQr value={session.join_url} size={300} label="QR code to join this kiosk" />
-					{:else}
-						<span class="attract-qr-wait">Getting a code ready</span>
-					{/if}
-				</div>
 				{#if session}
+					<JoinSteps
+						{session}
+						tone="dark"
+						size={session.wifi || session.wifi_pending ? "min(240px, 26vh, 15vw)" : "min(300px, 32vh, 20vw)"}
+					/>
 					<div class="attract-code">
 						<small>Or go to {host || "the join page"} and enter</small>
 						<strong>{session.code}</strong>
+					</div>
+				{:else}
+					<div class="attract-qr">
+						<span class="attract-qr-wait">Getting a code ready</span>
 					</div>
 				{/if}
 			</div>

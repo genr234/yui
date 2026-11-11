@@ -72,10 +72,17 @@ export type PadState = {
 		join_url: string;
 		lobby_open?: boolean;
 		/** The kiosk's own hotspot while it is on: `qr` is a WIFI: join code. */
-		wifi?: { ssid: string; qr: string };
+		wifi?: PadWifi;
+		/** The hotspot is still starting; `wifi` follows when it is up. */
+		wifi_pending?: boolean;
 	} | null;
 	players: PadPlayer[];
+	/** Controller order: a lower `seq` than one already shown is stale. */
+	seq?: number;
 };
+
+/** The kiosk hotspot: name, passphrase (for phones that cannot scan) and its WIFI: QR text. */
+export type PadWifi = { ssid: string; password?: string; qr: string };
 
 const empty: PadState = { session: null, players: [] };
 
@@ -85,13 +92,10 @@ const empty: PadState = { session: null, players: [] };
  * event. Before the controller implements them this reports no session.
  */
 export const pad = {
-	state: () =>
-		bridge
-			.send<PadState | null>("pad.players")
-			.then((state) => normalize(state))
-			.catch(() => empty),
-	onState: (fn: (state: PadState) => void) =>
-		bridge.on<PadState>("pad.players", (state) => fn(normalize(state))),
+	/** The latest state; asks the controller and keeps whichever is newer. */
+	state: () => refresh(),
+	/** Every newer state, from events and from replies to pad commands alike. */
+	onState: (fn: (state: PadState) => void) => subscribe(fn),
 	/**
 	 * The session ended by itself because nobody was there (no phones, or
 	 * nobody played for a while). Any native game it ran is being closed.
@@ -175,7 +179,7 @@ function runPadAction(kind: "start" | "end"): Promise<PadState | null> {
 		.send<PadState | null>(method)
 		.then((state) => {
 			padAction.set({ busy: false, error: "" });
-			return normalize(state);
+			return accept(state);
 		})
 		.catch((err: unknown) => {
 			const message = err instanceof Error && err.message ? err.message : "Could not change phone play";
@@ -194,7 +198,7 @@ function playerAction(method: string, params: Record<string, unknown>): Promise<
 		.send<PadState | null>(method, params)
 		.then((state) => {
 			padAction.update((current) => ({ ...current, error: "" }));
-			return normalize(state);
+			return accept(state);
 		})
 		.catch((err: unknown) => {
 			const message = err instanceof Error && err.message ? err.message : "That didn't work";
@@ -208,6 +212,88 @@ function normalize(state: PadState | null | undefined): PadState {
 	return {
 		session: state.session?.code ? state.session : null,
 		players: Array.isArray(state.players) ? state.players : [],
+		seq: typeof state.seq === "number" ? state.seq : undefined,
+	};
+}
+
+/*
+ * One shared copy of the session for every view (top bar, attract screen,
+ * Apps, app join cards). Snapshots reach it three ways: `pad.players`
+ * events, replies to pad commands, and fresh fetches. They can arrive out
+ * of order, so one older than the newest seen is dropped; without that a
+ * late "no session" from the last session could hide the new QR. An event
+ * lost while the bridge reconnected is made up for by a fetch on reopen,
+ * and a watchdog fetches again if a session goes quiet for longer than the
+ * QR's 30-second rotation.
+ */
+let current: PadState = empty;
+let lastSeq = -1;
+let lastUpdate = 0;
+const subscribers = new Set<(state: PadState) => void>();
+let stopFeed: (() => void) | null = null;
+
+/** Seconds a live session may go without an update before it is fetched again. */
+const QUIET_MS = 40_000;
+
+function accept(raw: PadState | null | undefined): PadState {
+	const next = normalize(raw);
+	if (typeof next.seq === "number") {
+		if (next.seq <= lastSeq) return current;
+		lastSeq = next.seq;
+	}
+	current = next;
+	lastUpdate = Date.now();
+	for (const fn of [...subscribers]) {
+		try {
+			fn(current);
+		} catch (error) {
+			console.error("pad state listener failed", error);
+		}
+	}
+	return current;
+}
+
+function refresh(): Promise<PadState> {
+	return bridge
+		.send<PadState | null>("pad.players")
+		.then((state) => accept(state))
+		.catch(() => current);
+}
+
+function subscribe(fn: (state: PadState) => void): () => void {
+	subscribers.add(fn);
+	if (!stopFeed) stopFeed = startFeed();
+	return () => {
+		subscribers.delete(fn);
+		if (subscribers.size === 0 && stopFeed) {
+			stopFeed();
+			stopFeed = null;
+		}
+	};
+}
+
+function startFeed(): () => void {
+	const offEvent = bridge.on<PadState>("pad.players", (state) => {
+		accept(state);
+	});
+	// A restarted controller counts from zero again; its first answer is the truth.
+	const offOpen =
+		typeof bridge.onOpen === "function"
+			? bridge.onOpen(() => {
+					lastSeq = -1;
+					void refresh();
+				})
+			: () => {};
+	const timer =
+		typeof window !== "undefined"
+			? window.setInterval(() => {
+					if (current.session && Date.now() - lastUpdate > QUIET_MS) void refresh();
+				}, 10_000)
+			: undefined;
+	return () => {
+		offEvent();
+		offOpen();
+		if (timer !== undefined) window.clearInterval(timer);
 	};
 }
 

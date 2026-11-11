@@ -38,6 +38,14 @@ if (-not $c.Ssid.StartsWith($env:YUI_HOTSPOT_PREFIX)) {
   # The kiosk's own settings, saved so Stop can put them back.
   'orig ' + (@{ ssid = $c.Ssid; passphrase = $c.Passphrase; band = [string]$c.Band } | ConvertTo-Json -Compress)
 }
+# A hotspot that is still on (the last session's, when a new one starts
+# before the old one's stop ran) keeps broadcasting its old name and
+# password: a new configuration only takes effect on the next start. Stop
+# it first so the QR names the network that is really on the air.
+if ($m.TetheringOperationalState -eq 'On' -and ($c.Ssid -ne $env:YUI_HOTSPOT_SSID -or $c.Passphrase -ne $env:YUI_HOTSPOT_PASSWORD)) {
+  $r = Await ($m.StopTetheringAsync())
+  if ($r.Status -ne 'Success') { throw "restart: $($r.Status) $($r.AdditionalErrorMessage)" }
+}
 $c.Ssid = $env:YUI_HOTSPOT_SSID
 $c.Passphrase = $env:YUI_HOTSPOT_PASSWORD
 $band = 'auto'

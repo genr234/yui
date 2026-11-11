@@ -35,6 +35,16 @@ export class Bridge {
 	private listeners = new Map<string, Set<BridgeEventListener<any>>>();
 	private reconnectDelay = reconnectInitialMs;
 	private reconnectTimer?: number;
+	private openListeners = new Set<() => void>();
+
+	/**
+	 * Called each time the socket (re)opens. Events pushed while it was down
+	 * are gone, so state owners use this to fetch a fresh copy.
+	 */
+	onOpen(fn: () => void): () => void {
+		this.openListeners.add(fn);
+		return () => this.openListeners.delete(fn);
+	}
 
 	/**
 	 * Subscribe to a pushed event frame `{ event, data }` from the controller.
@@ -126,6 +136,13 @@ export class Bridge {
 			socket.onopen = () => {
 				this.reconnectDelay = reconnectInitialMs;
 				resolve();
+				for (const fn of [...this.openListeners]) {
+					try {
+						fn();
+					} catch (error) {
+						console.error("Bridge open listener failed", error);
+					}
+				}
 			};
 			socket.onerror = () => reject(new Error(`Bridge unavailable at ${url}`));
 			socket.onclose = () => {
@@ -172,9 +189,35 @@ class DemoBridge {
 	private values = new Map<string, unknown>();
 	private listeners = new Map<string, Set<BridgeEventListener<any>>>();
 	private padState: {
-		session: { code: string; join_url: string; lobby_open?: boolean } | null;
+		session: {
+			code: string;
+			join_url: string;
+			lobby_open?: boolean;
+			wifi?: { ssid: string; password: string; qr: string };
+			wifi_pending?: boolean;
+		} | null;
 		players: Array<Record<string, unknown>>;
 	} = { session: null, players: [] };
+	private wifiTimer?: number;
+
+	/** Demo only: the kiosk hotspot "starts" a moment after the session. */
+	private startFakeWifi() {
+		window.clearTimeout(this.wifiTimer);
+		if (!this.padState.session) return;
+		this.padState = { ...this.padState, session: { ...this.padState.session, wifi_pending: true } };
+		this.wifiTimer = window.setTimeout(() => {
+			if (!this.padState.session) return;
+			this.padState = {
+				...this.padState,
+				session: {
+					...this.padState.session,
+					wifi_pending: false,
+					wifi: { ssid: "Yui KQXM", password: "k7mxq2pdva", qr: "WIFI:T:WPA;S:Yui KQXM;P:k7mxq2pdva;;" },
+				},
+			};
+			this.emitPad();
+		}, 1800);
+	}
 	private storeEpoch = 0;
 	private wakeLocks = new Map<string, { id: string; owner: string; reason: string; since: string; expires: string }>();
 	private config = {
@@ -321,6 +364,7 @@ class DemoBridge {
 		if (method === "storage.set") this.values.set(String(params.key), params.value);
 		if (method === "storage.delete") this.values.delete(String(params.key));
 		if (method === "pad.session.end") {
+			window.clearTimeout(this.wifiTimer);
 			this.padState = { session: null, players: [] };
 			this.emitPad();
 			return this.padState as T;
@@ -331,6 +375,7 @@ class DemoBridge {
 				session: { code: "KQXM", join_url: "https://yui.example/play/KQXM?t=OT56FOOG", lobby_open: true },
 				players: [],
 			};
+			this.startFakeWifi();
 			this.emitPad();
 			return this.padState as T;
 		}
@@ -343,6 +388,7 @@ class DemoBridge {
 					{ id: "p3", slot: 3, name: "Ada", color: "green", host: false, connected: false },
 				],
 			};
+			this.startFakeWifi();
 			this.emitPad();
 			return this.padState as T;
 		}
@@ -487,6 +533,11 @@ class DemoBridge {
 			current.delete(fn as BridgeEventListener<any>);
 			if (current.size === 0) this.listeners.delete(event);
 		};
+	}
+
+	/** The demo bridge never drops, so there is nothing to resync. */
+	onOpen(_fn: () => void): () => void {
+		return () => {};
 	}
 
 	private cursorTimer?: number;

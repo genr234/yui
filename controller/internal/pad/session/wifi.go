@@ -26,8 +26,21 @@ func wifiEscape(s string) string {
 func (m *Manager) SetWiFi(w *WiFi) {
 	m.mu.Lock()
 	m.wifi = w
+	m.wifiPending = false
 	m.mu.Unlock()
 	m.emit()
+}
+
+// SetWiFiPending marks the hotspot as starting (or, with false, as not
+// coming after all). SetWiFi with a network also clears it.
+func (m *Manager) SetWiFiPending(pending bool) {
+	m.mu.Lock()
+	changed := m.wifiPending != pending
+	m.wifiPending = pending
+	m.mu.Unlock()
+	if changed {
+		m.emit()
+	}
 }
 
 func (m *Manager) wifiSSIDLocked() string {

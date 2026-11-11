@@ -206,27 +206,18 @@ button.topbar-chip {
 
 .session-join {
 	display: grid;
-	grid-template-columns: auto minmax(0, 1fr);
-	gap: 16px;
-	align-items: center;
-}
-
-.session-qr {
-	display: block;
-	padding: 4px;
-	border: 1px solid var(--yui-line);
-	border-radius: 12px;
-	background: #ffffff;
-}
-
-.session-qr .join-qr {
-	border-radius: 8px;
+	gap: 14px;
+	justify-items: center;
+	padding-bottom: 14px;
+	border-bottom: 1px solid var(--yui-line);
 }
 
 .session-join-copy {
 	display: grid;
-	gap: 4px;
+	justify-items: center;
+	gap: 2px;
 	min-width: 0;
+	text-align: center;
 }
 
 .session-eyebrow {

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -84,12 +85,28 @@ type SessionView struct {
 	LobbyOpen bool   `json:"lobby_open"`
 	// WiFi is the kiosk hotspot, when it is on.
 	WiFi *WiFi `json:"wifi,omitempty"`
+	// WiFiPending is true while the hotspot is still starting, so the
+	// overlay can hold its place instead of jumping when it appears.
+	WiFiPending bool `json:"wifi_pending,omitempty"`
 }
 
 // Snapshot is the pad.players payload (session is null when none is running).
 type Snapshot struct {
 	Session *SessionView `json:"session"`
 	Players []Player     `json:"players"`
+	// Seq orders snapshots across every manager in the process: a reader
+	// that got a newer one (as an event or a command reply) drops an older
+	// one that arrives late.
+	Seq uint64 `json:"seq"`
+}
+
+// snapshotSeq numbers snapshots process-wide, so a new session's snapshots
+// always sort after the last one of the session before it.
+var snapshotSeq atomic.Uint64
+
+// EmptySnapshot is the no-session view, numbered like any other snapshot.
+func EmptySnapshot() Snapshot {
+	return Snapshot{Players: []Player{}, Seq: snapshotSeq.Add(1)}
 }
 
 // PlayerInput is the latest accepted input frame for one player.
@@ -107,22 +124,25 @@ type Manager struct {
 
 	audioMu sync.Mutex // see syncSpeaker
 
-	mu        sync.Mutex
-	running   bool
-	active    bool
-	record    *SessionRecord
-	token     string
-	joinURL   string
-	wifi      *WiFi
-	ice       ICEConfig
-	iceAt     time.Time
-	players   map[string]*playerState
-	peers     map[string]*peer
-	negGen    map[string]int
-	pings     map[string]pendingPing
-	watchers  map[int]func(Snapshot)
-	nextWatch int
-	sensitive bool
+	mu      sync.Mutex
+	emitMu  sync.Mutex
+	running bool
+	active  bool
+	record  *SessionRecord
+	token   string
+	joinURL string
+	wifi    *WiFi
+	// wifiPending: the hotspot is starting and wifi is not set yet.
+	wifiPending bool
+	ice         ICEConfig
+	iceAt       time.Time
+	players     map[string]*playerState
+	peers       map[string]*peer
+	negGen      map[string]int
+	pings       map[string]pendingPing
+	watchers    map[int]func(Snapshot)
+	nextWatch   int
+	sensitive   bool
 	// speakerID holds the speaker role as Rails reports it. audioTo is the
 	// player whose track the encoder writes into: the speaker, or the host
 	// while the speaker is not connected, or nobody.
@@ -378,9 +398,9 @@ func (m *Manager) Snapshot() Snapshot {
 }
 
 func (m *Manager) snapshotLocked() Snapshot {
-	snap := Snapshot{Players: m.rosterLocked()}
+	snap := Snapshot{Players: m.rosterLocked(), Seq: snapshotSeq.Add(1)}
 	if m.record != nil && m.active {
-		snap.Session = &SessionView{Code: m.record.Code, JoinURL: m.joinURL, LobbyOpen: m.record.LobbyOpen, WiFi: m.wifi}
+		snap.Session = &SessionView{Code: m.record.Code, JoinURL: m.joinURL, LobbyOpen: m.record.LobbyOpen, WiFi: m.wifi, WiFiPending: m.wifi == nil && m.wifiPending}
 	}
 	return snap
 }
@@ -1625,6 +1645,11 @@ func (m *Manager) emit() {
 	// Every roster change comes through here; keep the sound on the right
 	// phone before telling the overlay.
 	m.syncSpeaker()
+	// emitMu keeps delivery in snapshot order. Without it a QR tick and a
+	// roster change racing here could hand watchers the older snapshot
+	// last, and the overlay would show it (say, no QR) until the next tick.
+	m.emitMu.Lock()
+	defer m.emitMu.Unlock()
 	m.mu.Lock()
 	snap := m.snapshotLocked()
 	fns := make([]func(Snapshot), 0, len(m.watchers))

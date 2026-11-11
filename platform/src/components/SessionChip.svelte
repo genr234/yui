@@ -5,8 +5,7 @@
 	import Volume2Icon from "lucide-svelte/icons/volume-2";
 	import XIcon from "lucide-svelte/icons/x";
 	import UserCheckIcon from "lucide-svelte/icons/user-check";
-	import JoinQr from "./JoinQr.svelte";
-	import WifiQr from "./WifiQr.svelte";
+	import JoinSteps from "./JoinSteps.svelte";
 	import { avatarKind, linkQuality, pad, padAction, playerSwatch, type PadPlayer, type PadState } from "../sdk/pad";
 
 	/** Session and roster, owned by the top bar. */
@@ -170,20 +169,13 @@
 	{#if open && session}
 		<div class="session-popover" role="dialog" aria-label="Phone play">
 			<div class="session-join">
-				{#if session.wifi}
-					<span class="session-qr">
-						<WifiQr wifi={session.wifi} size={148} />
-					</span>
-				{/if}
-				<span class="session-qr">
-					<JoinQr value={session.join_url} size={148} label={`QR code to join session ${session.code}`} />
-				</span>
+				<JoinSteps {session} size={session.wifi || session.wifi_pending ? 148 : 172} />
 				<div class="session-join-copy">
-					<span class="session-eyebrow">{session.wifi ? "2 · Scan to play" : "Scan to join"}</span>
+					<span class="session-eyebrow">{session.lobby_open ? "Or enter the code" : "Session code"}</span>
 					<strong class="session-join-code">{session.code}</strong>
-					<span class="session-join-host">
-						{#if session.lobby_open && joinHost}or visit {joinHost}/play/{session.code}{:else}Point a phone camera at the code{/if}
-					</span>
+					{#if session.lobby_open && joinHost}
+						<span class="session-join-host">at {joinHost}/play</span>
+					{/if}
 					<button
 						class="session-lobby"
 						type="button"

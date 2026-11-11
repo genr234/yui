@@ -1,10 +1,17 @@
 <script lang="ts">
 	import qrcode from "qrcode-generator";
 
-	/** Text to encode (the join URL). */
+	/** Text to encode (the join URL, or a WIFI: code). */
 	export let value = "";
 	export let size = 44;
 	export let label = "QR code to join";
+
+	/**
+	 * Light modules around the code. The QR spec asks for four; with less,
+	 * phone cameras miss the code on a busy or dark screen behind it. Only a
+	 * thumbnail that is not meant to be scanned should go lower.
+	 */
+	export let quiet = 4;
 
 	let path = "";
 	let count = 0;
@@ -21,10 +28,19 @@
 		qr.addData(text);
 		qr.make();
 		count = qr.getModuleCount();
+		// One rectangle per run of dark modules: fewer edges, so no hairline
+		// seams between modules at fractional scales.
 		let d = "";
 		for (let row = 0; row < count; row += 1) {
-			for (let col = 0; col < count; col += 1) {
-				if (qr.isDark(row, col)) d += `M${col} ${row}h1v1h-1z`;
+			let col = 0;
+			while (col < count) {
+				if (!qr.isDark(row, col)) {
+					col += 1;
+					continue;
+				}
+				const start = col;
+				while (col < count && qr.isDark(row, col)) col += 1;
+				d += `M${start} ${row}h${col - start}v1h-${col - start}z`;
 			}
 		}
 		path = d;
@@ -38,10 +54,10 @@
 		aria-label={label}
 		width={size}
 		height={size}
-		viewBox={`-2 -2 ${count + 4} ${count + 4}`}
+		viewBox={`${-quiet} ${-quiet} ${count + quiet * 2} ${count + quiet * 2}`}
 		shape-rendering="crispEdges"
 	>
-		<rect x="-2" y="-2" width={count + 4} height={count + 4} fill="#ffffff" rx="2" />
+		<rect x={-quiet} y={-quiet} width={count + quiet * 2} height={count + quiet * 2} fill="#ffffff" />
 		<path d={path} fill="#111925" />
 	</svg>
 {/if}
