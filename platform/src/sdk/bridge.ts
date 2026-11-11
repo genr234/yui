@@ -176,6 +176,7 @@ class DemoBridge {
 		players: Array<Record<string, unknown>>;
 	} = { session: null, players: [] };
 	private storeEpoch = 0;
+	private wakeLocks = new Map<string, { id: string; owner: string; reason: string; since: string; expires: string }>();
 	private config = {
 		url: "https://demo.yui.local",
 		chrome_path: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
@@ -268,6 +269,9 @@ class DemoBridge {
 			"storage.get": null,
 			"fs.list": [],
 		};
+
+		// Wake locks: kept in memory, never expire in the demo.
+		if (method.startsWith("wakelock.")) return this.demoWakeLock(method, params) as T;
 
 		// Web bundles (plan 11): the vite plugin serves them at /app-web/<app id>/.
 		if (method === "webapps.origin") {
@@ -517,6 +521,35 @@ class DemoBridge {
 			};
 			for (const fn of [...set]) fn(cursor);
 		}, 50);
+	}
+
+	private demoWakeLock(method: string, params: Record<string, unknown>) {
+		const view = () => {
+			const holds = [...this.wakeLocks.values()];
+			return { holds, active: holds.length > 0 };
+		};
+		const changed = () => {
+			for (const fn of [...(this.listeners.get("wakelock.changed") ?? [])]) fn(view());
+		};
+		const id = String(params.id ?? "");
+		switch (method) {
+			case "wakelock.acquire": {
+				const now = new Date().toISOString();
+				const hold = { id: `wl_demo_${Math.random().toString(36).slice(2)}`, owner: String(params.app_id ?? ""), reason: String(params.reason ?? ""), since: now, expires: now };
+				this.wakeLocks.set(hold.id, hold);
+				changed();
+				return { ...hold, ttl_ms: 60_000 };
+			}
+			case "wakelock.renew":
+				return this.wakeLocks.has(id) ? { ok: true, hold: { ...this.wakeLocks.get(id), ttl_ms: 60_000 } } : { ok: false };
+			case "wakelock.release": {
+				const ok = this.wakeLocks.delete(id);
+				if (ok) changed();
+				return { ok };
+			}
+			default:
+				return view();
+		}
 	}
 
 	private emitPad() {

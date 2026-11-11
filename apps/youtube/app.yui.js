@@ -167,6 +167,28 @@ export default {
       error: ""
     })
 
+    // A video can play for longer than any idle timeout with nobody
+    // touching the kiosk: hold a wake lock while one is on screen so no
+    // screensaver, sleep or attract screen covers it. Closing the app
+    // releases it too.
+    let wakeLock = null
+    let wakePending = false
+    async function keepAwake(wanted) {
+      if (!ctx.wakeLock || wakePending) return
+      if (wanted === Boolean(wakeLock && !wakeLock.released)) return
+      wakePending = true
+      try {
+        if (wanted) wakeLock = await ctx.wakeLock.request("youtube video on screen")
+        else if (wakeLock) await wakeLock.release()
+      } catch (error) {
+        ctx.log.warn("wake lock", error)
+      } finally {
+        wakePending = false
+      }
+      // The video may have changed while the request was in flight.
+      if (Boolean(state.selected) !== Boolean(wakeLock && !wakeLock.released)) void keepAwake(Boolean(state.selected))
+    }
+
     async function search() {
       const query = state.query.trim()
       const id = videoIdFrom(query)
@@ -206,8 +228,9 @@ export default {
       }
     }
 
-    return () =>
-      ctx.ui.column({ gap: 14, padding: 18 }, [
+    return () => {
+      void keepAwake(Boolean(state.selected))
+      return ctx.ui.column({ gap: 14, padding: 18 }, [
         ctx.ui.row({ gap: 10, align: "center" }, [
           ctx.ui.input({
             value: state.query,
@@ -267,5 +290,6 @@ export default {
           )
         ])
       ])
+    }
   }
 }

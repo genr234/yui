@@ -381,7 +381,7 @@ func (r *Registry) padHub() *router.Router {
 		// Phone input is invisible to Windows, so idle tools on the kiosk
 		// (screensaver, vendor "no mouse for 5 min" Chrome killers) would
 		// fire mid-game without this.
-		Activity: useractivity.New().Touch,
+		Activity: useractivity.Default().Touch,
 		ProfileReply: func(playerID string, reply protocol.ProfileReply) {
 			r.profileReplied(playerID, reply)
 		},

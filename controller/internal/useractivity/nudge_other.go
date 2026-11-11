@@ -2,6 +2,9 @@
 
 package useractivity
 
-// nudge does nothing outside Windows: kiosks run on Windows, and other
-// platforms have no idle tools the controller needs to keep quiet.
-func nudge() error { return nil }
+// osPlatform does nothing outside Windows: kiosks run on Windows, and the
+// controller has no idle tools to keep quiet elsewhere.
+type osPlatform struct{}
+
+func (osPlatform) Nudge() error        { return nil }
+func (osPlatform) SetAwake(bool) error { return nil }

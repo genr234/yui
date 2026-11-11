@@ -37,6 +37,7 @@
     type ShowcaseEntry,
   } from "./attract";
   import { loadLibraryRecent } from "./sdk/library";
+  import { watchWakeLocks } from "./sdk/wake-lock";
   import type { YuiDevApp } from "./sdk/apps";
   import { resetControllersFocus } from "./sdk/apps/controllers";
   import { loadApps } from "./apps";
@@ -100,6 +101,9 @@
   let attract = createAttract(Date.now());
   let attractEntries: ShowcaseEntry<YuiDevApp>[] = [];
   let attractPad: PadState = { session: null, players: [] };
+  // Any app (or a running native program) holding a wake lock: something
+  // is playing that nobody needs to touch, so no attract screen over it.
+  let wakeLocked = false;
   $: eventMode = config?.event_mode === true;
 
   function touchAttract() {
@@ -141,7 +145,8 @@
       hasSession: attractPad.session !== null,
       connectedPlayers: attractPad.players.filter((p) => p.connected).length,
       // An open app (a video, a game) counts as in use even with nobody touching it.
-      busy: authVisible || permissionPrompt !== null || appRouteActive,
+      busy:
+        authVisible || permissionPrompt !== null || appRouteActive || wakeLocked,
     });
     attract = step.state;
     if (attract.shown && !wasShown) void loadAttractEntries();
@@ -243,6 +248,7 @@
     window.addEventListener("yui:config-changed", onConfigChanged);
     void pad.state().then((state) => (attractPad = state));
     const offAttractPad = pad.onState((state) => (attractPad = state));
+    const offWakeLocks = watchWakeLocks((view) => (wakeLocked = view.active));
     const attractTimer = window.setInterval(() => {
       tickAttract();
       closeIdleAuth();
@@ -253,6 +259,7 @@
       }
       window.removeEventListener("yui:config-changed", onConfigChanged);
       offAttractPad();
+      offWakeLocks();
       window.clearInterval(attractTimer);
       offPadHome();
       offPadRemote();

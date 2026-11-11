@@ -17,6 +17,7 @@ import { createWebHost, listenForEmbeds, registerWebHost } from "./web";
 import { yuiProfilesRuntime } from "./profiles-runtime";
 import { isPermissionDeclared, isPermissionGranted, requestAppPermission } from "./permissions";
 import { bridge } from "../bridge";
+import { createWakeLocks } from "../wake-lock";
 import {
 	clearAppStorage,
 	deleteAppStorageValue,
@@ -201,6 +202,12 @@ export function createYuiContext(app: YuiSimpleApp, onRender: () => void): YuiCo
 	disposables.add(() => {
 		offWebHost();
 		webHost.dispose();
+	});
+
+	// ctx.wakeLock: every lock this app holds ends when the app closes.
+	const wakeLocks = createWakeLocks(app.id);
+	disposables.add(() => {
+		void wakeLocks.releaseAll();
 	});
 
 	// ctx.profiles exists only when the manifest declares `profiles`.
@@ -451,6 +458,9 @@ export function createYuiContext(app: YuiSimpleApp, onRender: () => void): YuiCo
 			press: async (button, action) => {
 				await controllersHost.virtualPads("press", [button, action ?? "tap"]);
 			},
+		},
+		wakeLock: {
+			request: (reason) => wakeLocks.request(reason),
 		},
 		launch: {
 			item: getLaunchItem(app.id),

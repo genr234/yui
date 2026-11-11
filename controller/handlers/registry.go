@@ -167,6 +167,8 @@ func NewRegistry(cfg config.Config) *Registry {
 	r.Register(ControllersCommands()...)
 	r.Register(ProfileCommands()...)
 	r.Register(WebAppsCommands()...)
+	r.Register(WakeLockCommands()...)
+	r.initWakeLocks()
 	return r
 }
 
