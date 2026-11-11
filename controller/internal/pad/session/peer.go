@@ -13,9 +13,15 @@ import (
 
 func newPeerAPI() *webrtc.API {
 	var settings webrtc.SettingEngine
-	// Host candidates stay numeric. A phone on mobile data cannot resolve
-	// the kiosk's mDNS name, and TURN/STUN cover the path that needs a relay.
-	settings.SetICEMulticastDNSMode(ice.MulticastDNSModeDisabled)
+	// Host candidates stay numeric: a phone on mobile data cannot resolve a
+	// kiosk mDNS name. But the kiosk does resolve the phones' .local
+	// candidates (browsers hide their LAN address behind one), so it can
+	// send the first check straight to the phone on the local network. That
+	// outbound packet also opens the kiosk's stateful firewall, which
+	// otherwise drops the phone's unsolicited checks and pushes the link
+	// onto STUN hairpin or the server fallback. If port 5353 can't be
+	// opened, pion carries on without mDNS.
+	settings.SetICEMulticastDNSMode(ice.MulticastDNSModeQueryOnly)
 	return webrtc.NewAPI(webrtc.WithSettingEngine(settings))
 }
 

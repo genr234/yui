@@ -1,6 +1,7 @@
 package session
 
 import (
+	"net"
 	"strconv"
 
 	"github.com/pion/webrtc/v4"
@@ -61,7 +62,7 @@ func (p *peer) link() Link {
 		l.RTTMs = pair.CurrentRoundTripTime * 1000
 		l.BytesIn, l.BytesOut = pair.BytesReceived, pair.BytesSent
 		if !l.Fallback {
-			l.Path = pathOf(local.CandidateType, remote.CandidateType)
+			l.Path = pathOf(local.CandidateType, remote.CandidateType, remote.IP)
 		}
 		break
 	}
@@ -78,13 +79,21 @@ func addr(c webrtc.ICECandidateStats) string {
 	return c.IP + ":" + strconv.Itoa(int(c.Port))
 }
 
-func pathOf(local, remote webrtc.ICECandidateType) string {
+func pathOf(local, remote webrtc.ICECandidateType, remoteIP string) string {
 	switch {
 	case local == webrtc.ICECandidateTypeRelay || remote == webrtc.ICECandidateTypeRelay:
 		return "turn"
-	case local == webrtc.ICECandidateTypeHost && remote == webrtc.ICECandidateTypeHost:
+	// Phone browsers hide their host address behind an mDNS name, so the
+	// kiosk learns it as peer-reflexive when the phone's check arrives.
+	// A private address on both ends is still the local network.
+	case local == webrtc.ICECandidateTypeHost && (remote == webrtc.ICECandidateTypeHost || privateIP(remoteIP)):
 		return "lan"
 	default:
 		return "stun"
 	}
+}
+
+func privateIP(s string) bool {
+	ip := net.ParseIP(s)
+	return ip != nil && (ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLoopback())
 }
