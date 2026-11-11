@@ -11,6 +11,7 @@ import (
 
 	"kiosk/controller/internal/assets"
 	"kiosk/controller/internal/native"
+	"kiosk/controller/internal/useractivity"
 )
 
 // Native sessions (contracts §4, `native.*`). The overlay gates the
@@ -46,6 +47,7 @@ func (r *Registry) Native() *native.Manager {
 		VirtualPads: r.dsuResolver(),
 		Focus:       native.SystemFocus{FallbackPID: r.focusFallbackPID},
 		OnStatus: func(st native.Status) {
+			nativeWakeLock(useractivity.Default(), st)
 			r.Emit("native.status", st)
 		},
 	})

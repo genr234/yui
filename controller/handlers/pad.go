@@ -15,6 +15,7 @@ import (
 	"kiosk/controller/internal/pad/protocol"
 	"kiosk/controller/internal/pad/router"
 	"kiosk/controller/internal/pad/session"
+	"kiosk/controller/internal/useractivity"
 )
 
 const playPauseReason = "play_session"
@@ -377,6 +378,10 @@ func (r *Registry) padHub() *router.Router {
 		Pointer:  pointer,
 		Pads:     padAdapter,
 		StartURL: cfg.URL,
+		// Phone input is invisible to Windows, so idle tools on the kiosk
+		// (screensaver, vendor "no mouse for 5 min" Chrome killers) would
+		// fire mid-game without this.
+		Activity: useractivity.Default().Touch,
 		ProfileReply: func(playerID string, reply protocol.ProfileReply) {
 			r.profileReplied(playerID, reply)
 		},

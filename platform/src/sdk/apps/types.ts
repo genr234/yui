@@ -1,5 +1,8 @@
 import type { LibraryTitle, LibraryTitleInput } from "../library";
 import type { YuiLaunchItem } from "./launch-intent";
+import type { YuiWakeLock } from "../wake-lock";
+
+export type { YuiWakeLock } from "../wake-lock";
 
 export const SIMPLE_APP_SCHEMA = "yui.simple-js.v0" as const;
 
@@ -104,6 +107,8 @@ export type YuiContext = {
 	/** Only with the `profiles` permission declared. */
 	profiles?: YuiProfilesApi;
 	virtualPads: YuiVirtualPadsApi;
+	/** Keep the kiosk awake while nobody touches it (videos, cutscenes). */
+	wakeLock: YuiWakeLockApi;
 	/** What the shell opened this app for, e.g. a library title from Jump back in. */
 	launch: { item: YuiLaunchItem | null };
 	log: Console;
@@ -416,6 +421,17 @@ export type YuiEmbedsApi = {
 
 export type YuiSaveOptions = { player?: YuiPlayerRef };
 export type YuiSaveEntry = { key: string; size: number; updatedAt: string; queued?: boolean };
+
+/**
+ * `ctx.wakeLock.request(reason)` keeps the kiosk awake: no screensaver, no
+ * display or system sleep, no idle tool closing the browser, and no attract
+ * screen over the app. Hold it only while something plays with nobody
+ * touching the kiosk, and release it after; it is released for you when
+ * the app closes.
+ */
+export type YuiWakeLockApi = {
+	request(reason?: string): Promise<YuiWakeLock>;
+};
 
 export type YuiSavesApi = {
 	/** Up to 8 MiB; key `[a-z0-9][a-z0-9._-]{0,79}`; 64 keys per scope. With `player`, needs the player's grant (like ctx.profiles). */

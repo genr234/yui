@@ -388,30 +388,57 @@ export default {
       })
       .catch(() => {});
 
-    return () =>
-      ctx.ui.column({ gap: 16, padding: 18 }, [
-        ctx.ui.h1("Wii Arcade"),
-        state.error ? ctx.ui.p(state.error) : null,
-        ctx.ui.when(
-          state.phase === "lobby",
-          ctx.ui.column({ gap: 16 }, [
-            ctx.ui.row({ gap: 24, align: "start", wrap: true }, [
-              ctx.ui.column({ gap: 8 }, [ctx.ui.h3("Scan to play"), pad.joinCard({ size: 140 })]),
-              ctx.ui.column({ gap: 8 }, [ctx.ui.h3("Players"), ...playerRows()]),
+    // Wake lock while a game is starting, running or closing: a cutscene or a
+    // pause can outlast the kiosk's idle timeouts with nobody touching it, and
+    // no screensaver, sleep or idle tool may cover the game. Closing the app
+    // releases it too.
+    let wakeLock = null;
+    let wakePending = false;
+    async function keepAwake(wanted) {
+      if (!ctx.wakeLock || wakePending) return;
+      if (wanted === Boolean(wakeLock && !wakeLock.released)) return;
+      wakePending = true;
+      try {
+        if (wanted) wakeLock = await ctx.wakeLock.request("Wii game running");
+        else if (wakeLock) await wakeLock.release();
+      } catch (error) {
+        ctx.log.warn("wake lock", error);
+      } finally {
+        wakePending = false;
+      }
+      // The phase may have changed while the request was in flight.
+      const now = state.phase !== "lobby";
+      if (now !== Boolean(wakeLock && !wakeLock.released)) void keepAwake(now);
+    }
+
+    return () => {
+      void keepAwake(state.phase !== "lobby");
+      return (
+        ctx.ui.column({ gap: 16, padding: 18 }, [
+          ctx.ui.h1("Wii Arcade"),
+          state.error ? ctx.ui.p(state.error) : null,
+          ctx.ui.when(
+            state.phase === "lobby",
+            ctx.ui.column({ gap: 16 }, [
+              ctx.ui.row({ gap: 24, align: "start", wrap: true }, [
+                ctx.ui.column({ gap: 8 }, [ctx.ui.h3("Scan to play"), pad.joinCard({ size: 140 })]),
+                ctx.ui.column({ gap: 8 }, [ctx.ui.h3("Players"), ...playerRows()]),
+              ]),
+              emptyState(),
+              state.games.length ? ctx.ui.column({ gap: 10 }, [ctx.ui.h3("Games"), ctx.ui.p("The host can also pick from their phone."), ctx.ui.row({ gap: 14, wrap: true }, state.games.map(gameCard))]) : null,
             ]),
-            emptyState(),
-            state.games.length ? ctx.ui.column({ gap: 10 }, [ctx.ui.h3("Games"), ctx.ui.p("The host can also pick from their phone."), ctx.ui.row({ gap: 14, wrap: true }, state.games.map(gameCard))]) : null,
-          ]),
-        ),
-        ctx.ui.when(
-          state.phase !== "lobby",
-          ctx.ui.column({ gap: 10 }, [
-            ctx.ui.h2(state.phase === "starting" ? "Starting…" : state.phase === "stopping" ? "Saving and closing…" : `Now playing: ${state.current ? state.current.title : "a game"}`),
-            ...playerRows(),
-            ctx.ui.small("Press Home on a phone for save, load and quit."),
-          ]),
-        ),
-      ]);
+          ),
+          ctx.ui.when(
+            state.phase !== "lobby",
+            ctx.ui.column({ gap: 10 }, [
+              ctx.ui.h2(state.phase === "starting" ? "Starting…" : state.phase === "stopping" ? "Saving and closing…" : `Now playing: ${state.current ? state.current.title : "a game"}`),
+              ...playerRows(),
+              ctx.ui.small("Press Home on a phone for save, load and quit."),
+            ]),
+          ),
+        ])
+      );
+    };
   },
 };
 

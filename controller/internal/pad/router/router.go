@@ -84,6 +84,10 @@ type Config struct {
 	ProfileReply func(playerID string, reply protocol.ProfileReply)
 	// StartURL is the page the remote's Home button loads.
 	StartURL string
+	// Activity is called when a player presses something, moves a stick or
+	// moves the pointer (motion sensors and packet counters alone do not
+	// count). The kiosk uses it to tell the OS someone is there.
+	Activity func()
 }
 
 // Router owns the focus stack and the session binding.
@@ -97,6 +101,7 @@ type Router struct {
 	players   map[string]protocol.Player // ready players
 	sensitive bool
 	playing   bool
+	lastInput map[string]protocol.InputState // per player, for Activity
 
 	// pushMu orders layout sends so versions reach each phone increasing.
 	pushMu   sync.Mutex
@@ -108,7 +113,7 @@ type Router struct {
 // New builds the stack with the shell provider at the bottom and registers
 // the adapters.
 func New(cfg Config) (*Router, error) {
-	r := &Router{cfg: cfg, players: map[string]protocol.Player{}, sent: map[string][]byte{}}
+	r := &Router{cfg: cfg, players: map[string]protocol.Player{}, sent: map[string][]byte{}, lastInput: map[string]protocol.InputState{}}
 	deps := shell.Deps{
 		IsHost:   r.IsHost,
 		HostName: r.hostName,
@@ -340,6 +345,7 @@ func (r *Router) onPlayer(ev session.PlayerEvent) {
 func (r *Router) forget(id string) {
 	r.mu.Lock()
 	delete(r.players, id)
+	delete(r.lastInput, id)
 	r.mu.Unlock()
 	r.pushMu.Lock()
 	delete(r.sent, id)
@@ -379,9 +385,28 @@ func (r *Router) onControl(playerID string, msg any) {
 }
 
 func (r *Router) onInput(playerID string, state protocol.InputState) {
+	if r.cfg.Activity != nil {
+		r.mu.Lock()
+		prev, seen := r.lastInput[playerID]
+		r.lastInput[playerID] = state
+		r.mu.Unlock()
+		if seen && playerActed(prev, state) {
+			r.cfg.Activity()
+		}
+	}
 	if err := r.stack.Input(playerID, state); err != nil {
 		log.Printf("pad hub: input %s: %v", playerID, err)
 	}
+}
+
+// playerActed reports whether next differs from prev in something a person
+// does on purpose: buttons, sticks or the pointer. Phones stream motion data
+// and packet counters even when lying on a table, so those are ignored.
+func playerActed(prev, next protocol.InputState) bool {
+	return prev.Buttons != next.Buttons ||
+		prev.LX != next.LX || prev.LY != next.LY ||
+		prev.RX != next.RX || prev.RY != next.RY ||
+		prev.PX != next.PX || prev.PY != next.PY
 }
 
 func (r *Router) onHome(playerID string, via hub.HomeVia) {

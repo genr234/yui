@@ -1,7 +1,7 @@
 /**
  * ctx APIs that cross the app sandbox boundary generically: `ctx.native`,
- * `ctx.library`, `ctx.assets`, `ctx.launch`, `ctx.controllers`, `ctx.profiles`
- * and `ctx.virtualPads`.
+ * `ctx.library`, `ctx.assets`, `ctx.launch`, `ctx.controllers`, `ctx.profiles`,
+ * `ctx.virtualPads` and `ctx.wakeLock`.
  *
  * Apps run in a sandboxed iframe (AppHost). `sandboxApiSource` is spliced
  * into the sandbox script and adds the APIs to the sandbox's ctx as RPC
@@ -10,13 +10,13 @@
  * `{ type: "push", api, event, data }` messages. New APIs can be added here
  * without touching AppHost again.
  */
-import type { YuiContext, YuiNativeEvent } from "./types";
+import type { YuiContext, YuiNativeEvent, YuiWakeLock } from "./types";
 import { controllersHostFor, type ControllersHost } from "./controllers";
 import { yuiControllersRuntime } from "./controllers-runtime";
 import { profileCalls, profilesHostFor } from "./profiles";
 import { yuiProfilesRuntime } from "./profiles-runtime";
 
-export const sandboxApis = ["native", "library", "assets", "controllers", "virtualPads", "profiles", "web", "embeds", "saves"] as const;
+export const sandboxApis = ["native", "library", "assets", "controllers", "virtualPads", "profiles", "web", "embeds", "saves", "wakeLock"] as const;
 export type SandboxApi = (typeof sandboxApis)[number];
 
 /**
@@ -145,6 +145,23 @@ function yuiExtendContext(ctx) {
     systemPad: () => rpc("virtualPads", "systemPad"),
     press: (button, action) => rpc("virtualPads", "press", [button, action || "tap"])
   };
+  ctx.wakeLock = {
+    request: async (reason) => {
+      const held = await rpc("wakeLock", "request", [reason == null ? "" : String(reason)]);
+      let released = false;
+      const release = async () => {
+        if (released) return;
+        released = true;
+        await rpc("wakeLock", "release", [held.id]).catch(() => {});
+      };
+      disposables.add(() => { release(); });
+      return {
+        reason: held.reason,
+        get released() { return released; },
+        release
+      };
+    }
+  };
   ctx.launch = { item: yuiLaunchItem };
   return ctx;
 }
@@ -158,6 +175,9 @@ type Push = (api: string, event: string, data: unknown) => void;
 const nativeEvents = new Set<YuiNativeEvent>(["status", "started", "exited", "crashed"]);
 const controllerCalls = new Set(["layouts", "frames", "haptic", "sound"]);
 const virtualPadCalls = new Set(["attach", "detach", "list", "systemPad", "press"]);
+/** Wake locks a sandbox holds, by host ctx and token (the sandbox only sees the token). */
+const sandboxWakeLocks = new WeakMap<YuiContext, Map<string, YuiWakeLock>>();
+let wakeLockTokens = 0;
 /** One sandbox per host ctx receives controller pushes; a reloaded sandbox replaces it. */
 const sandboxPushes = new WeakMap<ControllersHost, () => void>();
 
@@ -220,6 +240,28 @@ export async function handleSandboxApiCall(
 			if (typeof first !== "string" || !first.startsWith("message:")) throw new Error(`unknown embeds event: ${String(first)}`);
 			const channel = first.slice("message:".length);
 			ctx.embeds.on(channel, (data) => push("embeds", first, data));
+			return undefined;
+		}
+		case "wakeLock.request": {
+			// The host ctx owns the lock, so it is released when the app
+			// closes even if the sandbox never says so.
+			const lock = await ctx.wakeLock.request(typeof first === "string" ? first : "");
+			let held = sandboxWakeLocks.get(ctx);
+			if (!held) {
+				held = new Map();
+				sandboxWakeLocks.set(ctx, held);
+			}
+			const id = `wl${++wakeLockTokens}`;
+			held.set(id, lock);
+			return { id, reason: lock.reason };
+		}
+		case "wakeLock.release": {
+			const held = sandboxWakeLocks.get(ctx);
+			const lock = typeof first === "string" ? held?.get(first) : undefined;
+			if (lock) {
+				held?.delete(first);
+				await lock.release();
+			}
 			return undefined;
 		}
 		case "saves.put":

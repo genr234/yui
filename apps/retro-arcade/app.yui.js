@@ -737,12 +737,39 @@ export default {
 
     refresh().then(loadHistory);
 
+    // Wake lock while a game is starting, running or closing: a cutscene or a
+    // pause can outlast the kiosk's idle timeouts with nobody touching it, and
+    // no screensaver, sleep or idle tool may cover the game. Closing the app
+    // releases it too.
+    let wakeLock = null;
+    let wakePending = false;
+    async function keepAwake(wanted) {
+      if (!ctx.wakeLock || wakePending) return;
+      if (wanted === Boolean(wakeLock && !wakeLock.released)) return;
+      wakePending = true;
+      try {
+        if (wanted) wakeLock = await ctx.wakeLock.request("retro game running");
+        else if (wakeLock) await wakeLock.release();
+      } catch (error) {
+        ctx.log.warn("wake lock", error);
+      } finally {
+        wakePending = false;
+      }
+      // The phase may have changed while the request was in flight.
+      const now = state.phase !== "lobby";
+      if (now !== Boolean(wakeLock && !wakeLock.released)) void keepAwake(now);
+    }
+
     // The page stays the first child so it never reloads when the sidebar comes and goes.
-    return () =>
-      ctx.ui.row({ gap: 18, align: "stretch" }, [
-        ctx.ui.embed({ web: "index.html", channel: CHANNEL, input: true, title: "Retro Arcade", width: "100%", height: "calc(100vh - 150px)", minHeight: 520 }),
-        ctx.ui.when(state.phase === "lobby" && Boolean(pad.session), sidebar()),
-      ]);
+    return () => {
+      void keepAwake(state.phase !== "lobby");
+      return (
+        ctx.ui.row({ gap: 18, align: "stretch" }, [
+          ctx.ui.embed({ web: "index.html", channel: CHANNEL, input: true, title: "Retro Arcade", width: "100%", height: "calc(100vh - 150px)", minHeight: 520 }),
+          ctx.ui.when(state.phase === "lobby" && Boolean(pad.session), sidebar()),
+        ])
+      );
+    };
   },
 };
 
