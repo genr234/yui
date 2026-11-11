@@ -1,3 +1,4 @@
+import { nativeWindowToWire } from "./native-window";
 import { createUiApi } from "./ui";
 import type {
 	YuiAsset,
@@ -134,6 +135,7 @@ export function nativeStatusFor(appId: string, status: NativeStatusWire | null |
 }
 
 export function nativeSpecToWire(appId: string, spec: YuiNativeSpec) {
+	const window = nativeWindowToWire(spec.window);
 	return {
 		app_id: appId,
 		runtime: spec.runtime,
@@ -143,6 +145,7 @@ export function nativeSpecToWire(appId: string, spec: YuiNativeSpec) {
 		virtual_pads: spec.virtualPads ?? [],
 		audio: spec.audio ?? "none",
 		saves: spec.saves ?? [],
+		...(window ? { window } : {}),
 	};
 }
 
