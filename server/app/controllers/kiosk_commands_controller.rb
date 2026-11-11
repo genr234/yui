@@ -20,6 +20,9 @@ class KioskCommandsController < ApplicationController
   def create
     account = Account.find(params[:account_id])
     kiosk = account.kiosks.find(params[:kiosk_id])
+    unless KioskCommand::ALLOWED_TYPES.include?(params[:command_type])
+      return redirect_to account, alert: "Unknown command."
+    end
     payload = parse_payload(params[:command_type], params[:payload])
 
     kiosk.kiosk_commands.create!(

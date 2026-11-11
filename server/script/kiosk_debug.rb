@@ -6,8 +6,11 @@
 #   ... 1 debug.diagnostics
 #   ... 1 debug.logs '{"source":"native","lines":300}'
 #   ... 1 debug.screen          (result.image is a data:image/jpeg;base64 URI)
+#   ... 1 debug.exec '{"script":"Get-NetIPConfiguration","timeout":60}' 70
+#         (PowerShell by default, or "shell":"cmd"; only from this console)
 #
-# Commands are the kiosk's remote ones (KioskCommand::ALLOWED_TYPES).
+# Commands are the kiosk's remote ones (KioskCommand::ALLOWED_TYPES and
+# CONSOLE_ONLY_TYPES).
 require "json"
 
 target, type, params, timeout = ARGV

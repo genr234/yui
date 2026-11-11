@@ -74,6 +74,7 @@ func (DebugDiagnosticsCommand) Handle(r *Registry, _ json.RawMessage) (any, erro
 			inputs[in.PlayerID] = in.State
 		}
 		out["latest_inputs"] = inputs
+		out["links"] = padMgr.Links()
 	}
 	return out, nil
 }

@@ -146,6 +146,11 @@ func TestDataChannelHelloInputAndRTT(t *testing.T) {
 		t.Fatal("pong was not received")
 	}
 
+	// Both ends are on this machine, so they pair host candidates.
+	if link := mgr.Links()["p1"]; link.Path != "lan" || link.LocalType != "host" || link.Fallback {
+		t.Fatalf("link = %+v", link)
+	}
+
 	var input *webrtc.DataChannel
 	select {
 	case input = <-inputCh:

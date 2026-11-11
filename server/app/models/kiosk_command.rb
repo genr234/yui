@@ -29,13 +29,18 @@ class KioskCommand < ApplicationRecord
     debug.nativeStop
   ].freeze
 
+  # Commands only the server console (script/kiosk_debug.rb) may send. The
+  # web forms never offer or accept them: debug.exec runs any shell script
+  # on the kiosk.
+  CONSOLE_ONLY_TYPES = %w[debug.exec].freeze
+
   STATUSES = %w[pending sent succeeded failed].freeze
 
   belongs_to :kiosk
 
   after_create_commit :deliver_over_websocket!
 
-  validates :command_type, inclusion: { in: ALLOWED_TYPES }
+  validates :command_type, inclusion: { in: ALLOWED_TYPES + CONSOLE_ONLY_TYPES }
   validates :status, inclusion: { in: STATUSES }
 
   scope :deliverable, -> { where(status: %w[pending sent]).order(:created_at) }

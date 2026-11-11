@@ -210,6 +210,9 @@ func (r *Registry) DispatchRemote(method string, params json.RawMessage) (any, e
 // dispatchRemoteAt runs a server command for the store at epoch. The caller
 // holds mutationMu for reading, so the epoch cannot move while it runs.
 func (r *Registry) dispatchRemoteAt(epoch uint64, method string, params json.RawMessage) (any, error) {
+	if cmd, ok := remoteOnlyCommands[method]; ok {
+		return cmd.Handle(r, params)
+	}
 	if !remoteCommandAllowed(method) {
 		return nil, fmt.Errorf("remote command %q is not allowed", method)
 	}
