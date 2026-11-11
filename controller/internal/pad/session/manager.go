@@ -51,6 +51,15 @@ type Config struct {
 	// (default 5 s); the elapsed time is measured with Now.
 	IdleTimeout time.Duration
 	IdleTick    time.Duration
+	// InactiveTimeout ends the session when phones are connected but nobody
+	// has done anything on purpose (button, stick, pointer, a layout control,
+	// joining) for this long, so phones forgotten in pockets don't keep it
+	// open. Busy, when it reports true (an app holds a wake lock, a native
+	// game runs), counts as activity. Phones get an "idle" warning
+	// InactiveWarning before the end (default 60 s). Zero disables it.
+	InactiveTimeout time.Duration
+	InactiveWarning time.Duration
+	Busy            func() bool
 }
 
 // Player is a roster entry: the contracts §2 Player JSON, which carries the
@@ -136,6 +145,10 @@ type Manager struct {
 	// lastActive is the clock reading of the last join, leave or accepted
 	// input, or the session start. Used by the idle timeout.
 	lastActive time.Time
+	// lastAction is the last thing a person did (see InactiveTimeout);
+	// idleWarned is set while the phones show the idle warning.
+	lastAction time.Time
+	idleWarned bool
 }
 
 type playerState struct {
@@ -241,6 +254,7 @@ func (m *Manager) Run(ctx context.Context) error {
 	m.mu.Lock()
 	m.active = true
 	m.lastActive = m.now()
+	m.lastAction = m.lastActive
 	m.mu.Unlock()
 	m.emit()
 	if m.cfg.OpenLobby && !record.LobbyOpen {
@@ -259,7 +273,7 @@ func (m *Manager) Run(ctx context.Context) error {
 	defer m.deleteIfStopped(ctx, record.ID)
 
 	loops.Add(3)
-	if m.cfg.IdleTimeout > 0 {
+	if m.cfg.IdleTimeout > 0 || m.cfg.InactiveTimeout > 0 {
 		loops.Add(1)
 		go func() { defer loops.Done(); m.idleLoop(runCtx, stopSelf) }()
 	}
@@ -907,6 +921,7 @@ func (m *Manager) applyPlayer(rp Player, event string) {
 		m.closePeer(p.ID)
 		m.notifyPlayer(PlayerLeft, p)
 	case "player_joined":
+		m.noteAction()
 		m.negotiate(p)
 	case "player_updated":
 		if p.Connected {
@@ -1172,6 +1187,9 @@ func (m *Manager) applyInput(playerID string, raw []byte) {
 		m.mu.Unlock()
 		return
 	}
+	if st.hasInput && protocol.Acted(st.input, state) {
+		m.lastAction = m.now()
+	}
 	st.input = state
 	st.hasInput = true
 	st.frames++
@@ -1394,13 +1412,65 @@ func IdleExpired(now, lastActive time.Time, timeout time.Duration, connected int
 func (m *Manager) idleExpired() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return IdleExpired(m.now(), m.lastActive, m.cfg.IdleTimeout, m.connectedLocked())
+}
+
+func (m *Manager) connectedLocked() int {
 	connected := 0
 	for _, st := range m.players {
 		if st.Connected {
 			connected++
 		}
 	}
-	return IdleExpired(m.now(), m.lastActive, m.cfg.IdleTimeout, connected)
+	return connected
+}
+
+// noteAction records that a person did something on purpose.
+func (m *Manager) noteAction() {
+	m.mu.Lock()
+	m.lastAction = m.now()
+	m.mu.Unlock()
+}
+
+// Idle is the kiosk-to-phone warning that the session is about to end for
+// inactivity: EndsIn seconds, or 0 when activity resumed and it is off.
+type Idle struct {
+	T      string `json:"t"`
+	EndsIn int    `json:"ends_in"`
+}
+
+// inactiveStep checks the connected-but-inactive timeout. It returns true
+// when the session should end, and otherwise the warning to send all
+// phones (nil for none).
+func (m *Manager) inactiveStep() (end bool, warn *Idle) {
+	if m.cfg.InactiveTimeout <= 0 {
+		return false, nil
+	}
+	busy := m.cfg.Busy != nil && m.cfg.Busy()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if busy || m.connectedLocked() == 0 {
+		// An app or game is in use, or the empty-session timeout applies.
+		m.lastAction = m.now()
+	}
+	warning := m.cfg.InactiveWarning
+	if warning <= 0 {
+		warning = time.Minute
+	}
+	warning = min(warning, m.cfg.InactiveTimeout)
+	idle := m.now().Sub(m.lastAction)
+	switch {
+	case idle >= m.cfg.InactiveTimeout:
+		return true, nil
+	case idle >= m.cfg.InactiveTimeout-warning && !m.idleWarned:
+		m.idleWarned = true
+		left := int((m.cfg.InactiveTimeout - idle + time.Second - 1) / time.Second)
+		return false, &Idle{T: "idle", EndsIn: left}
+	case idle < m.cfg.InactiveTimeout-warning && m.idleWarned:
+		m.idleWarned = false
+		return false, &Idle{T: "idle", EndsIn: 0}
+	}
+	return false, nil
 }
 
 func (m *Manager) idleLoop(ctx context.Context, end context.CancelFunc) {
@@ -1416,9 +1486,28 @@ func (m *Manager) idleLoop(ctx context.Context, end context.CancelFunc) {
 			return
 		case <-ticker.C:
 			if m.idleExpired() {
-				log.Printf("pad session: idle for %s, ending", m.cfg.IdleTimeout)
+				log.Printf("pad session: no phones for %s, ending", m.cfg.IdleTimeout)
 				end()
 				return
+			}
+			stop, warn := m.inactiveStep()
+			if stop {
+				log.Printf("pad session: nobody played for %s, ending", m.cfg.InactiveTimeout)
+				end()
+				return
+			}
+			if warn != nil {
+				m.mu.Lock()
+				ids := make([]string, 0, len(m.players))
+				for id, st := range m.players {
+					if st.Connected {
+						ids = append(ids, id)
+					}
+				}
+				m.mu.Unlock()
+				for _, id := range ids {
+					_ = m.sendControl(id, warn)
+				}
 			}
 		}
 	}

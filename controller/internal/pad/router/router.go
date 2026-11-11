@@ -390,23 +390,13 @@ func (r *Router) onInput(playerID string, state protocol.InputState) {
 		prev, seen := r.lastInput[playerID]
 		r.lastInput[playerID] = state
 		r.mu.Unlock()
-		if seen && playerActed(prev, state) {
+		if seen && protocol.Acted(prev, state) {
 			r.cfg.Activity()
 		}
 	}
 	if err := r.stack.Input(playerID, state); err != nil {
 		log.Printf("pad hub: input %s: %v", playerID, err)
 	}
-}
-
-// playerActed reports whether next differs from prev in something a person
-// does on purpose: buttons, sticks or the pointer. Phones stream motion data
-// and packet counters even when lying on a table, so those are ignored.
-func playerActed(prev, next protocol.InputState) bool {
-	return prev.Buttons != next.Buttons ||
-		prev.LX != next.LX || prev.LY != next.LY ||
-		prev.RX != next.RX || prev.RY != next.RY ||
-		prev.PX != next.PX || prev.PY != next.PY
 }
 
 func (r *Router) onHome(playerID string, via hub.HomeVia) {

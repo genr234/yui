@@ -8,6 +8,9 @@ package hotspot
 
 import (
 	"crypto/rand"
+	"encoding/json"
+	"errors"
+	"os"
 	"strings"
 )
 
@@ -36,4 +39,64 @@ func Password() string {
 		b[i] = alphabet[int(b[i])%len(alphabet)]
 	}
 	return string(b)
+}
+
+// Original is the kiosk's own hotspot configuration from before the first
+// session changed it.
+type Original struct {
+	SSID       string `json:"ssid"`
+	Passphrase string `json:"passphrase"`
+	Band       string `json:"band"`
+}
+
+// parseStart reads the start script's output: an optional "orig {json}"
+// line, then "on <band>".
+func parseStart(out string) (string, *Original) {
+	var band string
+	var orig *Original
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if rest, ok := strings.CutPrefix(line, "orig "); ok {
+			var o Original
+			if json.Unmarshal([]byte(rest), &o) == nil && o.SSID != "" {
+				orig = &o
+			}
+		} else if rest, ok := strings.CutPrefix(line, "on "); ok {
+			band = rest
+		}
+	}
+	return band, orig
+}
+
+// SaveOriginal keeps orig at path unless an earlier save is there: the
+// first one is the kiosk's real configuration. The file holds a Wi-Fi
+// password, so only the kiosk user can read it.
+func SaveOriginal(path string, orig *Original) error {
+	if orig == nil {
+		return nil
+	}
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	}
+	b, err := json.Marshal(orig)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, b, 0o600)
+}
+
+// LoadOriginal reads a saved configuration; nil when there is none.
+func LoadOriginal(path string) (*Original, error) {
+	b, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var o Original
+	if err := json.Unmarshal(b, &o); err != nil || o.SSID == "" {
+		return nil, errors.New("hotspot: unreadable saved configuration")
+	}
+	return &o, nil
 }

@@ -8,6 +8,9 @@ import (
 	"kiosk/controller/internal/firewall"
 	"kiosk/controller/internal/hotspot"
 	"log"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -49,7 +52,9 @@ func (r *Registry) BindPadLifecycle(ctx context.Context) {
 	r.padRoot = ctx
 	r.padMu.Unlock()
 	// A hotspot left on by a controller that crashed mid-session.
-	go stopHotspot()
+	if hotspot.Supported() {
+		go stopHotspot(r.snapshotConfig().ConfigDir)
+	}
 	go func() {
 		state, err := firewall.Ensure(ctx)
 		if err != nil {
@@ -60,12 +65,20 @@ func (r *Registry) BindPadLifecycle(ctx context.Context) {
 	}()
 }
 
-// runHotspot opens the kiosk's own Wi-Fi for a session's phones and closes
-// it when the session ends (done). A failure only costs the shortcut:
-// phones still join over whatever network they are on.
-func runHotspot(mgr *session.Manager, code string, done <-chan struct{}) {
+// runHotspot opens the kiosk's own Wi-Fi for a session's phones and, when
+// the session ends (done), closes it and puts the kiosk's own hotspot
+// settings back. A failure only costs the shortcut: phones still join over
+// whatever network they are on.
+func runHotspot(mgr *session.Manager, code, configDir string, done <-chan struct{}) {
 	ssid, password := hotspot.SSID(code), hotspot.Password()
-	band, err := hotspot.Start(context.Background(), ssid, password)
+	hotspotMu.Lock()
+	hotspotGen++
+	gen := hotspotGen
+	band, orig, err := hotspot.Start(context.Background(), ssid, password)
+	hotspotMu.Unlock()
+	if serr := hotspot.SaveOriginal(hotspotOriginalPath(configDir), orig); serr != nil {
+		log.Printf("pad hotspot: save original settings: %v", serr)
+	}
 	if err != nil {
 		log.Printf("pad hotspot: %v", err)
 	} else {
@@ -73,17 +86,50 @@ func runHotspot(mgr *session.Manager, code string, done <-chan struct{}) {
 		mgr.SetWiFi(session.NewWiFi(ssid, password))
 	}
 	<-done
-	if err == nil {
-		stopHotspot()
+	hotspotMu.Lock()
+	defer hotspotMu.Unlock()
+	// A newer session's hotspot is not this one's to stop.
+	if gen == hotspotGen {
+		stopHotspotLocked(configDir)
 	}
 }
 
-func stopHotspot() {
-	if state, err := hotspot.Stop(context.Background()); err != nil {
+// hotspotMu orders starts and stops across sessions; hotspotGen is the
+// newest session's start.
+var (
+	hotspotMu  sync.Mutex
+	hotspotGen int
+)
+
+// stopHotspot turns off a hotspot this controller started (also one left on
+// by a crash) and restores the saved settings.
+func stopHotspot(configDir string) {
+	hotspotMu.Lock()
+	defer hotspotMu.Unlock()
+	stopHotspotLocked(configDir)
+}
+
+func stopHotspotLocked(configDir string) {
+	path := hotspotOriginalPath(configDir)
+	orig, err := hotspot.LoadOriginal(path)
+	if err != nil {
 		log.Printf("pad hotspot: %v", err)
-	} else if state != "off" {
+	}
+	state, err := hotspot.Stop(context.Background(), orig)
+	if err != nil {
+		log.Printf("pad hotspot: %v", err)
+		return
+	}
+	if state != "off" && !strings.HasPrefix(state, "left alone") {
 		log.Printf("pad hotspot: %s", state)
 	}
+	if orig != nil && strings.Contains(state, "restored") {
+		_ = os.Remove(path)
+	}
+}
+
+func hotspotOriginalPath(configDir string) string {
+	return filepath.Join(configDir, "hotspot-original.json")
 }
 
 type padPlayersCommand struct{}
@@ -272,12 +318,16 @@ func (r *Registry) startPadSession() (session.Snapshot, error) {
 		return emptyPadSnapshot(), errors.New("connect this kiosk to an account before starting a play session")
 	}
 	mgr, err := session.Open(session.Config{
-		ServerURL:   cfg.ServerURL,
-		DeviceToken: account.DeviceToken,
-		KioskName:   account.Name,
-		Audio:       r.Audio(),
-		OpenLobby:   cfg.EventMode,
-		IdleTimeout: eventIdleTimeout(cfg),
+		ServerURL:       cfg.ServerURL,
+		DeviceToken:     account.DeviceToken,
+		KioskName:       account.Name,
+		Audio:           r.Audio(),
+		OpenLobby:       cfg.EventMode,
+		IdleTimeout:     padEmptyTimeout(cfg),
+		InactiveTimeout: padInactiveTimeout(cfg),
+		// A wake lock (video, a native game) means the kiosk is in use even
+		// when nobody touches a phone.
+		Busy: useractivity.Default().Active,
 	})
 	if err != nil {
 		return emptyPadSnapshot(), err
@@ -336,7 +386,7 @@ func (r *Registry) startPadSession() (session.Snapshot, error) {
 		snap := mgr.Snapshot()
 		if snap.Session != nil && snap.Session.JoinURL != "" {
 			if !cfg.PadHotspotOff && hotspot.Supported() {
-				go runHotspot(mgr, snap.Session.Code, done)
+				go runHotspot(mgr, snap.Session.Code, cfg.ConfigDir, done)
 			}
 			return snap, nil
 		}
@@ -443,6 +493,29 @@ func (r *Registry) padHub() *router.Router {
 
 // eventIdleTimeout is how long an empty session may sit before it ends by
 // itself: only in event mode, never shorter than a minute.
+// padEmptyTimeout is how long a session with no phone connected lasts.
+func padEmptyTimeout(cfg config.Config) time.Duration {
+	if cfg.EventMode {
+		return eventIdleTimeout(cfg)
+	}
+	return minutesOr(cfg.PadEmptyMinutes, 5)
+}
+
+// padInactiveTimeout is how long connected phones may go unused.
+func padInactiveTimeout(cfg config.Config) time.Duration {
+	return minutesOr(cfg.PadIdleMinutes, 15)
+}
+
+func minutesOr(minutes, fallback int) time.Duration {
+	switch {
+	case minutes < 0:
+		return 0
+	case minutes == 0:
+		minutes = fallback
+	}
+	return time.Duration(minutes) * time.Minute
+}
+
 func eventIdleTimeout(cfg config.Config) time.Duration {
 	if !cfg.EventMode {
 		return 0

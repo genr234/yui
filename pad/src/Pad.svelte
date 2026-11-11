@@ -38,6 +38,9 @@
   export let kioskName = ''
   /** The kiosk hotspot from `welcome`; named when the link falls back. */
   let wifiSsid = ''
+  /** Clock time the session ends for inactivity, or 0 (from `idle`). */
+  let idleEndsAt = 0
+  let idleLeft = 0
   /** The Yui account linked to this phone, if any (plan 10). */
   export let accountName: string | null = null
   /** Local layout preview (dev `?demo=layout`): no session, events go to `onDemoEvent`. */
@@ -109,6 +112,16 @@
   // Enabled once the `input` channel opens (always in the local demo).
   loop.setEnabled(!!demoTree)
 
+  let idleTimer: ReturnType<typeof setTimeout> | null = null
+  // Counts the idle warning down once a second until it ends or is lifted.
+  function tickIdle() {
+    if (idleTimer) clearTimeout(idleTimer)
+    idleTimer = null
+    if (!idleEndsAt) return
+    idleLeft = Math.max(0, Math.ceil((idleEndsAt - Date.now()) / 1000))
+    if (idleLeft > 0) idleTimer = setTimeout(tickIdle, 1000)
+  }
+
   function onControl(msg: ControlMessage) {
     switch (msg.t) {
       case 'welcome':
@@ -116,6 +129,10 @@
         kioskName = msg.kiosk_name
         wifiSsid = msg.wifi_ssid ?? ''
         layoutVersion = -Infinity // a new peer starts its own layout versions
+        return
+      case 'idle':
+        idleEndsAt = msg.ends_in > 0 ? Date.now() + msg.ends_in * 1000 : 0
+        tickIdle()
         return
       case 'layout':
         if (msg.version <= layoutVersion) return
@@ -361,6 +378,7 @@
     window.removeEventListener('orientationchange', readOrientation)
     document.removeEventListener('visibilitychange', onVisibility)
     window.removeEventListener('online', wake)
+    if (idleTimer) clearTimeout(idleTimer)
     session?.stop()
     loop.dispose()
     motion.stop()
@@ -434,6 +452,13 @@
         Tap to enable sound
         <span>This phone is the speaker</span>
       </button>
+    {/if}
+
+    {#if idleEndsAt}
+      <div class="idle-warning" role="alert">
+        <strong>Still playing?</strong>
+        <span>Press any button. The session ends in {idleLeft} s.</span>
+      </div>
     {/if}
 
     {#if conn === 'fallback'}
@@ -686,6 +711,23 @@
     font-weight: 900;
     line-height: 1;
     box-shadow: 0 var(--yui-lip) 0 rgba(0, 0, 0, 0.35), 0 20px 50px rgba(0, 0, 0, 0.35);
+  }
+  .idle-warning {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    top: 12px;
+    z-index: 4;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: rgba(13, 24, 37, 0.92);
+    text-align: center;
+  }
+  .idle-warning span {
+    color: var(--muted);
   }
   .slow-link {
     position: absolute;

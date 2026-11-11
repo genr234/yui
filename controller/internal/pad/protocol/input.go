@@ -53,6 +53,16 @@ type InputState struct {
 	PY      int16      `json:"py"`
 }
 
+// Acted reports whether next differs from prev in something a person does
+// on purpose: buttons, sticks or the pointer. Phones stream motion data and
+// packet counters even when lying on a table, so those are ignored.
+func Acted(prev, next InputState) bool {
+	return prev.Buttons != next.Buttons ||
+		prev.LX != next.LX || prev.LY != next.LY ||
+		prev.RX != next.RX || prev.RY != next.RY ||
+		prev.PX != next.PX || prev.PY != next.PY
+}
+
 // EncodeInput serialises s into the 48-byte little-endian layout.
 func EncodeInput(s InputState) []byte {
 	b := make([]byte, InputSize)

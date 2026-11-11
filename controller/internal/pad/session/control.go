@@ -57,6 +57,8 @@ func (m *Manager) handleControl(playerID string, raw []byte, gen int, fromCable 
 }
 
 func (m *Manager) forwardControl(playerID string, msg any) {
+	// Layout controls and system actions (home, menus) are a person acting.
+	m.noteAction()
 	m.mu.Lock()
 	fn := m.onControl
 	m.mu.Unlock()

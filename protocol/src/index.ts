@@ -147,6 +147,13 @@ export interface Pong {
   ts: number;
 }
 
+/** Kiosk → phone: the session ends for inactivity in `ends_in` seconds;
+ *  0 means activity resumed and the warning is off. */
+export interface Idle {
+  t: "idle";
+  ends_in: number;
+}
+
 export type ControlMessage =
   | Hello
   | Welcome
@@ -160,7 +167,8 @@ export type ControlMessage =
   | ProfileRequest
   | ProfileReply
   | Ping
-  | Pong;
+  | Pong
+  | Idle;
 
 // ---------------------------------------------------------------- input codec
 
@@ -383,6 +391,9 @@ export function parseControl(json: string): ControlMessage {
     case "profile_reply":
       if (!isStr(m.app_id) || m.app_id === "") fail("profile_reply: app_id must be a non-empty string");
       if (!isBool(m.granted)) fail("profile_reply: granted must be a boolean");
+      break;
+    case "idle":
+      if (!isNum(m.ends_in) || m.ends_in < 0) fail("idle: ends_in must be a non-negative number");
       break;
     case "ping":
     case "pong":

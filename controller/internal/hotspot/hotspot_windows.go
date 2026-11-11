@@ -5,6 +5,7 @@ package hotspot
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -33,6 +34,10 @@ $m = [Windows.Networking.NetworkOperators.NetworkOperatorTetheringManager]::Crea
 
 const startScript = prelude + `
 $c = $m.GetCurrentAccessPointConfiguration()
+if (-not $c.Ssid.StartsWith($env:YUI_HOTSPOT_PREFIX)) {
+  # The kiosk's own settings, saved so Stop can put them back.
+  'orig ' + (@{ ssid = $c.Ssid; passphrase = $c.Passphrase; band = [string]$c.Band } | ConvertTo-Json -Compress)
+}
 $c.Ssid = $env:YUI_HOTSPOT_SSID
 $c.Passphrase = $env:YUI_HOTSPOT_PASSWORD
 $band = 'auto'
@@ -47,23 +52,49 @@ if ($m.TetheringOperationalState -ne 'On') {
 
 const stopScript = prelude + `
 $c = $m.GetCurrentAccessPointConfiguration()
-if ($m.TetheringOperationalState -eq 'Off') { 'off'; return }
-if (-not $c.Ssid.StartsWith($env:YUI_HOTSPOT_PREFIX)) { "left on: $($c.Ssid) is not ours"; return }
-$r = Await ($m.StopTetheringAsync())
-if ($r.Status -ne 'Success') { throw "stop: $($r.Status) $($r.AdditionalErrorMessage)" }
-'off'
+if (-not $c.Ssid.StartsWith($env:YUI_HOTSPOT_PREFIX)) { "left alone: $($c.Ssid) is not ours"; return }
+if ($m.TetheringOperationalState -ne 'Off') {
+  $r = Await ($m.StopTetheringAsync())
+  if ($r.Status -ne 'Success') { throw "stop: $($r.Status) $($r.AdditionalErrorMessage)" }
+}
+if ($env:YUI_HOTSPOT_ORIG) {
+  $o = $env:YUI_HOTSPOT_ORIG | ConvertFrom-Json
+  $c.Ssid = $o.ssid; $c.Passphrase = $o.passphrase
+  $c.Band = [Enum]::Parse([Windows.Networking.NetworkOperators.TetheringWiFiBand], $o.band)
+  AwaitAction ($m.ConfigureAccessPointAsync($c))
+  'off, restored'
+} else {
+  # Nothing saved (it was ours before any save): Windows' own style of default.
+  $c.Ssid = "$env:COMPUTERNAME $(Get-Random -Minimum 1000 -Maximum 9999)"
+  $c.Passphrase = -join ((48..57) + (97..122) | Get-Random -Count 12 | ForEach-Object { [char]$_ })
+  $c.Band = [Windows.Networking.NetworkOperators.TetheringWiFiBand]::Auto
+  AwaitAction ($m.ConfigureAccessPointAsync($c))
+  'off, reset to a default name'
+}
 `
 
 // Start configures the hotspot as ssid/password and turns it on. It tries
 // 5 GHz first (less crowded, lower latency) and falls back to the adapter's
-// automatic band. The result says which band it got.
-func Start(ctx context.Context, ssid, password string) (string, error) {
-	return run(ctx, startScript, "YUI_HOTSPOT_SSID="+ssid, "YUI_HOTSPOT_PASSWORD="+password)
+// automatic band. It returns the band it got and, when the hotspot was not
+// already ours, the kiosk's own settings for Stop to restore.
+func Start(ctx context.Context, ssid, password string) (string, *Original, error) {
+	out, err := run(ctx, startScript, "YUI_HOTSPOT_PREFIX="+SSIDPrefix, "YUI_HOTSPOT_SSID="+ssid, "YUI_HOTSPOT_PASSWORD="+password)
+	band, orig := parseStart(out)
+	return band, orig, err
 }
 
-// Stop turns the hotspot off if this package started it.
-func Stop(ctx context.Context) (string, error) {
-	return run(ctx, stopScript, "YUI_HOTSPOT_PREFIX="+SSIDPrefix)
+// Stop turns the hotspot off if this package started it and puts back orig
+// (or, with nil, a Windows-style default name and password).
+func Stop(ctx context.Context, orig *Original) (string, error) {
+	env := []string{"YUI_HOTSPOT_PREFIX=" + SSIDPrefix}
+	if orig != nil {
+		b, err := json.Marshal(orig)
+		if err != nil {
+			return "", err
+		}
+		env = append(env, "YUI_HOTSPOT_ORIG="+string(b))
+	}
+	return run(ctx, stopScript, env...)
 }
 
 // Supported reports whether this build can run a hotspot at all.
