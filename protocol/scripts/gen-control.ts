@@ -16,6 +16,12 @@ const valid: Record<string, unknown> = {
   sound: { t: "sound", url: "https://example.com/a.mp3", volume: 0.8 },
   player: { t: "player", player: player({ slot: null, color: "red", host: false }) },
   system: { t: "system", action: "save_state" },
+  players_roster: { t: "players", players: [{ id: "8", name: "Dee", color: "red", slot: null, avatar: "\u{1F98A}" }, { id: "9", name: "Eli", color: "green", slot: 2 }] },
+  seat_offer: { t: "seat_offer", to: "8" },
+  seat_offered: { t: "seat_offered", from: { id: "7", name: "Ana", color: "blue" }, slot: 1, expires_in: 20 },
+  seat_answer: { t: "seat_answer", from: "7", accept: true },
+  seat_cancel: { t: "seat_cancel" },
+  seat_result: { t: "seat_result", result: "accepted", role: "giver", slot: 1, other: { id: "8", name: "Dee", color: "red" } },
   ping: { t: "ping", id: 1, ts: 1700000000000 },
   pong: { t: "pong", id: 1, ts: 1700000000001 },
 };
@@ -35,6 +41,10 @@ const invalid: Record<string, string> = {
   haptic_bad_intensity: '{"t":"haptic","name":"tap","intensity":2}',
   system_bad_action: '{"t":"system","action":"reboot"}',
   welcome_bad_player: '{"t":"welcome","v":1,"player":{"id":7},"kiosk_name":"k"}',
+  seat_offer_no_to: '{"t":"seat_offer"}',
+  seat_answer_no_accept: '{"t":"seat_answer","from":"7"}',
+  seat_offered_bad_slot: '{"t":"seat_offered","from":{"id":"7","name":"Ana","color":"blue"},"slot":0,"expires_in":20}',
+  seat_result_bad_result: '{"t":"seat_result","result":"maybe","role":"giver","slot":1}',
   ping_no_ts: '{"t":"ping","id":1}',
   array: "[1,2]",
 };

@@ -194,6 +194,53 @@ class PlaySession < ApplicationRecord
     player.disconnect_later
   end
 
+  # Why a seat pass was refused; `code` is what the kiosk API returns.
+  class SeatPassError < StandardError
+    attr_reader :code
+
+    def initialize(code, message = code.to_s)
+      @code = code
+      super(message)
+    end
+  end
+
+  # The giver hands their slot to a connected spectator without either of them
+  # leaving: the recipient takes the slot, the giver becomes a spectator. Host
+  # and speaker stay with the person. `slot` is the seat the offer was made
+  # for; if the giver no longer holds it (left, was released, was kicked) the
+  # pass is refused, so a stale accept can never hand over someone else's seat.
+  #
+  # Both rows move in one transaction with compare-and-set updates (the unique
+  # (session, slot) index backs this up): the giver's slot is cleared first,
+  # then the recipient claims it only if they are still an unseated, connected,
+  # active spectator. Raises SeatPassError and changes nothing otherwise.
+  def pass_seat!(giver, recipient, slot: nil)
+    [ giver, recipient ].each do |player|
+      raise SeatPassError.new(:not_found, "player is not in this session") unless player.play_session_id == id
+    end
+    raise SeatPassError.new(:same_player) if giver.id == recipient.id
+
+    transaction do
+      current = players.active.find_by(id: giver.id)
+      held = current&.slot
+      raise SeatPassError.new(:giver_not_seated) if held.nil?
+      raise SeatPassError.new(:seat_changed) if slot && slot != held
+
+      cleared = players.active.where(id: giver.id, slot: held).update_all(slot: nil, updated_at: Time.current)
+      raise SeatPassError.new(:seat_changed) unless cleared == 1
+
+      claimed = players.active.where(id: recipient.id, slot: nil, connected: true)
+        .update_all(slot: held, updated_at: Time.current)
+      raise SeatPassError.new(:recipient_not_spectator) unless claimed == 1
+    end
+    giver.reload
+    recipient.reload
+    [ recipient, giver ].each(&:broadcast_updated)
+    true
+  rescue ActiveRecord::RecordNotUnique
+    raise SeatPassError.new(:seat_changed)
+  end
+
   # A freed seat goes to the spectator who has waited longest, preferring one
   # whose phone is connected (only those with connected_only). Returns that
   # player (not yet announced) or nil.

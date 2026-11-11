@@ -60,6 +60,8 @@ type Config struct {
 	// InactiveWarning before the end (default 60 s). Zero disables it.
 	InactiveTimeout time.Duration
 	InactiveWarning time.Duration
+	// SeatOfferTTL is how long a seat offer waits for an answer (default 20 s).
+	SeatOfferTTL time.Duration
 }
 
 // Player is a roster entry: the contracts §2 Player JSON, which carries the
@@ -140,6 +142,7 @@ type Manager struct {
 	peers       map[string]*peer
 	negGen      map[string]int
 	pings       map[string]pendingPing
+	offers      map[string]*seatOffer // pending seat offers by giver id
 	watchers    map[int]func(Snapshot)
 	nextWatch   int
 	sensitive   bool
@@ -330,6 +333,7 @@ func (m *Manager) deleteIfStopped(ctx context.Context, id string) {
 		return
 	}
 	m.sendByes()
+	m.clearOffers()
 	endCtx, cancel := context.WithTimeout(context.Background(), shutdownBudget)
 	defer cancel()
 	if err := m.api.Destroy(endCtx, id); err != nil {
@@ -853,6 +857,7 @@ func (m *Manager) connectOnce(ctx context.Context, sessionID string) error {
 	select {
 	case <-ctx.Done():
 		m.sendByes()
+		m.clearOffers()
 		return nil
 	case err := <-errCh:
 		return err
@@ -941,6 +946,7 @@ func (m *Manager) applyPlayer(rp Player, event string) {
 	switch event {
 	case "player_left":
 		m.closePeer(p.ID)
+		m.reviewOffers(p, true)
 		m.notifyPlayer(PlayerLeft, p)
 	case "player_joined":
 		m.noteAction()
@@ -950,6 +956,7 @@ func (m *Manager) applyPlayer(rp Player, event string) {
 			m.negotiateIfIdle(p)
 		}
 		_ = m.pushPlayer(pushed, wasFallback)
+		m.reviewOffers(p, false)
 		if p.Connected {
 			m.notifyPlayer(PlayerUpdated, p)
 		} else {
@@ -1242,6 +1249,7 @@ func (m *Manager) removePlayer(playerID string) {
 		m.rightID = ""
 	}
 	m.mu.Unlock()
+	m.reviewOffers(player, true)
 	m.notifyPlayer(PlayerLeft, player)
 	m.emit()
 }

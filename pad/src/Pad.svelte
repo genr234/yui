@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte'
-  import type { ControlMessage, Hello, Node, Player } from '@yui/protocol'
+  import type { ControlMessage, Hello, Node, Player, RosterPlayer } from '@yui/protocol'
   import { sketchState } from './controls/sketch'
   import LayoutView from './layout/LayoutView.svelte'
   import HomeSheet from './HomeSheet.svelte'
@@ -9,6 +9,8 @@
   import Icon from './Icon.svelte'
   import { guideEntries, hasButtons } from './layout/guide'
   import ProfileSheet from './ProfileSheet.svelte'
+  import SeatOfferCard from './SeatOfferCard.svelte'
+  import { emptySeat, seatExpire, seatReduce, secondsLeft, spectatorsOf, type SeatState } from './seatPass'
   import { enqueueAsk, type ProfileAsk } from './account'
   import Avatar from './Avatar.svelte'
   import SimGyro from './SimGyro.svelte'
@@ -128,8 +130,45 @@
     if (idleLeft > 0) idleTimer = setTimeout(tickIdle, 1000)
   }
 
+  // ------------------------------------------------------------ pass your seat
+  let seat: SeatState = emptySeat
+  let roster: RosterPlayer[] = []
+  let seatNow = Date.now()
+  let seatTimer: ReturnType<typeof setInterval> | undefined
+  /** Every change goes through here so the countdown ticks only while an offer is open. */
+  function setSeat(next: SeatState) {
+    seat = next
+    const active = !!(next.incoming || next.outgoing)
+    if (active && !seatTimer) {
+      seatTimer = setInterval(() => {
+        seatNow = Date.now()
+        setSeat(seatExpire(seat, seatNow))
+      }, 500)
+    } else if (!active && seatTimer) {
+      clearInterval(seatTimer)
+      seatTimer = undefined
+    }
+  }
+  onDestroy(() => seatTimer && clearInterval(seatTimer))
+  function offerSeat(to: string) {
+    send({ t: 'seat_offer', to })
+  }
+  function answerSeat(accept: boolean) {
+    if (!seat.incoming) return
+    send({ t: 'seat_answer', from: seat.incoming.from.id, accept })
+    setSeat({ ...seat, incoming: null }) // the kiosk's seat_result confirms
+  }
+
   function onControl(msg: ControlMessage) {
     switch (msg.t) {
+      case 'players':
+        roster = msg.players
+        return
+      case 'seat_offered':
+      case 'seat_result':
+        seatNow = Date.now()
+        setSeat(seatReduce(seat, msg, seatNow))
+        return
       case 'welcome':
         player = msg.player
         kioskName = msg.kiosk_name
@@ -533,10 +572,24 @@
       onAccountUse={accountUse}
       onAccountForget={accountForget}
       onAccountLink={accountLink}
+      spectators={spectatorsOf(roster)}
+      {seat}
+      seatSeconds={seat.outgoing ? secondsLeft(seat.outgoing.until, seatNow) : 0}
+      onSeatOffer={offerSeat}
+      onSeatCancel={() => send({ t: 'seat_cancel' })}
+      onSeatDismiss={() => setSeat({ ...seat, result: null })}
     />
   {/if}
   {#if guideOpen && !homeOpen}
     <GuideSheet entries={guide} onClose={() => (guideOpen = false)} />
+  {/if}
+  {#if seat.incoming}
+    <SeatOfferCard
+      from={seat.incoming.from}
+      slot={seat.incoming.slot}
+      secondsLeft={secondsLeft(seat.incoming.until, seatNow)}
+      onAnswer={answerSeat}
+    />
   {/if}
   {#if asks.length > 0 && player.account_linked}
     <ProfileSheet ask={asks[0]} account={accountName} busy={askBusy} onAnswer={answerAsk} />

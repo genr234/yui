@@ -27,6 +27,20 @@ module Api
           render json: { error: "invalid", detail: error.message }, status: :unprocessable_entity
         end
 
+        # The seated player hands their slot to a connected spectator (`to`).
+        # `slot` is the seat the offer was made for. 409 when the seat or the
+        # spectator changed since the offer; 422 when the recipient is unknown.
+        def pass_seat
+          recipient = @play_session.players.active.find_by(id: params[:to])
+          return render json: { error: "recipient_not_spectator" }, status: :unprocessable_entity unless recipient
+
+          @play_session.pass_seat!(@player, recipient, slot: params[:slot].presence&.to_i)
+          head :no_content
+        rescue PlaySession::SeatPassError => error
+          status = error.code == :recipient_not_spectator ? :unprocessable_entity : :conflict
+          render json: { error: error.code }, status: status
+        end
+
         private
 
         def set_player

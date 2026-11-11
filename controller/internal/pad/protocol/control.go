@@ -119,6 +119,73 @@ type ProfileReply struct {
 	Granted bool   `json:"granted"`
 }
 
+// SeatMate is the little a phone may know about another player when seats
+// are passed: enough to draw their avatar chip. No roster data beyond that.
+type SeatMate struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Color  string `json:"color"`
+	Avatar string `json:"avatar,omitempty"`
+}
+
+// RosterPlayer / RosterMsg (kiosk → pad): every other ready player; Slot nil
+// is a spectator. Seat passing lists spectators from it.
+type RosterPlayer struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Color  string `json:"color"`
+	Slot   *int   `json:"slot"`
+	Avatar string `json:"avatar,omitempty"`
+	Pokes  int    `json:"pokes,omitempty"`
+}
+
+type RosterMsg struct {
+	T       string         `json:"t"`
+	Players []RosterPlayer `json:"players"`
+}
+
+// SeatOffer (pad → kiosk): the sender offers their seat to the spectator `to`.
+type SeatOffer struct {
+	T  string `json:"t"`
+	To string `json:"to"`
+}
+
+// SeatOffered (kiosk → pad) shows the recipient the offer; it lapses after
+// ExpiresIn seconds.
+type SeatOffered struct {
+	T         string   `json:"t"`
+	From      SeatMate `json:"from"`
+	Slot      int      `json:"slot"`
+	ExpiresIn int      `json:"expires_in"`
+}
+
+// SeatAnswer (pad → kiosk): the recipient accepts or declines the offer made
+// by the player with id From.
+type SeatAnswer struct {
+	T      string `json:"t"`
+	From   string `json:"from"`
+	Accept bool   `json:"accept"`
+}
+
+// SeatCancel (pad → kiosk): the giver withdraws their pending offer.
+type SeatCancel struct {
+	T string `json:"t"`
+}
+
+// SeatResult (kiosk → pad) tells the giver and the recipient how an offer
+// went. Role is the receiving phone's own role. Result "pending" goes to the
+// giver only (the offer is out; ExpiresIn counts down); the rest are final.
+// Other is the other party; Reason explains "failed".
+type SeatResult struct {
+	T         string    `json:"t"`
+	Result    string    `json:"result"`
+	Role      string    `json:"role"`
+	Slot      int       `json:"slot"`
+	Other     *SeatMate `json:"other,omitempty"`
+	ExpiresIn int       `json:"expires_in,omitempty"`
+	Reason    string    `json:"reason,omitempty"`
+}
+
 // Ping and Pong share a shape; ID may be a number or string on the wire.
 type Ping struct {
 	T  string `json:"t"`
@@ -131,6 +198,8 @@ type Pong = Ping
 var (
 	eventKinds    = set("press", "release", "tap", "change", "submit", "swipe")
 	textOps       = set("insert", "backspace", "enter")
+	seatResults   = set("pending", "accepted", "declined", "expired", "cancelled", "failed")
+	seatRoles     = set("giver", "recipient")
 	systemActions = set("home", "resume", "quit", "save_state", "load_state", "be_speaker", "volume", "sensitive", "playing")
 )
 
@@ -331,6 +400,67 @@ func ParseControl(data []byte) (any, error) {
 		}
 		if m.AppID == "" {
 			return nil, wrap(errors.New("app_id required"))
+		}
+		return m, nil
+	case "seat_cancel":
+		return SeatCancel{T: t}, nil
+	case "players":
+		if err := need("players"); err != nil {
+			return nil, wrap(err)
+		}
+		var m RosterMsg
+		if err := decode(data, &m); err != nil {
+			return nil, wrap(err)
+		}
+		for _, p := range m.Players {
+			if p.ID == "" {
+				return nil, wrap(errors.New("players[].id required"))
+			}
+		}
+		return m, nil
+	case "seat_offer":
+		var m SeatOffer
+		if err := decode(data, &m); err != nil {
+			return nil, wrap(err)
+		}
+		if m.To == "" {
+			return nil, wrap(errors.New("to required"))
+		}
+		return m, nil
+	case "seat_offered":
+		if err := need("from", "slot", "expires_in"); err != nil {
+			return nil, wrap(err)
+		}
+		var m SeatOffered
+		if err := decode(data, &m); err != nil {
+			return nil, wrap(err)
+		}
+		if m.From.ID == "" || m.Slot < 1 || m.ExpiresIn < 0 {
+			return nil, wrap(errors.New("bad from, slot or expires_in"))
+		}
+		return m, nil
+	case "seat_answer":
+		if err := need("from", "accept"); err != nil {
+			return nil, wrap(err)
+		}
+		var m SeatAnswer
+		if err := decode(data, &m); err != nil {
+			return nil, wrap(err)
+		}
+		if m.From == "" {
+			return nil, wrap(errors.New("from required"))
+		}
+		return m, nil
+	case "seat_result":
+		if err := need("result", "role", "slot"); err != nil {
+			return nil, wrap(err)
+		}
+		var m SeatResult
+		if err := decode(data, &m); err != nil {
+			return nil, wrap(err)
+		}
+		if !seatResults[m.Result] || !seatRoles[m.Role] {
+			return nil, wrap(errors.New("bad result or role"))
 		}
 		return m, nil
 	case "ping", "pong":

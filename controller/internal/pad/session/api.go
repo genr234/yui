@@ -144,6 +144,35 @@ func (c *apiClient) TransferSpeaker(ctx context.Context, sessionID, playerID, ch
 	return c.postEmpty(ctx, path)
 }
 
+// SeatError is Rails refusing a seat pass; Code is its `error` value
+// (giver_not_seated, seat_changed, recipient_not_spectator, ...).
+type SeatError struct{ Code string }
+
+func (e *SeatError) Error() string { return "pad session: seat pass refused: " + e.Code }
+
+// PassSeat hands the giver's slot to the recipient in one Rails transaction.
+// slot is the seat the offer was made for.
+func (c *apiClient) PassSeat(ctx context.Context, sessionID, giverID, toID string, slot int) error {
+	body, _ := json.Marshal(map[string]any{"to": toID, "slot": slot})
+	resp, err := c.do(ctx, http.MethodPost, playerActionPath(sessionID, giverID, "pass_seat"), body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusNoContent:
+		return nil
+	case http.StatusConflict, http.StatusUnprocessableEntity, http.StatusNotFound:
+		var out struct {
+			Error string `json:"error"`
+		}
+		if json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&out) == nil && out.Error != "" {
+			return &SeatError{Code: out.Error}
+		}
+	}
+	return httpStatusError(resp)
+}
+
 func (c *apiClient) ICE(ctx context.Context, id string) (ICEConfig, error) {
 	resp, err := c.do(ctx, http.MethodGet, "/api/kiosk/play_sessions/"+url.PathEscape(id)+"/ice", nil)
 	if err != nil {

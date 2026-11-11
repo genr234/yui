@@ -167,4 +167,49 @@ class KioskPlaySessionsApiTest < ActionDispatch::IntegrationTest
     assert json["ice_servers"].first["urls"].any?
     assert json["ttl"].positive?
   end
+
+  test "pass_seat moves the slot to a connected spectator" do
+    play_session = start_session(@kiosk)
+    giver, = join_player(play_session, name: "Ana")
+    3.times { |n| join_player(play_session, name: "Fill#{n}") }
+    dee, = join_player(play_session, name: "Dee")
+    dee.mark_connected!("d")
+
+    post "/api/kiosk/play_sessions/#{play_session.id}/players/#{giver.id}/pass_seat",
+      params: { to: dee.id, slot: 1 }, headers: @auth, as: :json
+    assert_response :no_content
+    assert_equal 1, dee.reload.slot
+    assert_nil giver.reload.slot
+    assert giver.host?
+
+    # The giver no longer has a seat to give.
+    post "/api/kiosk/play_sessions/#{play_session.id}/players/#{giver.id}/pass_seat",
+      params: { to: dee.id, slot: 1 }, headers: @auth, as: :json
+    assert_response :conflict
+    assert_equal "giver_not_seated", json["error"]
+  end
+
+  test "pass_seat rejects a seated, unknown or disconnected recipient and is kiosk scoped" do
+    play_session = start_session(@kiosk)
+    giver, = join_player(play_session, name: "Ana")
+    bo, = join_player(play_session, name: "Bo")
+    4.times { |n| join_player(play_session, name: "Fill#{n}") }
+    ghost = play_session.players.active.find_by(slot: nil)
+    url = "/api/kiosk/play_sessions/#{play_session.id}/players/#{giver.id}/pass_seat"
+
+    post url, params: { to: bo.id }, headers: @auth, as: :json
+    assert_response :unprocessable_entity
+    assert_equal "recipient_not_spectator", json["error"]
+    post url, params: { to: ghost.id }, headers: @auth, as: :json
+    assert_response :unprocessable_entity
+    post url, params: { to: 0 }, headers: @auth, as: :json
+    assert_response :unprocessable_entity
+    assert_equal 1, giver.reload.slot
+
+    other_session = start_session(create_kiosk(account: @kiosk.account))
+    stranger, = join_player(other_session)
+    post "/api/kiosk/play_sessions/#{other_session.id}/players/#{stranger.id}/pass_seat",
+      params: { to: ghost.id }, headers: @auth, as: :json
+    assert_response :not_found
+  end
 end
