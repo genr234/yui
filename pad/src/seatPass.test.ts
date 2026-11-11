@@ -46,8 +46,8 @@ describe('seatExpire', () => {
 describe('helpers', () => {
   test('spectatorsOf keeps only seatless players', () => {
     const roster = [
-      { id: '2', name: 'Dee', color: 'red', slot: null },
-      { id: '3', name: 'Bo', color: 'green', slot: 2 },
+      { id: '2', name: 'Dee', color: 'red', slot: null, pokes: true },
+      { id: '3', name: 'Bo', color: 'green', slot: 2, pokes: true },
     ]
     expect(spectatorsOf(roster).map((p) => p.id)).toEqual(['2'])
   })
