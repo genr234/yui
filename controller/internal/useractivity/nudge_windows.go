@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -20,6 +21,8 @@ var (
 	user32                   = syscall.NewLazyDLL("user32.dll")
 	kernel32                 = syscall.NewLazyDLL("kernel32.dll")
 	procSendInput            = user32.NewProc("SendInput")
+	procGetCursorPos         = user32.NewProc("GetCursorPos")
+	procSetCursorPos         = user32.NewProc("SetCursorPos")
 	procSystemParametersInfo = user32.NewProc("SystemParametersInfoW")
 	procFindWindowW          = user32.NewProc("FindWindowW")
 	procPostMessageW         = user32.NewProc("PostMessageW")
@@ -56,12 +59,23 @@ type input struct {
 
 type osPlatform struct{}
 
+// restingMoveEvery is how often Nudge leaves the cursor somewhere else. Idle
+// tools that poll the cursor position see nothing from a zero-distance move
+// (kiosk 1's DetectMouseActivity closes Chrome after 5 minutes of the same
+// position), so the cursor has to rest elsewhere at least that often.
+const restingMoveEvery = 2 * time.Minute
+
+var lastRestingMove time.Time // only touched by Nudge, which the Keeper serialises
+
 // Nudge sends a mouse move of zero distance. That is real input to Windows:
 // it resets the idle timer (screensaver, display sleep, GetLastInputInfo)
 // and reaches low-level mouse hooks, yet the cursor does not move, so the
 // page under it gets no mousemove (a video player would otherwise flash
-// its controls). A screensaver that is already running is then closed,
-// since zero movement is below what screensavers react to.
+// its controls). Every restingMoveEvery the cursor is also left one pixel
+// over, for idle tools that compare cursor positions; it alternates between
+// two neighbouring pixels, so it never drifts. A screensaver that is already
+// running is then closed, since zero movement is below what screensavers
+// react to.
 func (osPlatform) Nudge() error {
 	inputs := [1]input{
 		{typ: inputMouse, mi: mouseInput{flags: mouseEventfMove}},
@@ -71,10 +85,33 @@ func (osPlatform) Nudge() error {
 	if int(n) != len(inputs) {
 		errs = append(errs, fmt.Errorf("SendInput sent %d of %d: %v", n, len(inputs), err))
 	}
+	if time.Since(lastRestingMove) >= restingMoveEvery {
+		lastRestingMove = time.Now()
+		if err := restingMove(); err != nil {
+			errs = append(errs, err)
+		}
+	}
 	if err := closeScreensaver(); err != nil {
 		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
+}
+
+// restingMove moves the cursor between x and its neighbour (even x goes
+// right, odd x goes left), so it stays on screen and in place overall.
+func restingMove() error {
+	var pt struct{ x, y int32 }
+	if r, _, err := procGetCursorPos.Call(uintptr(unsafe.Pointer(&pt))); r == 0 {
+		return fmt.Errorf("GetCursorPos: %v", err)
+	}
+	x := pt.x + 1
+	if pt.x%2 != 0 {
+		x = pt.x - 1
+	}
+	if r, _, err := procSetCursorPos.Call(uintptr(x), uintptr(pt.y)); r == 0 {
+		return fmt.Errorf("SetCursorPos: %v", err)
+	}
+	return nil
 }
 
 // awake runs SetThreadExecutionState on one OS thread for as long as the

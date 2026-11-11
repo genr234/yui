@@ -34,15 +34,15 @@ type Config struct {
 	// EventMode turns on demo/kiosk-event behavior: new play sessions open
 	// the lobby, idle sessions end after EventIdleMinutes, and the overlay
 	// shows an attract screen when nobody is playing. Off by default.
-	EventMode        bool            `json:"event_mode"`
+	EventMode bool `json:"event_mode"`
 	// PadHotspotOff stops play sessions from opening the kiosk's own Wi-Fi
 	// hotspot for phones (on by default where Windows supports it).
 	PadHotspotOff bool `json:"pad_hotspot_off,omitempty"`
 	// PadEmptyMinutes ends a play session nobody is connected to (default
 	// 5; EventIdleMinutes in event mode). PadIdleMinutes ends one whose
 	// phones are connected but unused (default 15). Negative: never.
-	PadEmptyMinutes int `json:"pad_empty_minutes,omitempty"`
-	PadIdleMinutes  int `json:"pad_idle_minutes,omitempty"`
+	PadEmptyMinutes  int             `json:"pad_empty_minutes,omitempty"`
+	PadIdleMinutes   int             `json:"pad_idle_minutes,omitempty"`
 	EventIdleMinutes int             `json:"event_idle_minutes"`
 	AdminPIN         PINHash         `json:"admin_pin,omitempty"`
 	ServerURL        string          `json:"server_url,omitempty"`

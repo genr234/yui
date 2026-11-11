@@ -80,10 +80,14 @@
     const offLibrary = onLibraryChanged(() => void refreshLibrary());
     void pad.state().then((state) => (padState = state));
     const offPad = pad.onState((state) => (padState = state));
+    // Nobody was playing: the controller ended the session and closed any
+    // game it ran, so leave the app too instead of sitting on it for hours.
+    const offAbandoned = pad.onAbandoned(() => closeApp());
     const clock = window.setInterval(() => (now = Date.now()), 60000);
 
     return () => {
       offPad();
+      offAbandoned();
       offLibrary();
       window.clearInterval(clock);
       window.clearTimeout(refreshTimer);

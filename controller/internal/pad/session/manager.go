@@ -54,12 +54,11 @@ type Config struct {
 	// InactiveTimeout ends the session when phones are connected but nobody
 	// has done anything on purpose (button, stick, pointer, a layout control,
 	// joining) for this long, so phones forgotten in pockets don't keep it
-	// open. Busy, when it reports true (an app holds a wake lock, a native
-	// game runs), counts as activity. Phones get an "idle" warning
+	// open. Wake locks don't count: a running game holds one for as long
+	// as it runs, played or not. Phones get an "idle" warning
 	// InactiveWarning before the end (default 60 s). Zero disables it.
 	InactiveTimeout time.Duration
 	InactiveWarning time.Duration
-	Busy            func() bool
 }
 
 // Player is a roster entry: the contracts §2 Player JSON, which carries the
@@ -149,6 +148,9 @@ type Manager struct {
 	// idleWarned is set while the phones show the idle warning.
 	lastAction time.Time
 	idleWarned bool
+	// abandoned is set when the session ended on its own because nobody was
+	// there (no phones, or nobody played); see Abandoned.
+	abandoned bool
 }
 
 type playerState struct {
@@ -1446,11 +1448,10 @@ func (m *Manager) inactiveStep() (end bool, warn *Idle) {
 	if m.cfg.InactiveTimeout <= 0 {
 		return false, nil
 	}
-	busy := m.cfg.Busy != nil && m.cfg.Busy()
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if busy || m.connectedLocked() == 0 {
-		// An app or game is in use, or the empty-session timeout applies.
+	if m.connectedLocked() == 0 {
+		// No phones: the empty-session timeout applies instead.
 		m.lastAction = m.now()
 	}
 	warning := m.cfg.InactiveWarning
@@ -1473,6 +1474,21 @@ func (m *Manager) inactiveStep() (end bool, warn *Idle) {
 	return false, nil
 }
 
+func (m *Manager) markAbandoned() {
+	m.mu.Lock()
+	m.abandoned = true
+	m.mu.Unlock()
+}
+
+// Abandoned reports whether the session ended by itself because nobody was
+// there: no phones for IdleTimeout, or nobody played for InactiveTimeout.
+// Whatever the session was playing was abandoned too.
+func (m *Manager) Abandoned() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.abandoned
+}
+
 func (m *Manager) idleLoop(ctx context.Context, end context.CancelFunc) {
 	tick := m.cfg.IdleTick
 	if tick <= 0 {
@@ -1487,12 +1503,14 @@ func (m *Manager) idleLoop(ctx context.Context, end context.CancelFunc) {
 		case <-ticker.C:
 			if m.idleExpired() {
 				log.Printf("pad session: no phones for %s, ending", m.cfg.IdleTimeout)
+				m.markAbandoned()
 				end()
 				return
 			}
 			stop, warn := m.inactiveStep()
 			if stop {
 				log.Printf("pad session: nobody played for %s, ending", m.cfg.InactiveTimeout)
+				m.markAbandoned()
 				end()
 				return
 			}

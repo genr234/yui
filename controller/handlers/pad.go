@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"kiosk/controller/internal/firewall"
 	"kiosk/controller/internal/hotspot"
+	"kiosk/controller/internal/native"
 	"log"
 	"os"
 	"path/filepath"
@@ -325,9 +326,6 @@ func (r *Registry) startPadSession() (session.Snapshot, error) {
 		OpenLobby:       cfg.EventMode,
 		IdleTimeout:     padEmptyTimeout(cfg),
 		InactiveTimeout: padInactiveTimeout(cfg),
-		// A wake lock (video, a native game) means the kiosk is in use even
-		// when nobody touches a phone.
-		Busy: useractivity.Default().Active,
 	})
 	if err != nil {
 		return emptyPadSnapshot(), err
@@ -376,6 +374,9 @@ func (r *Registry) startPadSession() (session.Snapshot, error) {
 		r.AssetSyncer().SetPaused(playPauseReason, false)
 		r.Emit("pad.players", mgr.Snapshot())
 		gate.Unlock()
+		if mgr.Abandoned() {
+			r.closeAbandonedPlay()
+		}
 	}()
 
 	timer := time.NewTimer(20 * time.Second)
@@ -402,6 +403,22 @@ func (r *Registry) startPadSession() (session.Snapshot, error) {
 		case <-ticker.C:
 		}
 	}
+}
+
+// closeAbandonedPlay runs when a play session ended because nobody was
+// there. A native game left running would otherwise stay on screen for hours
+// (it holds a wake lock, so no screensaver or idle tool covers it): it is
+// closed the normal way, so it can save, and the screen goes back home.
+func (r *Registry) closeAbandonedPlay() {
+	if mgr := r.nativeIfStarted(); mgr != nil {
+		if st := mgr.Status(); st.State == native.StateRunning || st.State == native.StatePreparing {
+			log.Printf("pad session: nobody is playing; closing %s", st.AppID)
+			if _, err := mgr.Stop("", false); err != nil {
+				log.Printf("pad session: closing %s: %v", st.AppID, err)
+			}
+		}
+	}
+	r.Emit("pad.abandoned", map[string]any{})
 }
 
 func (r *Registry) endPadSession() (session.Snapshot, error) {

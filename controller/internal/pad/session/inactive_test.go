@@ -9,13 +9,12 @@ import (
 
 // inactiveManager is a bare manager with one connected phone, driven by
 // inactiveStep directly (no Rails, no loops).
-func inactiveManager(clock *testClock, busy *bool) *Manager {
+func inactiveManager(clock *testClock) *Manager {
 	m := &Manager{
 		cfg: Config{
 			Now:             clock.now,
 			InactiveTimeout: 10 * time.Minute,
 			InactiveWarning: time.Minute,
-			Busy:            func() bool { return *busy },
 		},
 		players: map[string]*playerState{"1": {Player: protocol.Player{ID: "1", Connected: true}}},
 	}
@@ -25,8 +24,7 @@ func inactiveManager(clock *testClock, busy *bool) *Manager {
 
 func TestInactiveWarnsThenEnds(t *testing.T) {
 	clock := &testClock{t: time.Unix(1000, 0)}
-	busy := false
-	m := inactiveManager(clock, &busy)
+	m := inactiveManager(clock)
 
 	clock.add(8 * time.Minute)
 	if end, warn := m.inactiveStep(); end || warn != nil {
@@ -52,18 +50,18 @@ func TestInactiveWarnsThenEnds(t *testing.T) {
 	if end, _ := m.inactiveStep(); !end {
 		t.Fatal("did not end after 10 idle minutes")
 	}
+	m.markAbandoned()
+	if !m.Abandoned() {
+		t.Fatal("not marked abandoned")
+	}
 }
 
-func TestInactiveBusyAndEmptyKeepItOpen(t *testing.T) {
+// A game left running holds a wake lock all the time; that must not keep an
+// abandoned session open (it used to, for hours). Only an empty session is
+// left to the empty timeout.
+func TestInactiveEmptyLeftToEmptyTimeout(t *testing.T) {
 	clock := &testClock{t: time.Unix(1000, 0)}
-	busy := true
-	m := inactiveManager(clock, &busy)
-	clock.add(time.Hour)
-	if end, warn := m.inactiveStep(); end || warn != nil {
-		t.Fatalf("busy: end=%v warn=%v", end, warn)
-	}
-
-	busy = false
+	m := inactiveManager(clock)
 	m.players["1"].Connected = false
 	clock.add(time.Hour)
 	if end, _ := m.inactiveStep(); end {

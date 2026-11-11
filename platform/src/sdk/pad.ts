@@ -93,6 +93,11 @@ export const pad = {
 	onState: (fn: (state: PadState) => void) =>
 		bridge.on<PadState>("pad.players", (state) => fn(normalize(state))),
 	/**
+	 * The session ended by itself because nobody was there (no phones, or
+	 * nobody played for a while). Any native game it ran is being closed.
+	 */
+	onAbandoned: (fn: () => void) => bridge.on("pad.abandoned", () => fn()),
+	/**
 	 * Start or end phone play. Only one runs at a time: a second call while one
 	 * is in flight gets the same promise, whichever button it came from.
 	 * Resolves to the new state, or null when it failed; the error is in
