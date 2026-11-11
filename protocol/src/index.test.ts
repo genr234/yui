@@ -117,6 +117,18 @@ describe("profile messages (plan 10)", () => {
   });
 });
 
+describe("snap messages", () => {
+  test("parse", () => {
+    expect(parseControl('{"t":"snap"}')).toEqual({ t: "snap" });
+    expect(parseControl('{"t":"snap_result","id":"a","ok":false,"error":"Wait a moment"}')).toEqual({ t: "snap_result", id: "a", ok: false, error: "Wait a moment" });
+    expect(parseControl('{"t":"snap_chunk","id":"a","seq":0,"data":"AA"}')).toEqual({ t: "snap_chunk", id: "a", seq: 0, data: "AA" });
+  });
+  test("rejects bad shapes", () => {
+    expect(() => parseControl('{"t":"snap_result","id":"a","ok":true}')).toThrow();
+    expect(() => parseControl('{"t":"snap_chunk","id":"a","seq":-1,"data":"x"}')).toThrow();
+  });
+});
+
 describe("avatarImage", () => {
   test("only jpeg and webp base64 data urls are images", () => {
     expect(avatarImage("data:image/jpeg;base64,/9j/4AAQ")).toBe("data:image/jpeg;base64,/9j/4AAQ");

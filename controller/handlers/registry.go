@@ -85,6 +85,8 @@ type Registry struct {
 	// own locks; do not hold nativeMu while calling into it.
 	nativeMu  sync.Mutex
 	nativeMgr *native.Manager
+	// nativeWin is the placed native window's rect, for snapshots.
+	nativeWin nativeWindowState
 	// ctrlMu guards the app/native layer controller (controllers.go), built
 	// on the input hub the first time an app or native session needs it.
 	// Never held while calling into the hub or the controller.

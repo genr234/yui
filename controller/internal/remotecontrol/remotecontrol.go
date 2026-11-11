@@ -6,6 +6,7 @@ package remotecontrol
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -157,6 +158,82 @@ func Capture(ctx context.Context, port int, maxSide int) (Screen, error) {
 		return Screen{}, err
 	}
 	return Screen{Image: "data:image/jpeg;base64," + shot.Data, Width: int(w), Height: int(h), Title: s.title, At: time.Now().UTC().Format(time.RFC3339Nano)}, nil
+}
+
+// GameRectExpr reads the rect the overlay publishes on window.__yuiGameRect
+// (viewport CSS px: {x,y,w,h}, or null when no game leaves room around it).
+// See platform/src/sdk/game-rect.ts.
+const GameRectExpr = "JSON.stringify(window.__yuiGameRect||null)"
+
+// Clip is a page region in CSS pixels.
+type Clip struct{ X, Y, W, H float64 }
+
+// ClampClip fits a published game rect to the viewport. It returns the whole
+// viewport when the rect is missing, malformed or entirely outside.
+func ClampClip(raw string, vw, vh float64) Clip {
+	whole := Clip{0, 0, vw, vh}
+	var c *Clip
+	var in struct{ X, Y, W, H *float64 }
+	if json.Unmarshal([]byte(raw), &in) != nil || in.X == nil || in.Y == nil || in.W == nil || in.H == nil {
+		return whole
+	}
+	c = &Clip{*in.X, *in.Y, *in.W, *in.H}
+	for _, f := range []float64{c.X, c.Y, c.W, c.H} {
+		if math.IsNaN(f) || math.IsInf(f, 0) {
+			return whole
+		}
+	}
+	x0, y0 := math.Max(c.X, 0), math.Max(c.Y, 0)
+	x1, y1 := math.Min(c.X+c.W, vw), math.Min(c.Y+c.H, vh)
+	if x1-x0 < 8 || y1-y0 < 8 {
+		return whole
+	}
+	return Clip{x0, y0, x1 - x0, y1 - y0}
+}
+
+// CaptureGameArea takes a JPEG of the part of the Chrome page that holds the
+// game: the overlay's published game rect when there is one, else the whole
+// page. The long side is at most maxSide pixels.
+func CaptureGameArea(ctx context.Context, port, maxSide, quality int) (Shot, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	s, err := open(ctx, port)
+	if err != nil {
+		return Shot{}, err
+	}
+	defer s.close()
+	w, h, err := s.viewport()
+	if err != nil {
+		return Shot{}, err
+	}
+	clip := Clip{0, 0, w, h}
+	var ev struct {
+		Result struct {
+			Value string `json:"value"`
+		} `json:"result"`
+	}
+	if err := s.call("Runtime.evaluate", map[string]any{"expression": GameRectExpr, "returnByValue": true}, &ev); err == nil {
+		clip = ClampClip(ev.Result.Value, w, h)
+	}
+	scale := 1.0
+	if long := math.Max(clip.W, clip.H); maxSide > 0 && long > float64(maxSide) {
+		scale = float64(maxSide) / long
+	}
+	var shot struct {
+		Data string `json:"data"`
+	}
+	err = s.call("Page.captureScreenshot", map[string]any{
+		"format": "jpeg", "quality": quality, "fromSurface": true,
+		"clip": map[string]any{"x": clip.X, "y": clip.Y, "width": clip.W, "height": clip.H, "scale": scale},
+	}, &shot)
+	if err != nil {
+		return Shot{}, err
+	}
+	raw, err := base64.StdEncoding.DecodeString(shot.Data)
+	if err != nil {
+		return Shot{}, err
+	}
+	return Shot{JPEG: raw, W: int(clip.W*scale + 0.5), H: int(clip.H*scale + 0.5)}, nil
 }
 
 var keys = map[string]struct {

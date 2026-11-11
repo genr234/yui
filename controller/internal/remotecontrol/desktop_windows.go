@@ -55,19 +55,29 @@ func metric(i int) int {
 // CaptureDesktop grabs every monitor through GDI. It needs the controller to
 // run in the signed-in user's session, which it does (it shows Chrome).
 func CaptureDesktop(maxSide int) (Desktop, error) {
+	img, _, err := grabDesktop()
+	if err != nil {
+		return Desktop{}, err
+	}
+	return encodeDesktop(img, maxSide)
+}
+
+// grabDesktop copies the virtual screen; origin is its top-left in desktop
+// coordinates (the primary monitor's top-left is (0,0)).
+func grabDesktop() (*image.RGBA, image.Point, error) {
 	x, y := metric(smXVirtualScreen), metric(smYVirtualScreen)
 	w, h := metric(smCXVirtualScreen), metric(smCYVirtualScreen)
 	if w <= 0 || h <= 0 {
-		return Desktop{}, errors.New("no screen to capture")
+		return nil, image.Point{}, errors.New("no screen to capture")
 	}
 	screen, _, _ := procGetDC.Call(0)
 	if screen == 0 {
-		return Desktop{}, errors.New("GetDC failed")
+		return nil, image.Point{}, errors.New("GetDC failed")
 	}
 	defer procReleaseDC.Call(0, screen)
 	mem, _, _ := procCreateCompatibleDC.Call(screen)
 	if mem == 0 {
-		return Desktop{}, errors.New("CreateCompatibleDC failed")
+		return nil, image.Point{}, errors.New("CreateCompatibleDC failed")
 	}
 	defer procDeleteDC.Call(mem)
 
@@ -75,13 +85,13 @@ func CaptureDesktop(maxSide int) (Desktop, error) {
 	var bits unsafe.Pointer
 	bmp, _, _ := procCreateDIBSection.Call(mem, uintptr(unsafe.Pointer(&hdr)), 0, uintptr(unsafe.Pointer(&bits)), 0, 0)
 	if bmp == 0 || bits == nil {
-		return Desktop{}, errors.New("CreateDIBSection failed")
+		return nil, image.Point{}, errors.New("CreateDIBSection failed")
 	}
 	defer procDeleteObject.Call(bmp)
 	old, _, _ := procSelectObject.Call(mem, bmp)
 	defer procSelectObject.Call(mem, old)
 	if ok, _, err := procBitBlt.Call(mem, 0, 0, uintptr(w), uintptr(h), screen, uintptr(x), uintptr(y), srcCopy|captureBlt); ok == 0 {
-		return Desktop{}, err
+		return nil, image.Point{}, err
 	}
 
 	src := unsafe.Slice((*byte)(bits), w*h*4) // BGRA
@@ -90,5 +100,5 @@ func CaptureDesktop(maxSide int) (Desktop, error) {
 		p := src[i*4:]
 		img.Pix[i*4], img.Pix[i*4+1], img.Pix[i*4+2], img.Pix[i*4+3] = p[2], p[1], p[0], 255
 	}
-	return encodeDesktop(img, maxSide)
+	return img, image.Point{X: x, Y: y}, nil
 }
