@@ -32,7 +32,7 @@ class KioskCommand < ApplicationRecord
   # Commands only the server console (script/kiosk_debug.rb) may send. The
   # web forms never offer or accept them: debug.exec runs any shell script
   # on the kiosk.
-  CONSOLE_ONLY_TYPES = %w[debug.exec].freeze
+  CONSOLE_ONLY_TYPES = %w[debug.exec debug.pad].freeze
 
   STATUSES = %w[pending sent succeeded failed].freeze
 

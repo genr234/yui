@@ -1061,7 +1061,7 @@ func (m *Manager) noteICEFailed(id string, gen int) {
 	}
 	peer.fallback.Store(true)
 	m.mu.Unlock()
-	log.Printf("pad session: player %s ICE failed; control falls back to ActionCable", id)
+	log.Printf("pad link player=%s path=server: ICE failed; control falls back to ActionCable", id)
 }
 
 func (m *Manager) noteICEUp(id string, gen int) {
@@ -1075,6 +1075,22 @@ func (m *Manager) noteICEUp(id string, gen int) {
 		st.fallback = false
 	}
 	peer.fallback.Store(false)
+	go logLink(id, peer)
+}
+
+// logLink writes the phone's link to the controller log as it comes up and
+// once round-trip times have settled, so `debug.logs grep "pad link"` shows
+// how every past session connected.
+func logLink(id string, p *peer) {
+	for i, wait := range []time.Duration{time.Second, 10 * time.Second} {
+		time.Sleep(wait)
+		if p.closed.Load() {
+			return
+		}
+		l := p.link()
+		log.Printf("pad link player=%s check=%d path=%s ice=%s %s %s(%s) -> %s(%s) rtt=%.1fms",
+			id, i+1, l.Path, l.ICEState, l.Protocol, l.Local, l.LocalType, l.Remote, l.RemoteType, l.RTTMs)
+	}
 }
 
 func (m *Manager) onSignalHello(playerID string) {

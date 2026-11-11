@@ -16,6 +16,60 @@ import (
 // and plugins, which reach Dispatch through the local socket, cannot call them.
 var remoteOnlyCommands = map[string]Command{
 	DebugExecCommand{}.Name(): DebugExecCommand{},
+	DebugPadCommand{}.Name():  DebugPadCommand{},
+}
+
+// DebugPadCommand starts, opens or ends a play session from afar, so a pad
+// can join for a connection test with nobody at the kiosk:
+//
+//	debug.pad {action: "start" | "lobby" | "close" | "end" | "status"}
+//
+// "start" starts a session (or reuses the running one) and opens its lobby;
+// the result has the join code and URL, and links lists each phone's path.
+type DebugPadCommand struct{}
+
+func (DebugPadCommand) Name() string { return "debug.pad" }
+
+func (DebugPadCommand) Handle(r *Registry, params json.RawMessage) (any, error) {
+	var p struct {
+		Action string `json:"action"`
+	}
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, err
+		}
+	}
+	switch p.Action {
+	case "start":
+		if _, err := r.startPadSession(); err != nil {
+			return nil, err
+		}
+		return padLobby(r, true)
+	case "lobby":
+		return padLobby(r, true)
+	case "close":
+		return padLobby(r, false)
+	case "end":
+		return r.endPadSession()
+	case "", "status":
+		mgr, err := r.activePad()
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"snapshot": mgr.Snapshot(), "links": mgr.Links()}, nil
+	}
+	return nil, errors.New("action must be start, lobby, close, end or status")
+}
+
+func padLobby(r *Registry, open bool) (any, error) {
+	mgr, err := r.activePad()
+	if err != nil {
+		return nil, err
+	}
+	if err := mgr.SetLobbyOpen(context.Background(), open); err != nil {
+		return nil, err
+	}
+	return map[string]any{"snapshot": mgr.Snapshot(), "links": mgr.Links()}, nil
 }
 
 const (

@@ -8,6 +8,7 @@
 #   ... 1 debug.screen          (result.image is a data:image/jpeg;base64 URI)
 #   ... 1 debug.exec '{"script":"Get-NetIPConfiguration","timeout":60}' 70
 #         (PowerShell by default, or "shell":"cmd"; only from this console)
+#   ... 1 debug.pad '{"action":"start"}'   (start | lobby | close | end | status)
 #
 # Commands are the kiosk's remote ones (KioskCommand::ALLOWED_TYPES and
 # CONSOLE_ONLY_TYPES).
