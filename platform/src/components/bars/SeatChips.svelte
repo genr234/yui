@@ -9,7 +9,14 @@
   import { onDestroy, onMount } from "svelte";
   import HandIcon from "lucide-svelte/icons/hand";
   import type { Rect } from "../../sdk/game-rect";
-  import { avatarKind, type PadPlayer, type PadState } from "../../sdk/pad";
+  import { type PadPlayer, type PadState } from "../../sdk/pad";
+  import { mountAvatar, parseAvatar, type AvatarProps } from "../../../../avatar/src";
+
+  /** Draws a player's avatar with the shared renderer (creature, selfie or emoji; never HTML). */
+  function avatarView(node: HTMLElement, props: AvatarProps) {
+    const handle = mountAvatar(node, props);
+    return { update: handle.update, destroy: handle.destroy };
+  }
   import { emoteUrl } from "./emotes";
   import { chipLayout, JOIN_RESERVE_PX, joinVisible, seated, spectators, swatchOf } from "./chips";
   import { BUTTON_DOTS, dotsLit, social } from "./social";
@@ -72,7 +79,7 @@
       style="grid-template-columns:repeat({layout.cols}, {layout.w}px);gap:{layout.gap}px;--chip-h:{layout.h}px"
     >
       {#each seats as player (player.id)}
-        {@const avatar = avatarKind(player.avatar)}
+        {@const avatar = parseAvatar(player.avatar).kind !== "none"}
         {@const poke = pokedBy.get(player.id)}
         {@const lit = dotsLit($social.held[player.id] ?? 0)}
         <div class="seat">
@@ -90,10 +97,8 @@
               data-player={player.id}
             >
               <span class="seat-avatar" class:has-avatar={avatar}>
-                {#if avatar?.kind === "image"}
-                  <img src={avatar.src} alt="" draggable="false" />
-                {:else if avatar}
-                  <span class="emoji">{avatar.text}</span>
+                {#if avatar}
+                  <span class="seat-creature" use:avatarView={{ avatar: player.avatar, color: swatchOf(player.color) }}></span>
                 {:else}
                   P{player.slot}
                 {/if}
