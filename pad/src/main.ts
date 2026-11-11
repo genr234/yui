@@ -1,5 +1,8 @@
 import './styles.css'
 import App from './App.svelte'
+import { installGestureGuards } from './platform/lockdown'
+
+installGestureGuards()
 
 const app = new App({ target: document.getElementById('app')! })
 

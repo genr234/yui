@@ -31,6 +31,7 @@
   import { hapticsSupported, playHaptic, pressTick, setVibrationEnabled, vibrationEnabled } from './platform/haptics'
   import { playSound, setMasterVolume, unlockAudio } from './platform/sound'
   import { keepAwake, wakeLockSupported } from './platform/wakelock'
+  import { lockPage } from './platform/lockdown'
   import { attachSpeakerStream, playSpeaker, speakerBlocked } from './platform/speaker'
 
   export let code: string
@@ -361,7 +362,10 @@
   }
   const wake = () => session?.wake()
 
+  let unlockPage = () => {}
+
   onMount(() => {
+    unlockPage = lockPage()
     readOrientation()
     window.addEventListener('resize', readOrientation)
     window.addEventListener('orientationchange', readOrientation)
@@ -374,6 +378,7 @@
   })
 
   onDestroy(() => {
+    unlockPage()
     window.removeEventListener('resize', readOrientation)
     window.removeEventListener('orientationchange', readOrientation)
     document.removeEventListener('visibilitychange', onVisibility)
@@ -507,8 +512,10 @@
 </div>
 
 <style>
+  /* Pinned to the visible screen, so the browser bar sliding can't move it. */
   .pad {
-    height: 100dvh;
+    position: fixed;
+    inset: 0;
     display: flex;
     flex-direction: column;
     padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
