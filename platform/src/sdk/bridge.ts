@@ -386,6 +386,8 @@ class DemoBridge {
 					{ id: "p1", slot: 1, name: "Riccardo", color: "blue", host: true, speaker: true, connected: true, account_linked: true, rtt_ms: 18, input_hz: 60 },
 					{ id: "p2", slot: 2, name: "Sam", color: "purple", host: false, connected: true, rtt_ms: 94, input_hz: 58.5, avatar: "🦊" },
 					{ id: "p3", slot: 3, name: "Ada", color: "green", host: false, connected: false },
+					{ id: "p4", slot: 4, name: "Jo", color: "teal", host: false, connected: true, avatar: "🐸" },
+					{ id: "p5", slot: null, name: "Nia", color: "pink", host: false, connected: true },
 				],
 			};
 			this.startFakeWifi();
