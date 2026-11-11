@@ -101,8 +101,9 @@ func (m *Manager) sendWelcome(playerID string) {
 	player := st.Player
 	rp := m.withSpeakerLocked(player)
 	name := m.cfg.KioskName
+	ssid := m.wifiSSIDLocked()
 	m.mu.Unlock()
-	welcome := welcomeMsg{T: "welcome", V: 1, Player: rp, KioskName: name}
+	welcome := welcomeMsg{T: "welcome", V: 1, Player: rp, KioskName: name, WiFiSSID: ssid}
 	if err := m.sendControl(playerID, welcome); err != nil {
 		log.Printf("pad session: welcome %s: %v", playerID, err)
 		return

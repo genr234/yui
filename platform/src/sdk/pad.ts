@@ -67,7 +67,13 @@ export type PadHome = { player_id: string; via: "button" | "system" };
 /** The kiosk's play session as the overlay sees it; `session` is null when none is open. */
 export type PadState = {
 	/** `lobby_open`: anyone with the code can join; otherwise phones must scan the current QR. */
-	session: { code: string; join_url: string; lobby_open?: boolean } | null;
+	session: {
+		code: string;
+		join_url: string;
+		lobby_open?: boolean;
+		/** The kiosk's own hotspot while it is on: `qr` is a WIFI: join code. */
+		wifi?: { ssid: string; qr: string };
+	} | null;
 	players: PadPlayer[];
 };
 

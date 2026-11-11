@@ -73,6 +73,8 @@ export interface Welcome {
   v: number;
   player: Player;
   kiosk_name: string;
+  /** The kiosk's own hotspot, while it is on (for the slow-link hint). */
+  wifi_ssid?: string;
 }
 export interface Layout {
   t: "layout";
@@ -336,6 +338,7 @@ export function parseControl(json: string): ControlMessage {
       if (!isNum(m.v)) fail("welcome: v must be a number");
       checkPlayer(m.player, "welcome");
       if (!isStr(m.kiosk_name)) fail("welcome: kiosk_name must be a string");
+      if (m.wifi_ssid !== undefined && !isStr(m.wifi_ssid)) fail("welcome: wifi_ssid must be a string");
       break;
     case "layout":
       if (!isNum(m.version)) fail("layout: version must be a number");

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"kiosk/controller/internal/firewall"
+	"kiosk/controller/internal/hotspot"
 	"log"
 	"sync"
 	"time"
@@ -46,6 +48,42 @@ func (r *Registry) BindPadLifecycle(ctx context.Context) {
 	r.padMu.Lock()
 	r.padRoot = ctx
 	r.padMu.Unlock()
+	// A hotspot left on by a controller that crashed mid-session.
+	go stopHotspot()
+	go func() {
+		state, err := firewall.Ensure(ctx)
+		if err != nil {
+			log.Printf("pad firewall: %v", err)
+		} else if state != "present" {
+			log.Printf("pad firewall: rule %s", state)
+		}
+	}()
+}
+
+// runHotspot opens the kiosk's own Wi-Fi for a session's phones and closes
+// it when the session ends (done). A failure only costs the shortcut:
+// phones still join over whatever network they are on.
+func runHotspot(mgr *session.Manager, code string, done <-chan struct{}) {
+	ssid, password := hotspot.SSID(code), hotspot.Password()
+	band, err := hotspot.Start(context.Background(), ssid, password)
+	if err != nil {
+		log.Printf("pad hotspot: %v", err)
+	} else {
+		log.Printf("pad hotspot: %s %s", ssid, band)
+		mgr.SetWiFi(session.NewWiFi(ssid, password))
+	}
+	<-done
+	if err == nil {
+		stopHotspot()
+	}
+}
+
+func stopHotspot() {
+	if state, err := hotspot.Stop(context.Background()); err != nil {
+		log.Printf("pad hotspot: %v", err)
+	} else if state != "off" {
+		log.Printf("pad hotspot: %s", state)
+	}
 }
 
 type padPlayersCommand struct{}
@@ -297,6 +335,9 @@ func (r *Registry) startPadSession() (session.Snapshot, error) {
 	for {
 		snap := mgr.Snapshot()
 		if snap.Session != nil && snap.Session.JoinURL != "" {
+			if !cfg.PadHotspotOff && hotspot.Supported() {
+				go runHotspot(mgr, snap.Session.Code, done)
+			}
 			return snap, nil
 		}
 		select {

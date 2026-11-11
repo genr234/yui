@@ -1,13 +1,14 @@
 <script lang="ts">
 	import { onDestroy } from "svelte";
 	import JoinQr from "./JoinQr.svelte";
+	import WifiQr from "./WifiQr.svelte";
 	import AppIcon from "./apps/AppIcon.svelte";
 	import { nextSlide, type ShowcaseEntry } from "../attract";
 	import type { YuiDevApp } from "../sdk/apps";
 
 	/** Event mode's full-screen loop. App.svelte decides when it is shown. */
 	export let shown = false;
-	export let session: { code: string; join_url: string } | null = null;
+	export let session: { code: string; join_url: string; wifi?: { ssid: string; qr: string } } | null = null;
 	export let entries: ShowcaseEntry<YuiDevApp>[] = [];
 
 	/** How long each cover stays up. */
@@ -76,6 +77,11 @@
 			<h1>Play with your phone</h1>
 			<p class="attract-sub">No app, no account. Point your camera at the code.</p>
 			<div class="attract-join">
+				{#if session?.wifi}
+					<div class="attract-qr">
+						<WifiQr wifi={session.wifi} size={220} />
+					</div>
+				{/if}
 				<div class="attract-qr">
 					{#if session?.join_url}
 						<JoinQr value={session.join_url} size={300} label="QR code to join this kiosk" />

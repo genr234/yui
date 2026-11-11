@@ -5,6 +5,11 @@ class Player < ApplicationRecord
   # Stereo speaker pair (contracts §2); nil is the mono speaker.
   SPEAKER_CHANNELS = %w[left right].freeze
   SLOT_ATTEMPTS = 5
+  # A player silent for this long (no cable presence) is disconnected and
+  # loses its slot and roles. The cable touches last_seen_at every
+  # PRESENCE_TOUCH while subscribed.
+  PRESENCE_TIMEOUT = 90.seconds
+  PRESENCE_TOUCH = 30.seconds
   # Avatars (contracts §2): one emoji, or a small selfie the pad crops to
   # ~96x96. Kept only while the session runs (PlaySession#end! clears them).
   AVATAR_EMOJI_MAX_BYTES = 16
@@ -43,6 +48,7 @@ class Player < ApplicationRecord
   # Returns [player, raw token].
   def self.join!(play_session, name:, color:, avatar: nil)
     token = issue_token
+    play_session.release_stale_players!
     attempts = 0
     begin
       attempts += 1
@@ -107,6 +113,31 @@ class Player < ApplicationRecord
 
   def mark_connected!(nonce)
     update!(connected: true, connection_nonce: nonce, last_seen_at: Time.current)
+  end
+
+  # Refreshes presence while this subscription is the live one.
+  def touch_presence!(nonce)
+    self.class.where(id: id, connection_nonce: nonce).update_all(last_seen_at: Time.current)
+  end
+
+  # A phone that comes back after losing its slot (see
+  # PlaySession#release_stale_players!) takes a free one, and host/speaker
+  # when nobody holds them. Returns true when something changed.
+  def reclaim_roles!
+    return false if slot || kicked?
+
+    attrs = {}
+    free = play_session.free_slot
+    attrs[:slot] = free if free
+    attrs[:host] = true if free && !play_session.players.active.exists?(host: true)
+    attrs[:speaker] = true if free && !play_session.players.active.exists?(speaker: true)
+    return false if attrs.empty?
+
+    update!(attrs)
+    true
+  rescue ActiveRecord::RecordNotUnique
+    reload
+    false
   end
 
   # Only the subscription that last connected can mark the player as gone, so a

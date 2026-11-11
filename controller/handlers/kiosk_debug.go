@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -291,7 +292,7 @@ func (DebugReadCommand) Handle(r *Registry, params json.RawMessage) (any, error)
 type DebugScreenCommand struct{}
 
 func (DebugScreenCommand) Name() string { return "debug.screen" }
-func (DebugScreenCommand) Handle(_ *Registry, params json.RawMessage) (any, error) {
+func (DebugScreenCommand) Handle(r *Registry, params json.RawMessage) (any, error) {
 	var p struct {
 		MaxSide int `json:"max_side"`
 	}
@@ -301,7 +302,24 @@ func (DebugScreenCommand) Handle(_ *Registry, params json.RawMessage) (any, erro
 	if p.MaxSide <= 0 || p.MaxSide > 1920 {
 		p.MaxSide = 1280
 	}
-	return remotecontrol.CaptureDesktop(p.MaxSide)
+	shot, err := remotecontrol.CaptureDesktop(p.MaxSide)
+	if err == nil {
+		return shot, nil
+	}
+	// The desktop can't be read while the screensaver or the secure desktop
+	// (UAC, lock screen) has the input ("Access is denied"). Chrome's own
+	// page capture still works then, so return that and say why.
+	page, cerr := remotecontrol.Capture(context.Background(), r.snapshotConfig().PlatformDebugPort, min(p.MaxSide, 1600))
+	if cerr != nil {
+		return nil, fmt.Errorf("desktop: %v; chrome page: %v", err, cerr)
+	}
+	out := map[string]any{}
+	if b, merr := json.Marshal(page); merr == nil {
+		_ = json.Unmarshal(b, &out)
+	}
+	out["source"] = "chrome page (desktop capture failed)"
+	out["desktop_error"] = err.Error()
+	return out, nil
 }
 
 type DebugNativeStopCommand struct{}

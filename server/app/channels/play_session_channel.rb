@@ -12,6 +12,8 @@ class PlaySessionChannel < ApplicationCable::Channel
   PLAYER_SIGNAL_TYPES = %w[answer ice hello control].freeze
   MAX_SIGNAL_BYTES = 64.kilobytes
 
+  periodically :touch_presence, every: Player::PRESENCE_TOUCH
+
   def subscribed
     if current_kiosk
       subscribe_kiosk
@@ -30,6 +32,10 @@ class PlaySessionChannel < ApplicationCable::Channel
 
     PlaySessionChannel.broadcast_to(@player.play_session, { type: "player_left", player: @player.as_player_json })
     @player.play_session.speaker_left!(@player) if @player.play_session.active?
+  end
+
+  def touch_presence
+    @player&.touch_presence!(@connection_nonce) if @connection_nonce
   end
 
   def signal(payload)
@@ -58,6 +64,7 @@ class PlaySessionChannel < ApplicationCable::Channel
     return reject unless @player&.playable?
 
     @connection_nonce = SecureRandom.hex(8)
+    @player.reclaim_roles!
     @player.mark_connected!(@connection_nonce)
     stream_for @player
     PlaySessionChannel.broadcast_to(@player.play_session, { type: "player_joined", player: @player.as_player_json })

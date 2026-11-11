@@ -36,6 +36,8 @@
   export let code: string
   export let player: Player
   export let kioskName = ''
+  /** The kiosk hotspot from `welcome`; named when the link falls back. */
+  let wifiSsid = ''
   /** The Yui account linked to this phone, if any (plan 10). */
   export let accountName: string | null = null
   /** Local layout preview (dev `?demo=layout`): no session, events go to `onDemoEvent`. */
@@ -112,6 +114,7 @@
       case 'welcome':
         player = msg.player
         kioskName = msg.kiosk_name
+        wifiSsid = msg.wifi_ssid ?? ''
         layoutVersion = -Infinity // a new peer starts its own layout versions
         return
       case 'layout':
@@ -433,6 +436,19 @@
       </button>
     {/if}
 
+    {#if conn === 'fallback'}
+      <!-- Input frames only travel peer to peer, so on the fallback the
+           buttons don't reach the game: say how to get a direct link. -->
+      <div class="slow-link" role="status">
+        <strong>Can't reach the kiosk directly</strong>
+        {#if wifiSsid}
+          <span>Join the Wi-Fi <b>{wifiSsid}</b> (scan its QR on the kiosk screen), then come back here.</span>
+        {:else}
+          <span>Join the same Wi-Fi as the kiosk, then come back here.</span>
+        {/if}
+      </div>
+    {/if}
+
     {#if sensitive}
       <div class="sensitive" role="status">
         <strong>Use the screen for this</strong>
@@ -670,6 +686,23 @@
     font-weight: 900;
     line-height: 1;
     box-shadow: 0 var(--yui-lip) 0 rgba(0, 0, 0, 0.35), 0 20px 50px rgba(0, 0, 0, 0.35);
+  }
+  .slow-link {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    z-index: 4;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: rgba(13, 24, 37, 0.92);
+    text-align: center;
+  }
+  .slow-link span {
+    color: var(--muted);
   }
   .sensitive {
     position: absolute;

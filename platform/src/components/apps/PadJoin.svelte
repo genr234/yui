@@ -2,6 +2,7 @@
 	import { onDestroy, onMount } from "svelte";
 	import { pad, playerSwatch, type PadState } from "../../sdk/pad";
 	import JoinQr from "../JoinQr.svelte";
+	import WifiQr from "../WifiQr.svelte";
 
 	/** QR size in px. */
 	export let size = 132;
@@ -22,9 +23,12 @@
      (QR token) is drawn here and never handed to the app. -->
 <div class="pad-join">
 	{#if state.session}
+		{#if state.session.wifi}
+			<WifiQr wifi={state.session.wifi} {size} />
+		{/if}
 		<JoinQr value={state.session.join_url} {size} label={`QR code to join session ${state.session.code}`} />
 		<div class="pad-join-text">
-			<span>Scan to join, or enter code</span>
+			<span>{state.session.wifi ? "2 · Scan to play, or enter code" : "Scan to join, or enter code"}</span>
 			<strong>{state.session.code}</strong>
 			{#if state.players.length}
 				<ul class="pad-join-players">

@@ -7,6 +7,9 @@ class PlaySession < ApplicationRecord
   BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".freeze
   # A session ends on its own once its kiosk (Kiosk#last_seen_at) has been silent this long.
   KIOSK_TIMEOUT = 10.minutes
+  # A kiosk's active session with nobody connected for this long is not reused
+  # (a controller restart picks it up again, a stale one starts fresh).
+  REUSE_IDLE_LIMIT = 30.minutes
 
   belongs_to :kiosk
   has_many :players, dependent: :destroy
@@ -43,7 +46,12 @@ class PlaySession < ApplicationRecord
   # unique among active sessions (retried on collision).
   def self.find_or_start_for!(kiosk)
     existing = kiosk.play_sessions.active.first
-    return [ existing, false ] if existing
+    if existing
+      existing.release_stale_players!
+      return [ existing, false ] unless existing.reuse_expired?
+
+      existing.end!
+    end
 
     CODE_ATTEMPTS.times do
       session = kiosk.play_sessions.new(code: generate_code)
@@ -70,6 +78,58 @@ class PlaySession < ApplicationRecord
 
   def active?
     ended_at.nil?
+  end
+
+  # Nobody is connected and nothing has happened for REUSE_IDLE_LIMIT.
+  def reuse_expired?(now = Time.current)
+    return false if players.active.exists?(connected: true)
+
+    seen = players.maximum(Arel.sql("COALESCE(last_seen_at, created_at)"))
+    last = [ created_at, updated_at, seen&.in_time_zone ].compact.max
+    last < now - REUSE_IDLE_LIMIT
+  end
+
+  # Players whose phone has been silent for Player::PRESENCE_TIMEOUT are marked
+  # disconnected and lose their slot, host and speaker roles (a cable that died
+  # without saying so never fires `unsubscribed`). A phone that comes back
+  # claims a free slot again. Returns the released players.
+  def release_stale_players!(now = Time.current)
+    cutoff = now - Player::PRESENCE_TIMEOUT
+    stale = players.active.where("COALESCE(last_seen_at, created_at) < ?", cutoff)
+      .where("connected = ? OR slot IS NOT NULL OR host = ? OR speaker = ?", true, true, true).order(:id).to_a
+    return [] if stale.empty?
+
+    was_connected = stale.select(&:connected?)
+    was_host = stale.any?(&:host?)
+    was_speaker = stale.any?(&:speaker?)
+    changed = []
+    transaction do
+      stale.each do |player|
+        slot = player.slot
+        player.update!(connected: false, connection_nonce: nil, slot: nil, host: false,
+          speaker: false, speaker_channel: nil)
+        seated = seat_spectator!(slot, connected_only: true) if slot
+        changed << seated if seated
+      end
+      dissolve_pair!
+      if was_host && !players.active.exists?(host: true)
+        new_host = players.active.order(Arel.sql("slot IS NULL"), :slot, :id).find_by(connected: true)
+        if new_host
+          new_host.update!(host: true)
+          changed << new_host
+        end
+      end
+      give_speaker_to_host! if was_speaker
+    end
+    stale.each do |player|
+      if was_connected.include?(player)
+        PlaySessionChannel.broadcast_to(self, { type: "player_left", player: player.as_player_json })
+      else
+        PlaySessionChannel.broadcast_to(self, { type: "player_updated", player: player.as_player_json })
+      end
+    end
+    changed.uniq.each { |player| player.reload.broadcast_updated }
+    stale
   end
 
   # 32 random bytes; the key used for the HMAC is the decoded bytes.
@@ -135,10 +195,12 @@ class PlaySession < ApplicationRecord
   end
 
   # A freed seat goes to the spectator who has waited longest, preferring one
-  # whose phone is connected. Returns that player (not yet announced) or nil.
-  def seat_spectator!(slot)
+  # whose phone is connected (only those with connected_only). Returns that
+  # player (not yet announced) or nil.
+  def seat_spectator!(slot, connected_only: false)
     spectators = players.active.where(slot: nil).order(:id)
-    spectator = spectators.find_by(connected: true) || spectators.first
+    spectator = spectators.find_by(connected: true)
+    spectator ||= spectators.first unless connected_only
     return unless spectator
 
     spectator.update!(slot: slot)

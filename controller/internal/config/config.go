@@ -35,6 +35,9 @@ type Config struct {
 	// the lobby, idle sessions end after EventIdleMinutes, and the overlay
 	// shows an attract screen when nobody is playing. Off by default.
 	EventMode        bool            `json:"event_mode"`
+	// PadHotspotOff stops play sessions from opening the kiosk's own Wi-Fi
+	// hotspot for phones (on by default where Windows supports it).
+	PadHotspotOff bool `json:"pad_hotspot_off,omitempty"`
 	EventIdleMinutes int             `json:"event_idle_minutes"`
 	AdminPIN         PINHash         `json:"admin_pin,omitempty"`
 	ServerURL        string          `json:"server_url,omitempty"`

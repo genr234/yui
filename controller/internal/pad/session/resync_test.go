@@ -98,3 +98,30 @@ func TestClosePeerInvalidatesNegotiation(t *testing.T) {
 		t.Fatalf("generation after close = %d, want 4", gen)
 	}
 }
+
+func TestPeriodicResyncDropsPlayersRailsReleased(t *testing.T) {
+	f := newFake(t)
+	ghost := playerFixture("p-ghost", 1, true, true)
+	f.mu.Lock()
+	f.sess.Players = []Player{{Player: ghost}}
+	f.mu.Unlock()
+	mgr := f.manager(t)
+	mgr.cfg.ResyncInterval = 20 * time.Millisecond
+	cancel, done := start(t, f, mgr)
+	defer stop(t, cancel, done)
+
+	if got := mgr.Snapshot().Players; len(got) != 1 || !got[0].Connected {
+		t.Fatalf("initial roster = %+v", got)
+	}
+
+	// Rails freed the ghost's slot and a new tester took P1; no event reached
+	// the kiosk.
+	joined := playerFixture("p-new", 1, true, true)
+	f.mu.Lock()
+	f.sess.Players = []Player{{Player: joined}}
+	f.mu.Unlock()
+	waitFor(t, "periodic resync", func() bool {
+		got := mgr.Snapshot().Players
+		return len(got) == 1 && got[0].ID == "p-new" && got[0].Slot != nil && *got[0].Slot == 1
+	})
+}

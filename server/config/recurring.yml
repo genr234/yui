@@ -22,3 +22,6 @@ production:
   end_abandoned_play_sessions:
     class: EndAbandonedPlaySessionsJob
     schedule: every minute
+  release_stale_players:
+    class: ReleaseStalePlayersJob
+    schedule: every minute

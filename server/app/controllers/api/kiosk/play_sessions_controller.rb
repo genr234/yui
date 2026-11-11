@@ -11,6 +11,7 @@ module Api
 
       # The current roster, so the kiosk can resync after a signaling outage.
       def show
+        @play_session.release_stale_players!
         render json: @play_session.as_kiosk_json(base_url: request.base_url)
       end
 

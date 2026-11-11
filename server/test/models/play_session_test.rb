@@ -101,4 +101,110 @@ class PlaySessionTest < ActiveSupport::TestCase
     end
     assert_not play_session.reload.active?
   end
+
+  test "players silent past the presence timeout lose slot, host and speaker" do
+    play_session = start_session
+    ghost, = join_player(play_session, name: "Ghost")
+    ghost.mark_connected!("g")
+    guest, = join_player(play_session, name: "Guest", color: "red")
+    guest.mark_connected!("h")
+
+    travel Player::PRESENCE_TIMEOUT - 10.seconds do
+      guest.touch_presence!("h")
+      assert_empty play_session.release_stale_players!
+      assert ghost.reload.connected
+    end
+
+    travel Player::PRESENCE_TIMEOUT + 10.seconds do
+      guest.touch_presence!("h")
+      assert_equal [ ghost ], play_session.release_stale_players!
+      ghost.reload
+      assert_not ghost.connected
+      assert_nil ghost.slot
+      assert_not ghost.host
+      assert_not ghost.speaker
+      assert guest.reload.host
+      assert guest.speaker
+      assert_equal 2, guest.slot
+
+      newcomer, = join_player(play_session, name: "New", color: "green")
+      assert_equal 1, newcomer.slot
+    end
+  end
+
+  test "releasing a connected player tells the kiosk it left" do
+    play_session = start_session
+    ghost, = join_player(play_session)
+    ghost.mark_connected!("g")
+
+    travel Player::PRESENCE_TIMEOUT + 1.minute do
+      assert_broadcasts(PlaySessionChannel.broadcasting_for(play_session), 1) do
+        play_session.release_stale_players!
+      end
+    end
+  end
+
+  test "a released phone that comes back takes a free slot again" do
+    play_session = start_session
+    ghost, = join_player(play_session)
+    travel Player::PRESENCE_TIMEOUT + 1.minute do
+      play_session.release_stale_players!
+      assert_nil ghost.reload.slot
+      assert ghost.reclaim_roles!
+      assert_equal 1, ghost.slot
+      assert ghost.host
+      assert ghost.speaker
+    end
+  end
+
+  test "a connected spectator takes the seat of a released player" do
+    play_session = start_session
+    players = Array.new(5) { |i| join_player(play_session, name: "P#{i}", color: Player::COLORS[i]).first }
+    spectator = players.last
+    assert_nil spectator.slot
+    spectator.mark_connected!("s")
+    travel Player::PRESENCE_TIMEOUT + 1.minute do
+      spectator.touch_presence!("s")
+      play_session.release_stale_players!
+      assert_equal 1, spectator.reload.slot
+      assert spectator.host
+    end
+  end
+
+  test "reuse drops players that are not present anymore" do
+    kiosk = create_kiosk
+    play_session = start_session(kiosk)
+    ghost, = join_player(play_session)
+    ghost.mark_connected!("g")
+
+    travel Player::PRESENCE_TIMEOUT + 1.minute do
+      reused, created = PlaySession.find_or_start_for!(kiosk)
+      assert_not created
+      assert_equal play_session, reused
+      assert_not ghost.reload.connected
+      assert_nil ghost.slot
+    end
+  end
+
+  test "an idle session is not reused, a session with a connected player is" do
+    kiosk = create_kiosk
+    play_session = start_session(kiosk)
+    player, = join_player(play_session)
+    player.mark_connected!("n")
+
+    travel PlaySession::REUSE_IDLE_LIMIT + 5.minutes do
+      player.touch_presence!("n")
+      reused, created = PlaySession.find_or_start_for!(kiosk)
+      assert_not created
+      assert_equal play_session, reused
+    end
+
+    player.mark_disconnected!("n")
+    travel PlaySession::REUSE_IDLE_LIMIT * 2 + 5.minutes do
+      fresh, created = PlaySession.find_or_start_for!(kiosk)
+      assert created
+      assert_not_equal play_session, fresh
+      assert_not play_session.reload.active?
+    end
+  end
 end

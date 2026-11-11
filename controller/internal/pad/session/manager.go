@@ -22,6 +22,9 @@ const (
 	defaultPingInterval = 5 * time.Second
 	reconnectDelay      = 2 * time.Second
 	shutdownBudget      = 5 * time.Second
+	// Rails frees a silent phone's slot without always telling the kiosk, so
+	// the roster is re-read this often.
+	defaultResyncInterval = 30 * time.Second
 )
 
 // Config is the kiosk side of one play-session runner.
@@ -33,6 +36,9 @@ type Config struct {
 	Dialer       *websocket.Dialer
 	Now          func() time.Time
 	PingInterval time.Duration
+	// ResyncInterval is how often the roster is re-read from Rails while
+	// signaling is up (default 30 s).
+	ResyncInterval time.Duration
 	// Audio sends the kiosk's sound to the speaker phone. nil leaves the
 	// peers without an audio track.
 	Audio *Audio
@@ -68,6 +74,8 @@ type SessionView struct {
 	Code      string `json:"code"`
 	JoinURL   string `json:"join_url"`
 	LobbyOpen bool   `json:"lobby_open"`
+	// WiFi is the kiosk hotspot, when it is on.
+	WiFi *WiFi `json:"wifi,omitempty"`
 }
 
 // Snapshot is the pad.players payload (session is null when none is running).
@@ -97,6 +105,7 @@ type Manager struct {
 	record    *SessionRecord
 	token     string
 	joinURL   string
+	wifi      *WiFi
 	ice       ICEConfig
 	iceAt     time.Time
 	players   map[string]*playerState
@@ -160,6 +169,9 @@ func Open(cfg Config) (*Manager, error) {
 	}
 	if cfg.PingInterval <= 0 {
 		cfg.PingInterval = defaultPingInterval
+	}
+	if cfg.ResyncInterval <= 0 {
+		cfg.ResyncInterval = defaultResyncInterval
 	}
 	return &Manager{
 		cfg:     cfg,
@@ -246,13 +258,14 @@ func (m *Manager) Run(ctx context.Context) error {
 	defer cancel()
 	defer m.deleteIfStopped(ctx, record.ID)
 
-	loops.Add(2)
+	loops.Add(3)
 	if m.cfg.IdleTimeout > 0 {
 		loops.Add(1)
 		go func() { defer loops.Done(); m.idleLoop(runCtx, stopSelf) }()
 	}
 	go func() { defer loops.Done(); m.qrLoop(runCtx) }()
 	go func() { defer loops.Done(); m.pingLoop(runCtx) }()
+	go func() { defer loops.Done(); m.resyncLoop(runCtx, record.ID) }()
 
 	for {
 		if ctx.Err() != nil {
@@ -351,7 +364,7 @@ func (m *Manager) Snapshot() Snapshot {
 func (m *Manager) snapshotLocked() Snapshot {
 	snap := Snapshot{Players: m.rosterLocked()}
 	if m.record != nil && m.active {
-		snap.Session = &SessionView{Code: m.record.Code, JoinURL: m.joinURL, LobbyOpen: m.record.LobbyOpen}
+		snap.Session = &SessionView{Code: m.record.Code, JoinURL: m.joinURL, LobbyOpen: m.record.LobbyOpen, WiFi: m.wifi}
 	}
 	return snap
 }
@@ -1307,6 +1320,8 @@ type welcomeMsg struct {
 	V         int    `json:"v"`
 	Player    Player `json:"player"`
 	KioskName string `json:"kiosk_name"`
+	// WiFiSSID names the kiosk hotspot, for the pad's slow-link hint.
+	WiFiSSID string `json:"wifi_ssid,omitempty"`
 }
 
 func (m *Manager) pushPlayer(p Player, fallback bool) error {
@@ -1420,6 +1435,29 @@ func (m *Manager) pingLoop(ctx context.Context) {
 			m.pingAll()
 		}
 	}
+}
+
+func (m *Manager) resyncLoop(ctx context.Context, sessionID string) {
+	ticker := time.NewTicker(m.cfg.ResyncInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if m.cableUp() {
+				if err := m.resync(ctx, sessionID); err == nil {
+					m.offerConnected()
+				}
+			}
+		}
+	}
+}
+
+func (m *Manager) cableUp() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.cable != nil
 }
 
 func (m *Manager) pingAll() {
