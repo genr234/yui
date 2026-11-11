@@ -122,6 +122,13 @@ export default {
 
     // ---- starting and stopping a game -------------------------------------
 
+    // Each start (and each cancel) bumps the attempt, so a launch that comes
+    // back late, or a status event from an earlier program, cannot move a
+    // newer attempt along. `nativeSession` is the program this app is
+    // following; status events from any other session are ignored.
+    let attempt = 0;
+    let nativeSession = null;
+
     async function start(game, options) {
       if (state.phase !== "lobby") return;
       if (!state.runtime) {
@@ -129,6 +136,8 @@ export default {
         return;
       }
       const saved = Boolean(options && options.saved) && Boolean(game.gameId);
+      const mine = ++attempt;
+      nativeSession = null;
       state.phase = "starting";
       state.current = game;
       state.error = "";
@@ -141,8 +150,12 @@ export default {
           .slice(0, PLAYER_SLOTS);
         padAddresses.length = 0;
         state.slots = {};
-        for (let slot = 0; slot < players.length; slot++) await attachPlayer(players[slot], slot);
+        for (let slot = 0; slot < players.length; slot++) {
+          await attachPlayer(players[slot], slot);
+          if (mine !== attempt) return;
+        }
         systemPadAddress = (await ctx.virtualPads.systemPad()).address;
+        if (mine !== attempt) return;
         const spec = dolphinSpec({
           runtime: state.runtime.id,
           gameAsset: game.id,
@@ -151,16 +164,44 @@ export default {
           systemPad: systemPadAddress,
         });
         const status = await ctx.native.launch(spec);
+        if (mine !== attempt) {
+          // Cancelled while the launch was on its way: stop what it started.
+          if (status.state === "running" || status.state === "preparing") ctx.native.stop({ force: true }).catch(() => {});
+          return;
+        }
         if (status.state === "busy") throw new Error("Another app is running a program right now.");
         if (status.state === "failed" || status.state === "crashed") throw new Error(status.error || "The emulator did not start.");
+        if (status.state === "exited") throw new Error("The emulator closed right away.");
+        if (status.session_id) nativeSession = status.session_id;
+        if (state.phase !== "starting") return; // a status event already moved on
         state.phase = "playing";
         markPlayed(game, Boolean(state.history[game.id] && state.history[game.id].saved));
       } catch (error) {
+        if (mine !== attempt) return;
+        attempt++;
+        nativeSession = null;
         await resetPlayers();
         state.phase = "lobby";
         state.current = null;
         state.error = errorText(error);
       }
+    }
+
+    // The host gave up waiting. Whatever the launch got to is stopped; a
+    // program still being prepared never starts.
+    async function cancelStart() {
+      if (state.phase !== "starting") return;
+      attempt++;
+      nativeSession = null;
+      state.phase = "stopping";
+      try {
+        await ctx.native.stop({ force: true });
+      } catch (error) {
+        ctx.log.warn("cancel: stop failed", errorText(error));
+      }
+      await resetPlayers();
+      state.phase = "lobby";
+      state.current = null;
     }
 
     async function resetPlayers() {
@@ -178,6 +219,8 @@ export default {
     // The program ended (a quit, a crash, or the platform's own watchdog).
     async function ended(status) {
       if (state.phase === "lobby") return;
+      attempt++;
+      nativeSession = null;
       await resetPlayers();
       state.phase = "lobby";
       state.current = null;
@@ -186,7 +229,20 @@ export default {
     }
 
     ctx.native.on("status", (status) => {
-      if (status.state === "exited" || status.state === "crashed" || status.state === "failed") ended(status);
+      const id = status.session_id || null;
+      if (status.state === "preparing" || status.state === "running") {
+        // Our launch's program (it is the only one this app starts). Following
+        // it here keeps the phase right even when launch()'s reply is late.
+        if (state.phase === "starting" || state.phase === "playing") nativeSession = id;
+        if (status.state === "running" && state.phase === "starting" && id) state.phase = "playing";
+        return;
+      }
+      if (status.state !== "exited" && status.state !== "crashed" && status.state !== "failed") return;
+      // An earlier program's end (a late event, or a replay after a reconnect)
+      // must not end the game that is starting or running now.
+      if (state.phase === "starting" && nativeSession === null) return;
+      if (nativeSession !== null && id !== null && id !== nativeSession) return;
+      ended(status);
     });
 
     // Save a state, give the emulator a moment to write it, then stop.
@@ -305,8 +361,14 @@ export default {
         }
         return ui.preset("motion-remote", { labels: MOTION_REMOTE_LABELS });
       }
-      if (state.phase === "starting" || state.phase === "stopping") {
-        return ui.column({ gap: 12 }, [ui.text(state.phase === "starting" ? "Starting…" : "Saving and closing…", { size: "large", align: "center" })]);
+      if (state.phase === "starting") {
+        return ui.column({ gap: 12 }, [
+          ui.text("Starting…", { size: "large", align: "center" }),
+          player.host ? ui.button({ id: "cancel", label: "Cancel", variant: "ghost" }) : null,
+        ]);
+      }
+      if (state.phase === "stopping") {
+        return ui.column({ gap: 12 }, [ui.text("Saving and closing…", { size: "large", align: "center" })]);
       }
       if (!player.host) {
         return ui.column({ gap: 12 }, [ui.text("Wii Arcade", { size: "large", align: "center" }), ui.text("The host is choosing a game.", { align: "center" })]);
@@ -327,7 +389,12 @@ export default {
     });
 
     pad.on("event", ({ player, control, kind, value }) => {
-      if (!player.host || state.phase !== "lobby") return;
+      if (!player.host) return;
+      if (state.phase === "starting" && control === "cancel" && kind === "tap") {
+        cancelStart();
+        return;
+      }
+      if (state.phase !== "lobby") return;
       if (control === "fresh" && kind === "tap") {
         state.fresh = !state.fresh;
       } else if (control === "games" && kind === "tap") {
@@ -384,7 +451,12 @@ export default {
     ctx.native
       .status()
       .then((status) => {
-        if (status.state === "running" && state.phase === "lobby") state.phase = "playing";
+        if (state.phase !== "lobby") return;
+        // A program this app started before a reload: follow it.
+        if (status.state === "running" || status.state === "preparing") {
+          nativeSession = status.session_id || null;
+          state.phase = status.state === "running" ? "playing" : "starting";
+        }
       })
       .catch(() => {});
 
@@ -433,7 +505,9 @@ export default {
             ctx.ui.column({ gap: 10 }, [
               ctx.ui.h2(state.phase === "starting" ? "Starting…" : state.phase === "stopping" ? "Saving and closing…" : `Now playing: ${state.current ? state.current.title : "a game"}`),
               ...playerRows(),
-              ctx.ui.small("Press Home on a phone for save, load and quit."),
+              state.phase === "starting"
+                ? ctx.ui.button({ label: "Cancel", variant: "ghost", onClick: () => cancelStart() })
+                : ctx.ui.small("Press Home on a phone for save, load and quit."),
             ]),
           ),
         ])
