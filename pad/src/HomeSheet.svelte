@@ -21,6 +21,9 @@
   export let vibration: boolean | null = null
   export let onVibration: (on: boolean) => void = () => {}
   /** Saves a new avatar (null removes it). Rejects when the kiosk refused it. */
+  /** Other players may poke this phone. */
+  export let allowPokes = true
+  export let onPokes: (on: boolean) => void = () => {}
   export let onAvatar: (avatar: string | null) => Promise<void>
   /** The Yui account linked to this phone, if any (plan 10). */
   export let accountName: string | null = null
@@ -238,6 +241,11 @@
           </div>
         </section>
       {/if}
+
+      <label class="vibration">
+        <span>Allow pokes</span>
+        <input type="checkbox" checked={allowPokes} on:change={(e) => onPokes(e.currentTarget.checked)} />
+      </label>
 
       <section class="account" aria-label="Yui account">
         {#if enteringCode}
