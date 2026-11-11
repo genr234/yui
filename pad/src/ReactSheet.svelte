@@ -237,11 +237,10 @@
     background: var(--kit-sky);
     box-shadow: inset 0 3px 0 rgba(10, 50, 90, 0.18);
   }
-  /* The art is pixel art: whole-number scale, hard edges. */
+  /* Kenney's vector balloons: crisp at any size. */
   img {
-    width: 64px;
-    height: 76px;
-    image-rendering: pixelated;
+    width: 56px;
+    height: 66px;
   }
   .people {
     display: flex;
