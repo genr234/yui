@@ -148,6 +148,8 @@
       {#if !editingAvatar}
         <button class="link" type="button" on:click={editAvatar}>{player.avatar ? 'Change avatar' : 'Add avatar'}</button>
       {/if}
+      <!-- Always reachable, whichever tab the sheet reopens on. -->
+      <button class="close" type="button" aria-label={playing ? 'Resume' : 'Close'} on:click={onResume}><Icon name="cross" size={18} /></button>
     </header>
 
     <div class="tabs" role="tablist" aria-label="Home sections">
@@ -291,6 +293,24 @@
     }
   }
   /* The player's coloured title strip across the top of the panel. */
+  /* A red round close button on the panel's corner, like a game options window. */
+  .close {
+    flex: 0 0 auto;
+    width: 38px;
+    height: 38px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 2px solid #b8263a;
+    border-radius: 50%;
+    background: linear-gradient(180deg, #f2606f 0 50%, var(--kit-red) 50%);
+    color: #fff;
+    box-shadow: 0 3px 0 #b8263a, inset 0 0 0 2px rgba(255, 255, 255, 0.35);
+  }
+  .close:active {
+    transform: translateY(3px);
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35);
+  }
   header {
     --edge: color-mix(in srgb, var(--player), #000 26%);
     position: sticky;
