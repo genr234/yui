@@ -2,6 +2,8 @@
 #   username   = "<expiry unix>:<k|p><id>"
 #   credential = Base64(HMAC-SHA1(TURN_SECRET, username))
 # Without TURN_SECRET (or TURN_URLS) only STUN servers are returned.
+# With CLOUDFLARE_TURN_KEY_ID and CLOUDFLARE_TURN_API_TOKEN, Cloudflare's TURN
+# service mints the credentials instead (CloudflareTurn).
 class IceConfig
   DEFAULT_STUN_URLS = "stun:stun.l.google.com:19302".freeze
   DEFAULT_TTL = 86_400
@@ -14,9 +16,10 @@ class IceConfig
     new(**options).as_json_for("p#{player.id}")
   end
 
-  def initialize(env: ENV, now: Time.current)
+  def initialize(env: ENV, now: Time.current, cloudflare: nil)
     @env = env
     @now = now
+    @cloudflare = cloudflare || (CloudflareTurn.new(env: env) if CloudflareTurn.configured?(env))
   end
 
   def ttl
@@ -37,6 +40,10 @@ class IceConfig
   end
 
   def as_json_for(suffix)
+    if @cloudflare && (servers = @cloudflare.ice_servers(ttl))
+      return { ice_servers: servers, ttl: ttl }
+    end
+
     servers = []
     servers << { urls: stun_urls } if stun_urls.any?
 
