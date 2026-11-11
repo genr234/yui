@@ -187,6 +187,20 @@ export type YuiNativeSpec = {
 	 * ends and a newer backup is restored before launch.
 	 */
 	saves?: string[];
+	/**
+	 * Ask the controller to place the program's main window borderless at this
+	 * aspect ratio, centred on the screen, so the overlay's bars stay visible
+	 * above and below it. Without it the program keeps its own window.
+	 */
+	window?: YuiNativeWindow;
+};
+
+/** Window placement for a native program. */
+export type YuiNativeWindow = {
+	/** Width / height: a number, or a ratio string such as "16:9" or "4:3". */
+	aspect: number | `${number}:${number}`;
+	/** Only "center" exists today. */
+	align?: "center";
 };
 
 /** Save-file backup progress of a session that declared `saves`. */

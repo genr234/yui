@@ -82,6 +82,9 @@ type Spec struct {
 	// that hold the program's save data. They are backed up to the account
 	// when the session ends and restored before a launch.
 	Saves []string
+	// Window, when set, has the program's main window placed borderless at an
+	// aspect ratio, centred on the primary screen (see placement.go).
+	Window *WindowSpec
 }
 
 // Info describes a running session to observers.
@@ -113,8 +116,13 @@ type Config struct {
 	Assets      AssetSource
 	VirtualPads VirtualPadResolver
 	Focus       Focuser
-	OnStatus    func(Status)
-	Limits      Limits
+	// Placer applies Spec.Window. Default: none (SystemPlacer on a kiosk).
+	Placer Placer
+	// OnWindow receives a WindowEvent when a placement is applied or changes,
+	// and one with a nil Rect when every session ends.
+	OnWindow func(WindowEvent)
+	OnStatus func(Status)
+	Limits   Limits
 	// SaveRemote backs saves up to the account; nil disables backup.
 	SaveRemote SaveRemote
 	SaveLimits SaveLimits
@@ -156,12 +164,20 @@ type session struct {
 	focus         FocusToken
 	logFile       *os.File
 	saves         *saveTarget
+
+	// Window placement: reports are dropped once the session has ended.
+	windowMu     sync.Mutex
+	windowEnded  bool
+	windowScreen Screen
 }
 
 // NewManager returns an idle Manager.
 func NewManager(cfg Config) *Manager {
 	if cfg.Focus == nil {
 		cfg.Focus = noFocus{}
+	}
+	if cfg.Placer == nil {
+		cfg.Placer = noPlacer{}
 	}
 	if cfg.StopGrace <= 0 {
 		cfg.StopGrace = 10 * time.Second
@@ -361,14 +377,35 @@ func (m *Manager) Launch(spec Spec) (Status, error) {
 	}
 	m.publish()
 	go m.cfg.Focus.Give(info.PID, s.focusStop)
+	if spec.Window != nil {
+		go m.cfg.Placer.Place(info.PID, *spec.Window, s.focusStop, func(r Rect, screen Screen) {
+			s.windowMu.Lock()
+			defer s.windowMu.Unlock()
+			if s.windowEnded {
+				return
+			}
+			s.windowScreen = screen
+			m.emitWindow(WindowEvent{AppID: info.AppID, Rect: &r, Screen: screen})
+		})
+	}
 	go m.watch(s, info)
 	return st, nil
+}
+
+func (m *Manager) emitWindow(ev WindowEvent) {
+	if m.cfg.OnWindow != nil {
+		m.cfg.OnWindow(ev)
+	}
 }
 
 // watch is the watchdog: it waits for the process and reports how it ended.
 func (m *Manager) watch(s *session, info Info) {
 	waitErr := s.cmd.Wait()
 	close(s.focusStop)
+	s.windowMu.Lock()
+	s.windowEnded = true
+	m.emitWindow(WindowEvent{AppID: info.AppID, Rect: nil, Screen: s.windowScreen})
+	s.windowMu.Unlock()
 	code := -1
 	if s.cmd.ProcessState != nil {
 		code = s.cmd.ProcessState.ExitCode()
@@ -652,6 +689,9 @@ func normalizeSpec(spec *Spec) error {
 		return err
 	}
 	spec.Saves = saves
+	if err := normalizeWindow(spec.Window); err != nil {
+		return err
+	}
 	switch spec.Audio {
 	case "":
 		spec.Audio = AudioNone

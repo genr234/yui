@@ -46,6 +46,8 @@ func (r *Registry) Native() *native.Manager {
 		SaveRemote:  registrySaves{r: r},
 		VirtualPads: r.dsuResolver(),
 		Focus:       native.SystemFocus{FallbackPID: r.focusFallbackPID},
+		Placer:      native.SystemPlacer{},
+		OnWindow:    func(ev native.WindowEvent) { r.Emit("native.window", ev) },
 		OnStatus: func(st native.Status) {
 			nativeWakeLock(useractivity.Default(), st)
 			r.Emit("native.status", st)
@@ -120,6 +122,7 @@ type nativeLaunchParams struct {
 	VirtualPads []int               `json:"virtual_pads"`
 	Audio       string              `json:"audio"`
 	Saves       []string            `json:"saves"`
+	Window      *native.WindowSpec  `json:"window"`
 }
 
 type NativeLaunchCommand struct{}
@@ -141,6 +144,7 @@ func (NativeLaunchCommand) Handle(r *Registry, params json.RawMessage) (any, err
 		VirtualPads: p.VirtualPads,
 		Audio:       p.Audio,
 		Saves:       p.Saves,
+		Window:      p.Window,
 	})
 	if err != nil {
 		return nil, err

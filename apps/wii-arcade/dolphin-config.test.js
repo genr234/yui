@@ -61,9 +61,13 @@ describe("dolphin config golden files", () => {
 		for (let i = 1; i <= 4; i++) expect(text).toContain(`Wii/Connect Wii Remote ${i} = `);
 	});
 
-	test("fullscreen, no confirm on stop, analytics off", () => {
+	test("windowed 16:9 render window, no confirm on stop, analytics off", () => {
 		const text = byPath["User/Config/Dolphin.ini"];
-		expect(text).toContain("Fullscreen = True");
+		expect(text).toContain("Fullscreen = False");
+		expect(text).toContain("RenderWindowAutoSize = False");
+		expect(text).toContain("RenderWindowYPos = 656");
+		expect(text).toContain("RenderWindowWidth = 1080");
+		expect(text).toContain("RenderWindowHeight = 608");
 		expect(text).toContain("ConfirmStop = False");
 		expect(text).toContain("[Analytics]\nEnabled = False");
 	});
@@ -101,6 +105,7 @@ describe("launch spec", () => {
 		expect(spec.audio).toBe("speaker");
 		expect(spec.virtualPads).toEqual([0, 1, 2, 3]);
 		expect(config.dolphinSpec({ runtime: 7, gameAsset: 12 }).args).not.toContain("-s");
+		expect(config.dolphinSpec({ runtime: 7, gameAsset: 12 }).window).toEqual({ aspect: "16:9", align: "center" });
 	});
 });
 

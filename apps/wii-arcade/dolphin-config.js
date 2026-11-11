@@ -12,6 +12,8 @@
 //   Core/HotkeyManager.cpp                  hotkey groups and labels
 //   Common/CommonPaths.h                    file names (DSUClient.ini, WiimoteNew.ini)
 //   UICommon/CommandLineParse.cpp           -u, -b, -e, -s
+//   Core/Config/MainSettings.cpp            [Display] Fullscreen, RenderToMain, RenderWindowAutoSize,
+//                                           RenderWindowXPos/YPos/Width/Height
 
 const DOLPHIN_RELEASE = "2609";
 const DOLPHIN_RUNTIME_NAME = "dolphin";
@@ -22,6 +24,9 @@ const DOLPHIN_USER_DIR = "User";
 const DEFAULT_PLAYER_PADS = "127.0.0.1:26760";
 const DEFAULT_SYSTEM_PAD = "127.0.0.1:26761/0";
 const PLAYER_SLOTS = 4;
+// 16:9 on the 1080x1920 kiosk, centred; same rect the controller computes.
+const WINDOW_ASPECT = "16:9";
+const DEFAULT_RENDER_WINDOW = { x: 0, y: 656, w: 1080, h: 608 };
 
 // motion-remote preset labels: generic button name -> what the phone shows.
 const MOTION_REMOTE_LABELS = {
@@ -178,7 +183,8 @@ const deviceName = (entry) => `DSUClient/${entry.slot}/${entry.server.descriptio
 
 /**
  * Files for ctx.native.launch (paths relative to {{dataDir}}).
- * options.pads: addresses ("host:port/slot") of the player pads by slot;
+ * options.window: {x, y, w, h} of Dolphin's render window (default: 16:9
+ * centred on the 1080x1920 kiosk); options.pads: addresses ("host:port/slot") of the player pads by slot;
  * options.systemPad: the system pad's address; options.extension: the
  * Wii Remote extension, "None" or "Nunchuk".
  */
@@ -188,6 +194,7 @@ function dolphinFiles(options = {}) {
 	const extension = options.extension === "Nunchuk" ? "Nunchuk" : "None";
 	const { servers, players, system } = dsuServers(pads, systemPad);
 	const dir = `${DOLPHIN_USER_DIR}/Config`;
+	const renderWindow = { ...DEFAULT_RENDER_WINDOW, ...options.window };
 
 	const dolphin = ini([
 		[
@@ -200,8 +207,15 @@ function dolphinFiles(options = {}) {
 		[
 			"Display",
 			[
-				["Fullscreen", bool(true)],
+				// Windowed: the controller places the render window (ctx.native
+				// `window`); these are Dolphin's own starting size and position.
+				["Fullscreen", bool(false)],
 				["RenderToMain", bool(false)],
+				["RenderWindowAutoSize", bool(false)],
+				["RenderWindowXPos", String(renderWindow.x)],
+				["RenderWindowYPos", String(renderWindow.y)],
+				["RenderWindowWidth", String(renderWindow.w)],
+				["RenderWindowHeight", String(renderWindow.h)],
 			],
 		],
 		[
@@ -307,6 +321,8 @@ function dolphinSpec(options) {
 		files: dolphinFiles(options),
 		virtualPads: [0, 1, 2, 3],
 		audio: "speaker",
+		// Windowed at 16:9, centred: leaves Chrome and the overlay's bars visible.
+		window: { aspect: WINDOW_ASPECT, align: "center" },
 		// Backed up to the account when the session stops, restored on the next kiosk.
 		saves: DOLPHIN_SAVES,
 	};
