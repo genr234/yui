@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MinimizeIcon from "lucide-svelte/icons/minimize";
   import { shellFullscreenState } from "../../sdk/game-rect";
 
   // While bars are up they cover the app's own back/exit buttons, so the bar
@@ -18,5 +19,7 @@
 </script>
 
 {#if $shellFullscreenState}
-  <button class="bar-exit" type="button" on:click={exit}>Exit fullscreen</button>
+  <button class="bar-exit" type="button" aria-label="Exit fullscreen" title="Exit fullscreen" on:click={exit}>
+    <MinimizeIcon size={26} strokeWidth={2.75} />
+  </button>
 {/if}

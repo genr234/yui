@@ -73,15 +73,21 @@
 	text-shadow: 0 3px 0 rgba(14, 64, 112, 0.45);
 }
 
+/* A square icon pinned to the top bar's top-right corner. */
 .bar-exit {
-	min-height: 44px;
-	padding: 0 18px;
+	position: absolute;
+	top: 14px;
+	right: 14px;
+	z-index: 2;
+	display: grid;
+	place-items: center;
+	box-sizing: border-box;
+	width: 52px;
+	height: 52px;
+	padding: 0;
 	border: 2px solid #c4c9d5;
 	border-bottom-width: 5px;
-	border-radius: 12px;
-	font: inherit;
-	font-size: 18px;
-	font-weight: 800;
+	border-radius: 14px;
 	color: #3a4151;
 	background: #fbfcfe;
 	cursor: pointer;
