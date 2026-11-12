@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 )
@@ -82,6 +83,28 @@ type Spec struct {
 	// that hold the program's save data. They are backed up to the account
 	// when the session ends and restored before a launch.
 	Saves []string
+	// Install is "" or "shared" (the runtime is extracted once for the kiosk
+	// and read-only to the program) or "private" (its files are placed in
+	// <dataDir>/runtime/ and the program runs from there).
+	Install string
+	// Surfaces are program windows the platform may show on a phone. At most 2.
+	Surfaces []SurfaceSpec
+}
+
+// Install modes for Spec.Install.
+const (
+	InstallShared  = "shared"
+	InstallPrivate = "private"
+)
+
+// SurfaceSpec names a top-level window of the program that can be streamed
+// to one player's phone.
+type SurfaceSpec struct {
+	ID     string `json:"id"`
+	Title  string `json:"title"` // RE2 pattern matched against window titles
+	Hidden bool   `json:"hidden"`
+	Width  int    `json:"width,omitempty"`
+	Height int    `json:"height,omitempty"`
 }
 
 // Info describes a running session to observers.
@@ -93,6 +116,8 @@ type Info struct {
 	Audio       string
 	// Assets are the asset ids the session uses (runtime and templates).
 	Assets []string
+	// Surfaces are the windows the spec declared.
+	Surfaces []SurfaceSpec
 }
 
 // Observer is told when a session's process starts and after it ends. The
@@ -154,6 +179,7 @@ type session struct {
 	done          chan struct{}
 	focusStop     chan struct{}
 	focus         FocusToken
+	skip          []*regexp.Regexp // surface window titles focus must not pick
 	logFile       *os.File
 	saves         *saveTarget
 }
@@ -286,9 +312,11 @@ func (m *Manager) Launch(spec Spec) (Status, error) {
 			VirtualPads: spec.VirtualPads,
 			Audio:       spec.Audio,
 			Assets:      []string{spec.Runtime},
+			Surfaces:    append([]SurfaceSpec(nil), spec.Surfaces...),
 		},
 		done:      make(chan struct{}),
 		focusStop: make(chan struct{}),
+		skip:      surfaceTitlePatterns(spec.Surfaces),
 	}
 	m.cur = s
 	if len(spec.Saves) > 0 {
@@ -352,6 +380,7 @@ func (m *Manager) Launch(spec Spec) (Status, error) {
 	m.status.StartedAt = m.now()
 	info := s.info
 	info.Assets = append([]string(nil), s.info.Assets...)
+	info.Surfaces = append([]SurfaceSpec(nil), s.info.Surfaces...)
 	observers := m.observerList()
 	st := m.statusLocked()
 	m.mu.Unlock()
@@ -360,7 +389,7 @@ func (m *Manager) Launch(spec Spec) (Status, error) {
 		o.SessionStarted(info)
 	}
 	m.publish()
-	go m.cfg.Focus.Give(info.PID, s.focusStop)
+	go m.cfg.Focus.Give(info.PID, s.skip, s.focusStop)
 	go m.watch(s, info)
 	return st, nil
 }
@@ -490,15 +519,22 @@ func (m *Manager) prepare(spec Spec, pads VirtualPadResolver, saves *saveTarget)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("prepare runtime: %w", err)
 	}
-	exeRel, _ := safeRelPath(spec.Executable)
-	exe := filepath.Join(dir, exeRel)
-	if info, err := os.Stat(exe); err != nil || !info.Mode().IsRegular() {
-		return nil, nil, nil, userErrorf("executable %q not found in the runtime", spec.Executable)
-	}
-
 	dataDir := filepath.Join(m.cfg.DataDir, spec.Scope, spec.AppID)
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		return nil, nil, nil, fmt.Errorf("data directory: %w", err)
+	}
+	exeRel, _ := safeRelPath(spec.Executable)
+	exeRoot := dir
+	if spec.Install == InstallPrivate {
+		if exeRoot, err = installPrivate(dir, dataDir, spec.Runtime); err != nil {
+			return nil, nil, nil, fmt.Errorf("install runtime: %w", err)
+		}
+		// "runtime/<file>" and "<file>" both name a file in the install.
+		exeRel = strings.TrimPrefix(exeRel, privateDirName+"/")
+	}
+	exe := filepath.Join(exeRoot, filepath.FromSlash(exeRel))
+	if info, err := os.Stat(exe); err != nil || !info.Mode().IsRegular() {
+		return nil, nil, nil, userErrorf("executable %q not found in the runtime", spec.Executable)
 	}
 	if saves != nil {
 		// Never fails the launch; the outcome is in Status.Saves.
@@ -652,6 +688,16 @@ func normalizeSpec(spec *Spec) error {
 		return err
 	}
 	spec.Saves = saves
+	switch spec.Install {
+	case "":
+		spec.Install = InstallShared
+	case InstallShared, InstallPrivate:
+	default:
+		return userErrorf("install must be %q or %q", InstallShared, InstallPrivate)
+	}
+	if err := normalizeSurfaces(spec.Surfaces); err != nil {
+		return err
+	}
 	switch spec.Audio {
 	case "":
 		spec.Audio = AudioNone
@@ -726,4 +772,56 @@ func closeQuietly(f *os.File) {
 	if f != nil {
 		_ = f.Close()
 	}
+}
+
+// Surface limits (plan contract C7).
+const (
+	maxSurfaces     = 2
+	maxSurfaceTitle = 200
+	minSurfaceW     = 160
+	maxSurfaceW     = 1920
+	minSurfaceH     = 120
+	maxSurfaceH     = 1080
+)
+
+var surfaceIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
+
+func normalizeSurfaces(list []SurfaceSpec) error {
+	if len(list) > maxSurfaces {
+		return userErrorf("at most %d surfaces", maxSurfaces)
+	}
+	seen := map[string]bool{}
+	for _, sf := range list {
+		if !surfaceIDPattern.MatchString(sf.ID) {
+			return userErrorf("invalid surface id %q", sf.ID)
+		}
+		if seen[sf.ID] {
+			return userErrorf("surface %q listed twice", sf.ID)
+		}
+		seen[sf.ID] = true
+		if sf.Title == "" || len(sf.Title) > maxSurfaceTitle {
+			return userErrorf("surface %q: title must be 1-%d characters", sf.ID, maxSurfaceTitle)
+		}
+		if _, err := regexp.Compile(sf.Title); err != nil {
+			return userErrorf("surface %q: title is not a valid pattern", sf.ID)
+		}
+		if sf.Width != 0 && (sf.Width < minSurfaceW || sf.Width > maxSurfaceW || sf.Width%2 != 0) {
+			return userErrorf("surface %q: width must be an even number %d-%d", sf.ID, minSurfaceW, maxSurfaceW)
+		}
+		if sf.Height != 0 && (sf.Height < minSurfaceH || sf.Height > maxSurfaceH || sf.Height%2 != 0) {
+			return userErrorf("surface %q: height must be an even number %d-%d", sf.ID, minSurfaceH, maxSurfaceH)
+		}
+	}
+	return nil
+}
+
+// surfaceTitlePatterns compiles the titles of validated surfaces.
+func surfaceTitlePatterns(list []SurfaceSpec) []*regexp.Regexp {
+	var out []*regexp.Regexp
+	for _, sf := range list {
+		if re, err := regexp.Compile(sf.Title); err == nil {
+			out = append(out, re)
+		}
+	}
+	return out
 }

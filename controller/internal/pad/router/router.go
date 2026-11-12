@@ -58,6 +58,7 @@ type AppInput struct {
 type Session interface {
 	SetControlHandler(fn func(playerID string, msg any))
 	SetInputHandler(fn func(playerID string, state protocol.InputState))
+	SetTouchHandler(fn func(playerID string, t protocol.TouchState))
 	SetPlayerHandler(fn func(ev session.PlayerEvent))
 	SendControl(playerID string, msg any) error
 }
@@ -183,6 +184,7 @@ func (r *Router) Attach(s Session) {
 	s.SetPlayerHandler(r.onPlayer)
 	s.SetControlHandler(r.onControl)
 	s.SetInputHandler(r.onInput)
+	s.SetTouchHandler(r.onTouch)
 }
 
 // Detach unbinds s (if it is attached) and forgets all of its players.
@@ -201,6 +203,7 @@ func (r *Router) Detach(s Session) {
 	s.SetPlayerHandler(nil)
 	s.SetControlHandler(nil)
 	s.SetInputHandler(nil)
+	s.SetTouchHandler(nil)
 	for _, id := range ids {
 		r.forget(id)
 	}
@@ -347,6 +350,10 @@ func (r *Router) forget(id string) {
 	delete(r.players, id)
 	delete(r.lastInput, id)
 	r.mu.Unlock()
+	// Lift any fingers the player still had down on a virtual pad.
+	if err := r.stack.Touch(id, protocol.TouchState{}); err != nil {
+		log.Printf("pad hub: touch release %s: %v", id, err)
+	}
 	r.pushMu.Lock()
 	delete(r.sent, id)
 	r.pushMu.Unlock()
@@ -396,6 +403,20 @@ func (r *Router) onInput(playerID string, state protocol.InputState) {
 	}
 	if err := r.stack.Input(playerID, state); err != nil {
 		log.Printf("pad hub: input %s: %v", playerID, err)
+	}
+}
+
+// onTouch routes a touch frame. Touch is dropped while a sensitive field is
+// open (D9), so a phone cannot drive the pointer or a program under it.
+func (r *Router) onTouch(playerID string, t protocol.TouchState) {
+	r.mu.Lock()
+	sensitive := r.sensitive
+	r.mu.Unlock()
+	if sensitive {
+		return
+	}
+	if err := r.stack.Touch(playerID, t); err != nil {
+		log.Printf("pad hub: touch %s: %v", playerID, err)
 	}
 }
 

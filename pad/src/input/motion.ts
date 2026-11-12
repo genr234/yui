@@ -6,6 +6,7 @@ import {
   PointerIntegrator,
   calibrate as fitCalibration,
   toRemoteFrame,
+  toScreenFrame,
   type Calibration,
   type CalibrationResult,
   type MotionSource,
@@ -34,6 +35,8 @@ export interface MotionOptions {
   supported: boolean
   /** remoteFlip() for the current screen angle. */
   flip(): boolean
+  /** screen.orientation.angle, for the `screen` frame (default 0). */
+  angle?(): number
   calibration?: Calibration | null
   saveCalibration?(c: Calibration): void
   now?(): number
@@ -79,6 +82,7 @@ export class MotionController {
   readonly view: Readable<MotionView> = { subscribe: this.store.subscribe }
   private wanted = false
   private pointer = false
+  private frame: 'remote' | 'screen' = 'remote'
   private granted: boolean
   private running = false
   private cal: Calibration
@@ -107,9 +111,10 @@ export class MotionController {
   }
 
   /** The current layout has (or no longer has) a motion node. */
-  setWanted(wanted: boolean, pointer: boolean) {
+  setWanted(wanted: boolean, pointer: boolean, frame: 'remote' | 'screen' = 'remote') {
     this.wanted = wanted
     this.pointer = pointer
+    this.frame = frame
     if (!pointer) this.integrator.recenter()
     this.sync()
   }
@@ -213,7 +218,10 @@ export class MotionController {
       this.gyroSeen = raw.hasGyro
       this.publish()
     }
-    const f = toRemoteFrame(raw, this.cal, this.opts.flip())
+    const f =
+      this.frame === 'screen'
+        ? toScreenFrame(raw, this.cal, this.opts.angle?.() ?? 0)
+        : toRemoteFrame(raw, this.cal, this.opts.flip())
     const t = this.now()
     this.watchStill(raw, t)
     const dt = this.lastAt === null ? raw.interval : t - this.lastAt

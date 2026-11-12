@@ -92,6 +92,32 @@ export function toRemoteFrame(raw: RawMotion, cal: Calibration, flip = false): R
   return { accel: accel.map(clean) as Vec3, gyro: gyro.map(clean) as Vec3 }
 }
 
+/**
+ * DeviceMotion → the screen frame, for a phone held like a handheld
+ * controller: +x is the displayed image's right, +y its top, +z out of the
+ * screen. The remote frame's units, signs and bias, then the device axes are
+ * rotated about z by the screen angle (the phone is turned `angle` degrees
+ * counter-clockwise from natural, so the displayed axes are the device axes
+ * rotated by `angle`). z is unchanged.
+ */
+export function toScreenFrame(raw: RawMotion, cal: Calibration, angle: number): RemoteFrame {
+  const f = toRemoteFrame(raw, cal, false)
+  const a = ((Math.round(angle / 90) * 90) % 360 + 360) % 360
+  const rot = (v: Vec3): Vec3 => {
+    switch (a) {
+      case 90:
+        return [-v[1], v[0], v[2]]
+      case 180:
+        return [-v[0], -v[1], v[2]]
+      case 270:
+        return [v[1], -v[0], v[2]]
+      default:
+        return v
+    }
+  }
+  return { accel: rot(f.accel).map(clean) as Vec3, gyro: rot(f.gyro).map(clean) as Vec3 }
+}
+
 const clean = (v: number) => (Number.isFinite(v) ? v + 0 : 0) // also turns -0 into 0
 
 /**

@@ -1,0 +1,20 @@
+{
+  "name": "two_points",
+  "fields": {
+    "seq": 65535,
+    "tMs": 4294967295,
+    "points": [
+      {
+        "down": true,
+        "x": 0,
+        "y": 65535
+      },
+      {
+        "down": true,
+        "x": 65535,
+        "y": 0
+      }
+    ]
+  },
+  "hex": "0102ffffffffffff03000000ffffffff00000000"
+}

@@ -8,13 +8,13 @@
   import CreatureBuilder from './CreatureBuilder.svelte'
   import CodeEntry from './CodeEntry.svelte'
   import { rememberAvatar, startingAvatar } from './avatar'
-  import { demoGamepad, demoRemote, demoShell, demoTree } from './layout/demo'
+  import { demoGamepad, demoRemote, demoShell, demoSurface, demoTree } from './layout/demo'
   import { unlockAudio } from './platform/sound'
 
   type Screen = 'loading' | 'not_found' | 'join' | 'joined' | 'error' | 'kicked' | 'ended' | 'closed'
 
   const demoName = import.meta.env.DEV ? new URLSearchParams(location.search).get('demo') : null
-  const demos: Record<string, Node> = { layout: demoTree, gamepad: demoGamepad, remote: demoRemote, shell: demoShell }
+  const demos: Record<string, Node> = { layout: demoTree, gamepad: demoGamepad, remote: demoRemote, shell: demoShell, surface: demoSurface }
   const demo: Node | null = (demoName && demos[demoName]) || null
   const code = codeFromPath()
   const qrToken = qrTokenFromQuery()

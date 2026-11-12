@@ -1,7 +1,7 @@
 /**
  * ctx APIs that cross the app sandbox boundary generically: `ctx.native`,
  * `ctx.library`, `ctx.assets`, `ctx.launch`, `ctx.controllers`, `ctx.profiles`,
- * `ctx.virtualPads` and `ctx.wakeLock`.
+ * `ctx.virtualPads`, `ctx.surfaces` and `ctx.wakeLock`.
  *
  * Apps run in a sandboxed iframe (AppHost). `sandboxApiSource` is spliced
  * into the sandbox script and adds the APIs to the sandbox's ctx as RPC
@@ -16,7 +16,7 @@ import { yuiControllersRuntime } from "./controllers-runtime";
 import { profileCalls, profilesHostFor } from "./profiles";
 import { yuiProfilesRuntime } from "./profiles-runtime";
 
-export const sandboxApis = ["native", "library", "assets", "controllers", "virtualPads", "profiles", "web", "embeds", "saves", "wakeLock"] as const;
+export const sandboxApis = ["native", "library", "assets", "controllers", "virtualPads", "surfaces", "profiles", "web", "embeds", "saves", "wakeLock"] as const;
 export type SandboxApi = (typeof sandboxApis)[number];
 
 /**
@@ -145,6 +145,12 @@ function yuiExtendContext(ctx) {
     systemPad: () => rpc("virtualPads", "systemPad"),
     press: (button, action) => rpc("virtualPads", "press", [button, action || "tap"])
   };
+  ctx.surfaces = {
+    available: () => rpc("surfaces", "available"),
+    list: () => rpc("surfaces", "list"),
+    show: (surface, player) => rpc("surfaces", "show", [surface, player == null ? null : yuiPlayerId(player)]),
+    on: (event, handler) => yuiSubscribe("surfaces", event, handler)
+  };
   ctx.wakeLock = {
     request: async (reason) => {
       const held = await rpc("wakeLock", "request", [reason == null ? "" : String(reason)]);
@@ -240,6 +246,17 @@ export async function handleSandboxApiCall(
 			if (typeof first !== "string" || !first.startsWith("message:")) throw new Error(`unknown embeds event: ${String(first)}`);
 			const channel = first.slice("message:".length);
 			ctx.embeds.on(channel, (data) => push("embeds", first, data));
+			return undefined;
+		}
+		case "surfaces.available":
+			return ctx.surfaces.available();
+		case "surfaces.list":
+			return ctx.surfaces.list();
+		case "surfaces.show":
+			return ctx.surfaces.show(first, second ?? null);
+		case "surfaces.subscribe": {
+			if (first !== "status") throw new Error(`YUI_SURFACES: unknown event ${String(first)}`);
+			ctx.surfaces.on("status", (surfaces) => push("surfaces", "status", surfaces));
 			return undefined;
 		}
 		case "wakeLock.request": {

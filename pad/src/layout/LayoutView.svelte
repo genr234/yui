@@ -8,6 +8,7 @@
   import Choice from '../controls/Choice.svelte'
   import List from '../controls/List.svelte'
   import Sketch from '../controls/Sketch.svelte'
+  import Surface from '../controls/Surface.svelte'
   import MotionChip from '../controls/MotionChip.svelte'
 
   /** An expanded tree (presets already replaced, see presets.ts expandTree). */
@@ -53,6 +54,8 @@
   <Sketch {props} style={flexStyle} />
 {:else if node.type === 'motion'}
   <MotionChip {props} style={flexStyle} />
+{:else if node.type === 'surface'}
+  <Surface {props} style={flexStyle} />
 {/if}
 
 <style>

@@ -76,3 +76,9 @@ describe("controllers manifest", () => {
 		for (const key of ["F13", "", "ab", "Shift", 3]) expect(isKeymapKey(key)).toBe(false);
 	});
 });
+
+describe("permissions", () => {
+	test("surfaces is a known permission", () => {
+		expect(() => validateSimpleApp({ ...base, permissions: ["native", "surfaces"] })).not.toThrow();
+	});
+});

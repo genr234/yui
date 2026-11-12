@@ -99,6 +99,11 @@ type Registry struct {
 	web webState
 	// profileSendHook replaces the control send in tests.
 	profileSendHook func(playerID string, msg any) error
+	// videoMu guards the video service handle and what the asset syncer needs
+	// to know about its encoder (surfaces.go). Never held while calling into
+	// the service.
+	videoMu sync.Mutex
+	video   videoState
 }
 
 // errStoreScopeChanged means the active account store moved to a new epoch
@@ -163,6 +168,7 @@ func NewRegistry(cfg config.Config) *Registry {
 	r.Register(EmbedBlockerCommands()...)
 	r.Register(PadCommands()...)
 	r.Register(NativeCommands()...)
+	r.Register(SurfacesCommands()...)
 	r.Register(LibraryCommands()...)
 	r.Register(ControllersCommands()...)
 	r.Register(ProfileCommands()...)
@@ -286,6 +292,7 @@ func (r *Registry) ensureStoreLocked() error {
 }
 
 func (r *Registry) Close() error {
+	r.closeVideo()
 	r.closeNative()
 	r.closeWebApps()
 	if r.plugins != nil {

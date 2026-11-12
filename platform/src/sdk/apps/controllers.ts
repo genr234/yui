@@ -195,6 +195,7 @@ export function createControllersHost(app: YuiSimpleApp, ensure: Ensure): Contro
 						backend: second?.backend ?? "dsu",
 						slot: second?.slot,
 						pointer_stick: Boolean(second?.pointerStick),
+						...(second?.touch ? { touch: second.touch } : {}),
 					});
 				case "detach":
 					return bridge.send("pad.vpads.detach", { app_id: app.id, player_id: playerId(first) });

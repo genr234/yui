@@ -110,6 +110,7 @@ type Attachment struct {
 	Backend      string `json:"backend"`
 	Slot         int    `json:"slot"`
 	PointerStick bool   `json:"pointer_stick,omitempty"`
+	Touch        string `json:"touch,omitempty"` // "", "surface", "pointer"
 	Address      string `json:"address"`
 }
 
@@ -121,6 +122,7 @@ var (
 	ErrBadBackend = errors.New("virtual pad backend must be \"dsu\"")
 	ErrBadSlot    = fmt.Errorf("virtual pad slot must be 0-%d", DSUSlots-1)
 	ErrBadButton  = errors.New("unknown button")
+	ErrBadTouch   = errors.New("virtual pad touch must be \"surface\" or \"pointer\"")
 )
 
 var appIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,126}[a-z0-9_-]$`)
@@ -371,7 +373,10 @@ func (c *Controller) rebuildRoutesLocked() {
 		p.routes = routes
 	}
 	if p := c.native; p != nil {
-		routes := []hub.Route{hub.PadRoute(VirtualPadsAdapterName, "pad")}
+		routes := []hub.Route{
+			hub.PadRoute(VirtualPadsAdapterName, "pad"),
+			{Kind: hub.KindTouch, Adapter: VirtualPadsAdapterName, Target: "pad"},
+		}
 		p.routes = append(routes, appRoutes(p.appID, c.layouts[p.appID], false)...)
 	}
 }
@@ -537,6 +542,9 @@ func (c *Controller) Attach(appID string, a Attachment) (Attachment, error) {
 	if a.Slot < 0 || a.Slot >= DSUSlots {
 		return Attachment{}, ErrBadSlot
 	}
+	if a.Touch != "" && a.Touch != "surface" && a.Touch != "pointer" {
+		return Attachment{}, ErrBadTouch
+	}
 	addr, err := c.cfg.Resolver.VirtualPad(appID, a.Slot)
 	if err != nil {
 		return Attachment{}, err
@@ -603,9 +611,16 @@ func (c *Controller) neutral(a Attachment) {
 	if c.cfg.Pads == nil {
 		return
 	}
-	_ = c.cfg.Pads.Deliver(a.PlayerID, []hub.Output{{
-		Adapter: c.cfg.Pads.Name(), Target: fmt.Sprintf("slot:%d", a.Slot), Kind: hub.KindState, Value: protocol.InputState{},
-	}})
+	target := fmt.Sprintf("slot:%d", a.Slot)
+	outs := []hub.Output{
+		{Adapter: c.cfg.Pads.Name(), Target: target, Kind: hub.KindState, Value: protocol.InputState{}},
+	}
+	if a.Touch == "surface" {
+		// A neutral state frame already drops pointer touch; surface touch
+		// is separate state and needs its own release.
+		outs = append(outs, hub.Output{Adapter: c.cfg.Pads.Name(), Target: target, Kind: hub.KindTouch, Value: protocol.TouchState{}})
+	}
+	_ = c.cfg.Pads.Deliver(a.PlayerID, outs)
 }
 
 // SystemButton presses, releases or taps a button on the system pad. The

@@ -2,6 +2,7 @@ import { getContext, setContext } from 'svelte'
 import type { Readable } from 'svelte/store'
 import type { CalibrationResult } from '../platform/motion'
 import type { CalibProgress } from '../input/motion'
+import type { TouchPoint } from '@yui/protocol'
 import type { ControlSink } from './sink'
 
 export type MotionStatus = 'off' | 'needs-permission' | 'denied' | 'unsupported' | 'on'
@@ -11,6 +12,8 @@ export interface PadContext {
   motion: Readable<{ status: MotionStatus; calibrated: boolean; gyro: boolean; calib: CalibProgress | null }>
   /** Recenter pressed (true) / released (false): holds bit 17 and re-zeroes the pointer. */
   recenter(down: boolean): void
+  /** Fingers on a surface (u16 over its video content); sends touch frames. Does nothing while the input channel is closed. */
+  touch(points: [TouchPoint, TouchPoint]): void
   calibrate(): Promise<CalibrationResult>
   cancelCalibration(): void
 }

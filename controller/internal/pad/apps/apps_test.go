@@ -673,3 +673,62 @@ func stringIndex(s, sub string) int {
 	}
 	return -1
 }
+
+func TestAttachmentTouchModes(t *testing.T) {
+	r := newRig(t)
+	r.hasHost.Store(true)
+	_ = r.ctl.SetFocus(Focus{AppID: arcade, Active: true})
+	remote := hub.MotionRemotePreset(nil)
+	_ = r.ctl.SetLayouts(arcade, map[string]*protocol.Node{"*": &remote})
+	r.ctl.SessionStarted(native.Info{ID: "s1", AppID: arcade, VirtualPads: []int{0, 1}})
+
+	for _, bad := range []string{"mouse", "Surface"} {
+		if _, err := r.ctl.Attach(arcade, Attachment{PlayerID: "p1", Slot: 0, Touch: bad}); !errors.Is(err, ErrBadTouch) {
+			t.Fatalf("touch %q: %v", bad, err)
+		}
+	}
+	a, err := r.ctl.Attach(arcade, Attachment{PlayerID: "p1", Slot: 0, Touch: "surface"})
+	if err != nil || a.Touch != "surface" {
+		t.Fatalf("attach %+v %v", a, err)
+	}
+	if _, err := r.ctl.Attach(arcade, Attachment{PlayerID: "p2", Slot: 1, Touch: "pointer", PointerStick: true}); err != nil {
+		t.Fatal(err)
+	}
+	r.pads.take()
+
+	ts := protocol.TouchState{Seq: 1, Points: [2]protocol.TouchPoint{{Down: true, X: 1, Y: 2}}}
+	// Surface mode: touch goes to the attached slot.
+	_ = r.stack.Touch("p1", ts)
+	got := r.pads.take()
+	if len(got) != 1 || got[0].out.Kind != hub.KindTouch || got[0].out.Target != "slot:0" {
+		t.Fatalf("surface touch %+v", got)
+	}
+	// Pointer mode: surface touch is dropped; state frames get the suffix.
+	_ = r.stack.Touch("p2", ts)
+	if got := r.pads.take(); len(got) != 0 {
+		t.Fatalf("pointer touch forwarded %+v", got)
+	}
+	_ = r.stack.Input("p2", protocol.InputState{TMs: 1})
+	got = r.pads.take()
+	if len(got) != 1 || got[0].out.Target != "slot:1/pointer-stick/touch-pointer" {
+		t.Fatalf("pointer state %+v", got)
+	}
+	// Surface mode state frames have no suffix.
+	_ = r.stack.Input("p1", protocol.InputState{TMs: 1})
+	if got := r.pads.take(); len(got) != 1 || got[0].out.Target != "slot:0" {
+		t.Fatalf("surface state %+v", got)
+	}
+	// An unattached player's touch is dropped once others are attached.
+	_ = r.stack.Touch("p3", ts)
+	if got := r.pads.take(); len(got) != 0 {
+		t.Fatalf("spectator touch %+v", got)
+	}
+	// Detaching a surface holder lifts their fingers.
+	if err := r.ctl.Detach(arcade, "p1"); err != nil {
+		t.Fatal(err)
+	}
+	got = r.pads.take()
+	if len(got) != 2 || got[1].out.Kind != hub.KindTouch || got[1].out.Value != (protocol.TouchState{}) {
+		t.Fatalf("detach %+v", got)
+	}
+}

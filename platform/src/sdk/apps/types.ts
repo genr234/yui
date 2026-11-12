@@ -17,6 +17,7 @@ export type YuiPermission =
 	| "native"
 	| "library"
 	| "virtual-pads"
+	| "surfaces"
 	| "controllers"
 	| "profiles"
 	| "audio.speaker"
@@ -107,6 +108,8 @@ export type YuiContext = {
 	/** Only with the `profiles` permission declared. */
 	profiles?: YuiProfilesApi;
 	virtualPads: YuiVirtualPadsApi;
+	/** Private video views of the program's windows (permission `surfaces`). */
+	surfaces: YuiSurfacesApi;
 	/** Keep the kiosk awake while nobody touches it (videos, cutscenes). */
 	wakeLock: YuiWakeLockApi;
 	/** What the shell opened this app for, e.g. a library title from Jump back in. */
@@ -187,6 +190,55 @@ export type YuiNativeSpec = {
 	 * ends and a newer backup is restored before launch.
 	 */
 	saves?: string[];
+	/**
+	 * "shared" (default): the runtime is extracted once for the kiosk and is read-only to the program.
+	 * "private": the runtime's files are placed in `{{dataDir}}/runtime/` and the program runs from
+	 * there, for programs that keep settings beside their executable. Files the program or the app
+	 * adds there survive launches and runtime updates. `executable`, `files` and `saves` paths
+	 * under `runtime/` refer to that directory.
+	 */
+	install?: "shared" | "private";
+	/** At most 2. Needs the `surfaces` permission. */
+	surfaces?: YuiNativeSurface[];
+};
+
+/** A video view of one of the program's windows, for one player's phone. */
+export type YuiNativeSurface = {
+	/** `[a-z0-9][a-z0-9-]{0,31}`; the id used in `ctx.surfaces` and in `surface` layout nodes. */
+	id: string;
+	/** Which top-level window of the program to capture: an RE2 pattern matched against window titles. */
+	window: { title: string };
+	/** Keep the window off the kiosk's display (default true). */
+	hidden?: boolean;
+	/** Encoded size, default 854x480. Even numbers, 160..1920 by 120..1080. */
+	width?: number;
+	height?: number;
+};
+
+export type YuiSurfaceStatus = {
+	id: string;
+	/** waiting: window not found yet. ready: can be shown. streaming: on a phone. */
+	state: "waiting" | "ready" | "streaming" | "failed" | "closed";
+	/** The player who sees it, or null. */
+	player_id: string | null;
+	width: number;
+	height: number;
+	fps: number;
+	error?: string;
+};
+
+export type YuiSurfacesApi = {
+	/** Whether this kiosk can stream surfaces at all. */
+	available(): Promise<{ available: boolean; reason?: "unsupported" | "no_encoder" }>;
+	/** This app's surfaces (those of its current native session). */
+	list(): Promise<YuiSurfaceStatus[]>;
+	/**
+	 * Show a surface on one player's phone, or on nobody (null). Moves it if another
+	 * player had it. Rejects with code "not_ready" | "no_video" | "no_video_link" |
+	 * "unknown_surface" | "unknown_player" in the message after `YUI_SURFACES: `.
+	 */
+	show(surface: string, player: YuiPlayerRef | null): Promise<YuiSurfaceStatus>;
+	on(event: "status", handler: (surfaces: YuiSurfaceStatus[]) => void): () => void;
 };
 
 /** Save-file backup progress of a session that declared `saves`. */
@@ -306,6 +358,10 @@ export type YuiPlayer = {
 	connected: boolean;
 	/** Playing as a Yui account this session. Never says which account. */
 	accountLinked: boolean;
+	/** What this phone can do, once it has said hello. */
+	caps?: { motion: boolean; haptics: boolean; video: boolean };
+	/** True when the phone's link goes through a relay (higher latency). */
+	relayed?: boolean;
 };
 
 export type YuiPlayerRef = YuiPlayer | string;
@@ -357,7 +413,7 @@ export type YuiControllersApi = {
 	 */
 	haptic(player: YuiPlayerRef | "all", pattern: YuiHapticName | number | number[], options?: { intensity?: number }): Promise<unknown>;
 	sound(player: YuiPlayerRef | "speaker", url: string, options?: { volume?: number }): Promise<unknown>;
-	/** Pad node builders: button, choice, dpad, stick, trackpad, keyboard, list, motion, preset, text, row, column, grid, spacer. */
+	/** Pad node builders: button, choice, dpad, stick, trackpad, keyboard, list, motion, preset, surface, text, row, column, grid, spacer. */
 	ui: Record<string, (...args: any[]) => YuiPadNode>;
 };
 
@@ -390,6 +446,7 @@ export type YuiVirtualPadAttachment = {
 	backend: "dsu";
 	slot: number;
 	pointer_stick?: boolean;
+	touch?: "surface" | "pointer";
 	/** "host:port/slot", the same value {{virtualPad:<slot>}} expands to. */
 	address: string;
 };
@@ -397,7 +454,7 @@ export type YuiVirtualPadAttachment = {
 export type YuiVirtualPadsApi = {
 	attach(
 		player: YuiPlayerRef,
-		options: { backend?: "dsu"; slot: number; pointerStick?: boolean },
+		options: { backend?: "dsu"; slot: number; pointerStick?: boolean; touch?: "surface" | "pointer" },
 	): Promise<YuiVirtualPadAttachment>;
 	detach(player: YuiPlayerRef): Promise<void>;
 	list(): Promise<YuiVirtualPadAttachment[]>;

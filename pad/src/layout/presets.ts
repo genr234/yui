@@ -199,6 +199,8 @@ export interface TreeInfo {
   motion: boolean
   /** Some motion node asks for the pointer. */
   pointer: boolean
+  /** Set to `screen` when any motion node asks for the screen frame; absent means the remote frame. */
+  frame?: 'screen'
 }
 
 export function scanTree(node: Node | null): TreeInfo {
@@ -208,6 +210,7 @@ export function scanTree(node: Node | null): TreeInfo {
     if (n.type === 'motion') {
       info.motion = true
       if (n.props?.pointer === true) info.pointer = true
+      if (n.props?.frame === 'screen') info.frame = 'screen'
     }
     for (const c of n.children ?? []) walk(c, depth + 1)
   }

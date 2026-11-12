@@ -8,6 +8,7 @@ import {
   calibrate,
   remoteFlip,
   toRemoteFrame,
+  toScreenFrame,
   type MotionListener,
   type RawMotion,
 } from './motion'
@@ -104,6 +105,49 @@ describe('pointer', () => {
     expect(p.value()[0]).toBe(1)
     p.recenter()
     expect(p.value()).toEqual([0, 0])
+  })
+})
+
+describe('toScreenFrame', () => {
+  const sample = raw({ ax: 1 * G, ay: 2 * G, az: 3 * G, beta: 10, alpha: 20, gamma: 30 })
+  const f = (angle: number) => toScreenFrame(sample, DEFAULT_CALIBRATION, angle)
+  test('0: the device axes', () => {
+    expect(f(0).accel).toEqual([1, 2, 3])
+    expect(f(0).gyro).toEqual([10, 20, 30])
+  })
+  test('90: the displayed top is the device +x, the displayed right is the device -y', () => {
+    expect(f(90).accel).toEqual([-2, 1, 3])
+    expect(f(90).gyro).toEqual([-20, 10, 30])
+  })
+  test('180: turned about z', () => {
+    expect(f(180).accel).toEqual([-1, -2, 3])
+    expect(f(180).gyro).toEqual([-10, -20, 30])
+  })
+  test('270', () => {
+    expect(f(270).accel).toEqual([2, -1, 3])
+    expect(f(270).gyro).toEqual([20, -10, 30])
+  })
+  test('other angles snap to the nearest quarter; negative angles wrap', () => {
+    expect(f(88).accel).toEqual(f(90).accel)
+    expect(f(-90).accel).toEqual(f(270).accel)
+  })
+  test('a phone lying face up still reads +1 g on z whatever the angle', () => {
+    for (const a of [0, 90, 180, 270]) expect(toScreenFrame(raw({ az: G }), DEFAULT_CALIBRATION, a).accel[2]).toBe(1)
+  })
+})
+
+describe('MotionController frame', () => {
+  test('a screen-frame layout rotates by the screen angle, a remote one does not', () => {
+    const model = new InputModel()
+    let listener: MotionListener | null = null
+    const source = { start: (fn: MotionListener) => (listener = fn), stop: () => (listener = null) }
+    const c = new MotionController(model, source, { needsPermission: false, supported: true, flip: () => false, angle: () => 90, now: () => 0 })
+    c.setWanted(true, false, 'screen')
+    listener!(raw({ ax: G, ay: 2 * G }))
+    expect(model.frame().accel.slice(0, 2)).toEqual([-2, 1])
+    c.setWanted(true, false)
+    listener!(raw({ ax: G, ay: 2 * G }))
+    expect(model.frame().accel.slice(0, 2)).toEqual([1, 2])
   })
 })
 

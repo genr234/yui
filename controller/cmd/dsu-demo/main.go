@@ -6,7 +6,9 @@
 // the system pad), -slots how many slots to animate, -hold a comma-separated
 // list of buttons to keep pressed instead of toggling Cross (names as in
 // dsu.PadState: Up Down Left Right Cross Circle Square Triangle L1 R1 L2 R2
-// L3 R3 Share Options PS Touch), -no-motion to report a still gyro.
+// L3 R3 Share Options PS Touch), -no-motion to report a still gyro, -touch to
+// sweep touch point 0 round the touch area in a circle (one lap every four
+// seconds) so a client's touch and pointer bindings can be checked.
 package main
 
 import (
@@ -14,6 +16,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"os/signal"
 	"strings"
@@ -48,6 +51,7 @@ func main() {
 	slots := flag.Int("slots", 1, "number of slots (from 0) to animate")
 	held := flag.String("hold", "", "comma-separated buttons to hold down (default: toggle Cross every second)")
 	noMotion := flag.Bool("no-motion", false, "report no gyro rotation")
+	touch := flag.Bool("touch", false, "sweep touch point 0 in a circle")
 	flag.Parse()
 
 	var fixed dsu.PadState
@@ -86,9 +90,24 @@ func main() {
 			if !*noMotion {
 				st.Gyro = [3]float32{0, 30, 0} // 30 deg/s yaw
 			}
+			if *touch {
+				st.Touches[0] = circleTouch(el)
+			}
 			for slot := 0; slot < *slots && slot < 4; slot++ {
 				s.SetSlot(slot, st)
 			}
 		}
+	}
+}
+
+// circleTouch is where touch point 0 sits el seconds in: a circle around the
+// centre of DSU's 1920x942 touch area, one lap per 4 s, always active.
+func circleTouch(el float64) dsu.TouchPoint {
+	a := el * 2 * math.Pi / 4
+	return dsu.TouchPoint{
+		Active: true,
+		ID:     1,
+		X:      uint16(959 + 700*math.Cos(a)),
+		Y:      uint16(470 + 350*math.Sin(a)),
 	}
 }

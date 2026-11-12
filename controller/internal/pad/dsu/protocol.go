@@ -38,7 +38,19 @@ type PadState struct {
 	Accel [3]float32 // g
 	Gyro  [3]float32 // pitch, yaw, roll in deg/s
 
+	// Touches are the two touchpad contacts. Active contacts are reported with
+	// their coordinates; the id should change on every new contact.
+	Touches [2]TouchPoint
+
 	MotionTimestamp uint64 // microseconds; 0 = server fills from a monotonic clock
+}
+
+// TouchPoint is one touchpad contact in DSU's touch area.
+type TouchPoint struct {
+	Active bool
+	ID     uint8
+	X      uint16 // 0..1919
+	Y      uint16 // 0..941
 }
 
 // slotMAC returns a stable fake MAC for a slot.
@@ -180,7 +192,16 @@ func encodeControllerData(serverID uint32, slot int, packetNum uint32, s PadStat
 	p[33] = btn(s.L1)
 	p[34] = maxByte(analogByte(s.RT), btn(s.R2))
 	p[35] = maxByte(analogByte(s.LT), btn(s.L2))
-	// p[36:48]: two touch entries, left inactive (zero).
+	for i, t := range s.Touches {
+		o := 36 + 6*i
+		if !t.Active {
+			continue
+		}
+		p[o] = 1
+		p[o+1] = t.ID
+		binary.LittleEndian.PutUint16(p[o+2:], t.X)
+		binary.LittleEndian.PutUint16(p[o+4:], t.Y)
+	}
 	binary.LittleEndian.PutUint64(p[48:], s.MotionTimestamp)
 	for i := 0; i < 3; i++ {
 		binary.LittleEndian.PutUint32(p[56+4*i:], math.Float32bits(s.Accel[i]))

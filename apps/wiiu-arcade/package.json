@@ -1,0 +1,9 @@
+{
+  "name": "wiiu-arcade",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sync": "bun sync.js",
+    "test": "bun test"
+  }
+}

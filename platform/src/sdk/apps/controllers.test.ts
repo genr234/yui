@@ -290,6 +290,11 @@ describe("controllers host", () => {
 			method: "pad.vpads.attach",
 			params: { app_id: "dev.example.quiz", player_id: "p1", backend: "dsu", slot: 2, pointer_stick: true },
 		});
+		await host.virtualPads("attach", ["p1", { slot: 0, touch: "surface" }]);
+		expect(sent.at(-1)).toEqual({
+			method: "pad.vpads.attach",
+			params: { app_id: "dev.example.quiz", player_id: "p1", backend: "dsu", slot: 0, pointer_stick: false, touch: "surface" },
+		});
 	});
 
 	test("permission is checked before any call", async () => {

@@ -35,6 +35,8 @@ type Caps struct {
 	Motion   bool `json:"motion"`
 	Haptics  bool `json:"haptics"`
 	WakeLock bool `json:"wakeLock"`
+	// Video: the pad can show a surface (decodes H.264). Absent means false.
+	Video bool `json:"video,omitempty"`
 }
 
 type Screen struct {
@@ -120,6 +122,15 @@ type ProfileReply struct {
 	Granted bool   `json:"granted"`
 }
 
+// Surface (kiosk → pad) says what the phone's video track carries now.
+type Surface struct {
+	T      string `json:"t"` // "surface"
+	ID     string `json:"id"`
+	State  string `json:"state"` // "on" | "off"
+	Width  int    `json:"width,omitempty"`
+	Height int    `json:"height,omitempty"`
+}
+
 // Ping and Pong share a shape; ID may be a number or string on the wire.
 type Ping struct {
 	T  string `json:"t"`
@@ -191,7 +202,7 @@ func checkNode(n Node, depth int) error {
 }
 
 // ParseControl validates a control frame and returns the typed message
-// (Hello, Welcome, Layout, Event, Text, Haptic, Sound, PlayerMsg, System, Ping).
+// (Hello, Welcome, Layout, Event, Text, Haptic, Sound, PlayerMsg, System, Surface, Ping).
 // Pong frames are returned as Ping values with T == "pong".
 func ParseControl(data []byte) (any, error) {
 	var raw map[string]json.RawMessage
@@ -226,6 +237,11 @@ func ParseControl(data []byte) (any, error) {
 		for _, k := range []string{"motion", "haptics", "wakeLock"} {
 			if _, ok := caps[k]; !ok {
 				return nil, wrap(fmt.Errorf("caps.%s missing", k))
+			}
+		}
+		if v, ok := caps["video"]; ok {
+			if t := bytes.TrimSpace(v); !bytes.Equal(t, []byte("true")) && !bytes.Equal(t, []byte("false")) {
+				return nil, wrap(errors.New("caps.video must be a boolean"))
 			}
 		}
 		return m, nil
@@ -332,6 +348,27 @@ func ParseControl(data []byte) (any, error) {
 		}
 		if m.AppID == "" {
 			return nil, wrap(errors.New("app_id required"))
+		}
+		return m, nil
+	case "surface":
+		if err := need("id", "state"); err != nil {
+			return nil, wrap(err)
+		}
+		var m Surface
+		if err := decode(data, &m); err != nil {
+			return nil, wrap(err)
+		}
+		if m.ID == "" || len(m.ID) > 32 {
+			return nil, wrap(errors.New("id must be 1-32 characters"))
+		}
+		switch m.State {
+		case "on":
+			if m.Width <= 0 || m.Height <= 0 {
+				return nil, wrap(errors.New("on needs positive width and height"))
+			}
+		case "off":
+		default:
+			return nil, wrap(errors.New("bad state"))
 		}
 		return m, nil
 	case "ping", "pong":

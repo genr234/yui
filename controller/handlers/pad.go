@@ -326,12 +326,14 @@ func (r *Registry) startPadSession() (session.Snapshot, error) {
 		KioskName:       account.Name,
 		Audio:           r.Audio(),
 		OpenLobby:       cfg.EventMode,
+		Video:           r.Video().Available().Available,
 		IdleTimeout:     padEmptyTimeout(cfg),
 		InactiveTimeout: padInactiveTimeout(cfg),
 	})
 	if err != nil {
 		return emptyPadSnapshot(), err
 	}
+	mgr.SetPeerHandler(func(playerID string, up bool) { r.Video().PeerChanged(playerID, up) })
 	mgr.SetSensitive(sensitive)
 	hub := r.padHub()
 	hub.Attach(mgr)
@@ -340,6 +342,7 @@ func (r *Registry) startPadSession() (session.Snapshot, error) {
 	// still inside the manager is dropped instead of pausing sync again.
 	var gate sync.Mutex
 	ended := false
+	connected := map[string]bool{}
 	mgr.Watch(func(snap session.Snapshot) {
 		gate.Lock()
 		defer gate.Unlock()
@@ -347,6 +350,20 @@ func (r *Registry) startPadSession() (session.Snapshot, error) {
 			return
 		}
 		r.AssetSyncer().SetPaused(playPauseReason, snap.Session != nil)
+		// A player who left or dropped stops getting video at once, even
+		// before the peer handler reports the closed link.
+		now := map[string]bool{}
+		for _, pl := range snap.Players {
+			if pl.Connected {
+				now[pl.ID] = true
+			}
+		}
+		for id := range connected {
+			if !now[id] {
+				go r.Video().PeerChanged(id, false)
+			}
+		}
+		connected = now
 		r.Emit("pad.players", snap)
 	})
 

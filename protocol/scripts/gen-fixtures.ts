@@ -1,6 +1,6 @@
 // Regenerates fixtures/input/*.json from the TS encoder. Go tests verify the
 // same bytes independently, so a codec bug on either side fails a test.
-import { encodeInput, inputToHex } from "../src/index";
+import { encodeInput, encodeTouch, inputToHex } from "../src/index";
 import { join } from "node:path";
 
 const dir = join(import.meta.dir, "..", "fixtures", "input");
@@ -15,4 +15,17 @@ const cases: Record<string, any> = {
 for (const [name, fields] of Object.entries(cases)) {
   const hex = inputToHex(encodeInput(fields));
   await Bun.write(join(dir, name + ".json"), JSON.stringify({ name, fields, hex }, null, 2) + "\n");
+}
+
+// Touch frames (fixtures/touch/*.json): same {name, fields, hex} shape.
+const touchDir = join(import.meta.dir, "..", "fixtures", "touch");
+const up = { down: false, x: 0, y: 0 };
+const touchCases: Record<string, any> = {
+  one_point: { seq: 7, tMs: 1000, points: [{ down: true, x: 32768, y: 16384 }, up] },
+  released: { seq: 8, tMs: 1016, points: [up, up] },
+  two_points: { seq: 65535, tMs: 4294967295, points: [{ down: true, x: 0, y: 65535 }, { down: true, x: 65535, y: 0 }] },
+};
+for (const [name, fields] of Object.entries(touchCases)) {
+  const hex = inputToHex(encodeTouch(fields));
+  await Bun.write(join(touchDir, name + ".json"), JSON.stringify({ name, fields, hex }, null, 2) + "\n");
 }

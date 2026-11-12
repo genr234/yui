@@ -114,3 +114,82 @@ func TestControlInvalid(t *testing.T) {
 		}
 	}
 }
+
+func TestTouchFixtures(t *testing.T) {
+	paths := files(t, "touch")
+	if len(paths) < 3 {
+		t.Fatalf("want >=3 touch fixtures, got %d", len(paths))
+	}
+	for _, p := range paths {
+		raw, _ := os.ReadFile(p)
+		var fx struct {
+			Name   string     `json:"name"`
+			Fields TouchState `json:"fields"`
+			Hex    string     `json:"hex"`
+		}
+		if err := json.Unmarshal(raw, &fx); err != nil {
+			t.Fatalf("%s: %v", p, err)
+		}
+		t.Run(fx.Name, func(t *testing.T) {
+			want, _ := hex.DecodeString(fx.Hex)
+			if got := EncodeTouch(fx.Fields); hex.EncodeToString(got) != fx.Hex {
+				t.Fatalf("encode:\n got %x\nwant %x", got, want)
+			}
+			dec, err := DecodeTouch(want)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if dec != fx.Fields {
+				t.Fatalf("decode: got %+v want %+v", dec, fx.Fields)
+			}
+			if ft, err := FrameType(want); err != nil || ft != InputTypeTouch {
+				t.Fatalf("FrameType = %d, %v", ft, err)
+			}
+		})
+	}
+}
+
+func TestDecodeTouchErrors(t *testing.T) {
+	if _, err := DecodeTouch(make([]byte, 19)); err == nil {
+		t.Error("expected length error")
+	}
+	b := EncodeTouch(TouchState{})
+	b[0] = 2
+	if _, err := DecodeTouch(b); err == nil {
+		t.Error("expected version error")
+	}
+	b[0] = InputVersion
+	b[1] = InputTypeState
+	if _, err := DecodeTouch(b); err == nil {
+		t.Error("expected type error")
+	}
+	if _, err := DecodeInput(EncodeTouch(TouchState{})); err == nil {
+		t.Error("DecodeInput must reject a touch frame")
+	}
+}
+
+func TestFrameType(t *testing.T) {
+	if ft, err := FrameType(EncodeInput(InputState{})); err != nil || ft != InputTypeState {
+		t.Fatalf("state: %d %v", ft, err)
+	}
+	if _, err := FrameType(nil); err == nil {
+		t.Error("empty frame must error")
+	}
+	if _, err := FrameType([]byte{9, 1}); err == nil {
+		t.Error("wrong version must error")
+	}
+}
+
+func TestSurfaceControl(t *testing.T) {
+	msg, err := ParseControl([]byte(`{"t":"surface","id":"second-screen","state":"on","width":854,"height":480}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := msg.(Surface); s.Width != 854 || s.State != "on" {
+		t.Fatalf("got %+v", s)
+	}
+	msg, err = ParseControl([]byte(`{"t":"hello","v":1,"caps":{"motion":true,"haptics":true,"wakeLock":true,"video":true},"screen":{"w":1,"h":1,"orientation":"landscape"}}`))
+	if err != nil || !msg.(Hello).Caps.Video {
+		t.Fatalf("hello video: %v %+v", err, msg)
+	}
+}

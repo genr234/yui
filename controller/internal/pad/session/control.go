@@ -31,6 +31,8 @@ func (m *Manager) handleControl(playerID string, raw []byte, gen int, fromCable 
 		}
 		m.mu.Unlock()
 		m.sendWelcome(playerID)
+		// The roster now carries the phone's caps.
+		m.emit()
 	case protocol.Ping:
 		if typed.T == "pong" {
 			m.notePong(playerID, typed)

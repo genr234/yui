@@ -50,6 +50,10 @@ export function yuiControllersRuntime(backend: ControllersBackend): ControllersR
 			speaker: Boolean(player.speaker),
 			connected: player.connected !== false,
 			accountLinked: Boolean(player.account_linked),
+			...(player.caps && typeof player.caps === "object"
+				? { caps: { motion: Boolean(player.caps.motion), haptics: Boolean(player.caps.haptics), video: Boolean(player.caps.video) } }
+				: {}),
+			...(typeof player.relayed === "boolean" ? { relayed: player.relayed } : {}),
 		};
 	}
 
@@ -196,6 +200,7 @@ export function yuiControllersRuntime(backend: ControllersBackend): ControllersR
 		choice: node("choice"),
 		list: node("list"),
 		motion: node("motion"),
+		surface: node("surface"),
 		preset: (name: string, props?: Record<string, unknown>) => ({ type: "preset", props: { ...(props ?? {}), name } }),
 	};
 

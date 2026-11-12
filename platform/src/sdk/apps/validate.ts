@@ -12,6 +12,7 @@ const allowedPermissions = new Set<YuiPermission>([
 	"native",
 	"library",
 	"virtual-pads",
+	"surfaces",
 	"controllers",
 	"profiles",
 	"audio.speaker",

@@ -65,7 +65,7 @@ export type SystemAction = "home" | "resume" | "quit" | "save_state" | "load_sta
 export interface Hello {
   t: "hello";
   v: number;
-  caps: { motion: boolean; haptics: boolean; wakeLock: boolean };
+  caps: { motion: boolean; haptics: boolean; wakeLock: boolean; video?: boolean };
   screen: { w: number; h: number; orientation: string };
 }
 export interface Welcome {
@@ -136,6 +136,17 @@ export interface ProfileReply {
   app_id: string;
   granted: boolean;
 }
+export type SurfaceState = "on" | "off";
+/** Kiosk → pad: what this phone's video track carries now. */
+export interface SurfaceMsg {
+  t: "surface";
+  /** The surface id from the app's layout (`props.surface`). */
+  id: string;
+  state: SurfaceState;
+  /** Encoded size in pixels; required when state is "on". */
+  width?: number;
+  height?: number;
+}
 export interface Ping {
   t: "ping";
   id: number | string;
@@ -164,6 +175,7 @@ export type ControlMessage =
   | Sound
   | PlayerMsg
   | System
+  | SurfaceMsg
   | ProfileRequest
   | ProfileReply
   | Ping
@@ -175,6 +187,8 @@ export type ControlMessage =
 export const INPUT_SIZE = 48;
 export const INPUT_VERSION = 1;
 export const INPUT_TYPE_STATE = 1;
+export const INPUT_TYPE_TOUCH = 2;
+export const TOUCH_SIZE = 20;
 
 // Generic gamepad buttons, named by position so any app or runtime can map
 // them (Xbox A = South, PlayStation Cross = South, Nintendo B = South).
@@ -266,6 +280,61 @@ export function decodeInput(buf: ArrayBuffer | ArrayBufferView): InputState {
   };
 }
 
+export interface TouchPoint {
+  down: boolean;
+  x: number; // u16, 0..65535 across the surface's video content rectangle
+  y: number;
+}
+export interface TouchState {
+  seq: number; // u16, its own sequence, separate from state frames
+  tMs: number; // u32
+  points: [TouchPoint, TouchPoint];
+}
+
+export function encodeTouch(s: TouchState): ArrayBuffer {
+  const buf = new ArrayBuffer(TOUCH_SIZE);
+  const v = new DataView(buf);
+  v.setUint8(0, INPUT_VERSION);
+  v.setUint8(1, INPUT_TYPE_TOUCH);
+  v.setUint16(2, s.seq & 0xffff, true);
+  v.setUint32(4, s.tMs >>> 0, true);
+  let flags = 0;
+  s.points.forEach((p, i) => {
+    if (p.down) flags |= 1 << i;
+    v.setUint16(10 + i * 4, p.x & 0xffff, true);
+    v.setUint16(12 + i * 4, p.y & 0xffff, true);
+  });
+  v.setUint8(8, flags);
+  return buf;
+}
+
+function bytesOf(buf: ArrayBuffer | ArrayBufferView): Uint8Array {
+  return buf instanceof ArrayBuffer ? new Uint8Array(buf) : new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+}
+
+export function decodeTouch(buf: ArrayBuffer | ArrayBufferView): TouchState {
+  const bytes = bytesOf(buf);
+  if (bytes.byteLength !== TOUCH_SIZE) throw new Error(`touch: expected ${TOUCH_SIZE} bytes, got ${bytes.byteLength}`);
+  const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (v.getUint8(0) !== INPUT_VERSION) throw new Error(`touch: unsupported version ${v.getUint8(0)}`);
+  if (v.getUint8(1) !== INPUT_TYPE_TOUCH) throw new Error(`touch: unsupported type ${v.getUint8(1)}`);
+  const flags = v.getUint8(8);
+  const point = (i: number): TouchPoint => ({
+    down: (flags & (1 << i)) !== 0,
+    x: v.getUint16(10 + i * 4, true),
+    y: v.getUint16(12 + i * 4, true),
+  });
+  return { seq: v.getUint16(2, true), tMs: v.getUint32(4, true), points: [point(0), point(1)] };
+}
+
+/** 1 = state, 2 = touch; throws on an empty buffer or wrong version. */
+export function inputFrameType(buf: ArrayBuffer | ArrayBufferView): number {
+  const bytes = bytesOf(buf);
+  if (bytes.byteLength < 2) throw new Error(`input: frame too short (${bytes.byteLength} bytes)`);
+  if (bytes[0] !== INPUT_VERSION) throw new Error(`input: unsupported version ${bytes[0]}`);
+  return bytes[1]!;
+}
+
 /** True when `a` is newer than `b` using 16-bit serial-number arithmetic (RFC 1982). */
 export function seqNewer(a: number, b: number): boolean {
   const d = (a - b) & 0xffff;
@@ -339,6 +408,7 @@ export function parseControl(json: string): ControlMessage {
       const caps = m.caps;
       const screen = m.screen;
       if (!isObj(caps) || !isBool(caps.motion) || !isBool(caps.haptics) || !isBool(caps.wakeLock)) fail("hello: bad caps");
+      if (caps.video !== undefined && !isBool(caps.video)) fail("hello: caps.video must be a boolean");
       if (!isObj(screen) || !isNum(screen.w) || !isNum(screen.h) || !isStr(screen.orientation)) fail("hello: bad screen");
       break;
     }
@@ -391,6 +461,11 @@ export function parseControl(json: string): ControlMessage {
     case "profile_reply":
       if (!isStr(m.app_id) || m.app_id === "") fail("profile_reply: app_id must be a non-empty string");
       if (!isBool(m.granted)) fail("profile_reply: granted must be a boolean");
+      break;
+    case "surface":
+      if (!isStr(m.id) || m.id === "" || m.id.length > 32) fail("surface: id must be 1-32 characters");
+      if (m.state !== "on" && m.state !== "off") fail("surface: bad state");
+      if (m.state === "on" && !(isNum(m.width) && m.width > 0 && isNum(m.height) && m.height > 0)) fail("surface: on needs positive width and height");
       break;
     case "idle":
       if (!isNum(m.ends_in) || m.ends_in < 0) fail("idle: ends_in must be a non-negative number");

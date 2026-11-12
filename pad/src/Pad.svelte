@@ -14,6 +14,7 @@
   import { InputModel } from './input/model'
   import { InputLoop } from './input/loop'
   import { MotionController } from './input/motion'
+  import { TouchSender } from './input/touch'
   import { BIT, type ControlSink } from './controls/sink'
   import { providePad } from './controls/context'
   import { expandTree, scanTree, wantsMotion } from './layout/presets'
@@ -34,6 +35,7 @@
   import { keepAwake, wakeLockSupported } from './platform/wakelock'
   import { lockPage } from './platform/lockdown'
   import { attachSpeakerStream, playSpeaker, speakerBlocked } from './platform/speaker'
+  import { applySurface, attachSurfaceTrack, resetSurface, videoSupported } from './platform/surface'
 
   export let code: string
   export let player: Player
@@ -85,7 +87,7 @@
     return {
       t: 'hello',
       v: 1,
-      caps: { motion: motionSupported() || sim, haptics: hapticsSupported(), wakeLock: wakeLockSupported() },
+      caps: { motion: motionSupported() || sim, haptics: hapticsSupported(), wakeLock: wakeLockSupported(), video: videoSupported() },
       screen: { w: Math.round(screen.width), h: Math.round(screen.height), orientation: landscape ? 'landscape' : 'portrait' },
     }
   }
@@ -113,6 +115,12 @@
   })
   // Enabled once the `input` channel opens (always in the local demo).
   loop.setEnabled(!!demoTree)
+
+  // Touch frames for a `surface` node share the input channel.
+  const touchSender = new TouchSender((frame) => {
+    session?.sendInput(frame)
+  })
+  touchSender.setEnabled(!!demoTree)
 
   let idleTimer: ReturnType<typeof setTimeout> | null = null
   // Counts the idle warning down once a second until it ends or is lifted.
@@ -156,6 +164,10 @@
         // Only a player who plays as an account can be asked; others say no at once.
         if (!player.account_linked) send({ t: 'profile_reply', app_id: msg.app_id, granted: false })
         else asks = enqueueAsk(asks, { app_id: msg.app_id, app_name: msg.app_name })
+        return
+      case 'surface':
+        applySurface(msg)
+        if (msg.state === 'off') touchSender.cancel()
         return
       case 'system':
         if (msg.action === 'sensitive') sensitive = msg.value === true
@@ -243,10 +255,11 @@
         cable: (handlers) => new CableClient(cableUrl(), { channel: 'PlaySessionChannel' }, handlers),
         peer: (config) => {
           const pc = new RTCPeerConnection(config)
-          // The kiosk's audio track; silent unless this phone is the speaker.
+          // The kiosk's audio track (silent unless this phone is the speaker)
+          // and its video track (only carries packets while a surface is shown here).
           pc.addEventListener('track', (ev) => {
-            if (ev.track.kind !== 'audio') return
-            attachSpeakerStream(ev.streams[0] ?? new MediaStream([ev.track]))
+            if (ev.track.kind === 'video') attachSurfaceTrack(ev)
+            else if (ev.track.kind === 'audio') attachSpeakerStream(ev.streams[0] ?? new MediaStream([ev.track]))
           })
           return pc as unknown as PeerLike
         },
@@ -259,6 +272,8 @@
           if (s === 'kicked' || s === 'ended' || s === 'closed') {
             model.releaseAll()
             loop.setEnabled(false)
+            touchSender.setEnabled(false)
+            resetSurface()
             motion.stop()
             asks = []
             onEnd(s)
@@ -269,6 +284,7 @@
         input: (ready) => {
           if (!ready) model.releaseAll()
           loop.setEnabled(ready)
+          touchSender.setEnabled(ready)
         },
       },
     )
@@ -281,6 +297,7 @@
     needsPermission: !sim && motionNeedsPermission(),
     supported: sim || motionSupported(),
     flip: () => remoteFlip(angle),
+    angle: () => angle,
     calibration: sim ? { accelSign: 1, gyroBias: [0, 0, 0] } : loadCalibration(),
     saveCalibration,
   })
@@ -295,6 +312,7 @@
         model.hold('recenter', 1 << BIT.Recenter)
       } else model.release('recenter')
     },
+    touch: (points) => touchSender.update(points),
     calibrate: () => motion.calibrate(),
     cancelCalibration: () => motion.cancelCalibration(),
   })
@@ -305,9 +323,9 @@
   $: needsGate = wantsMotion(tree) && $motionView.status === 'needs-permission'
   // Outside the reactive flush: setWanted updates motionView, which the
   // statements above read, and a store change mid-flush would not re-run them.
-  $: wantMotion(info.motion, info.pointer)
-  function wantMotion(on: boolean, pointer: boolean) {
-    queueMicrotask(() => motion.setWanted(on, pointer))
+  $: wantMotion(info.motion, info.pointer, info.frame ?? 'remote')
+  function wantMotion(on: boolean, pointer: boolean, frame: 'remote' | 'screen') {
+    queueMicrotask(() => motion.setWanted(on, pointer, frame))
   }
   $: loop.setStreaming(info.motion)
 
@@ -389,6 +407,8 @@
     if (idleTimer) clearTimeout(idleTimer)
     session?.stop()
     loop.dispose()
+    touchSender.dispose()
+    resetSurface()
     motion.stop()
   })
 

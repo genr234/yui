@@ -11,7 +11,7 @@ module AssetAnalyzers
   GAME_DEFAULTS = { "platform" => nil, "format" => "unknown" }.freeze
 
   def self.for_games
-    [ NintendoDisc, RomCartridge ]
+    [ NintendoDisc, WiiUTitle, RomCartridge ]
   end
 
   def self.for_media

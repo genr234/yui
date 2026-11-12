@@ -24,6 +24,7 @@ type fakeSession struct {
 	sent    []sent
 	control func(string, any)
 	input   func(string, protocol.InputState)
+	touch   func(string, protocol.TouchState)
 	player  func(session.PlayerEvent)
 }
 
@@ -36,6 +37,12 @@ func (f *fakeSession) SetControlHandler(fn func(string, any)) {
 func (f *fakeSession) SetInputHandler(fn func(string, protocol.InputState)) {
 	f.mu.Lock()
 	f.input = fn
+	f.mu.Unlock()
+}
+
+func (f *fakeSession) SetTouchHandler(fn func(string, protocol.TouchState)) {
+	f.mu.Lock()
+	f.touch = fn
 	f.mu.Unlock()
 }
 
@@ -571,5 +578,65 @@ func TestActivityFiresOnPlayerInputNotOnSensorNoise(t *testing.T) {
 	s.fireInput("p1", protocol.InputState{Seq: 1, Buttons: protocol.ButtonEast})
 	if calls != 3 {
 		t.Fatalf("activity fired on a rejoining player's first packet")
+	}
+}
+
+// touchProvider routes touch frames to the pads adapter.
+type touchProvider struct{ appProvider }
+
+func (*touchProvider) Profile() hub.Profile {
+	return hub.Profile{Routes: []hub.Route{
+		hub.PadRoute("pads", "player"),
+		{Kind: hub.KindTouch, Adapter: "pads", Target: "pad"},
+	}}
+}
+
+func (h *harness) touchOutputs() []hub.Output {
+	h.pads.mu.Lock()
+	defer h.pads.mu.Unlock()
+	var out []hub.Output
+	for _, o := range h.pads.got {
+		if o.Kind == hub.KindTouch {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+func TestTouchRoutesDropsWhenSensitiveAndReleasesOnLeave(t *testing.T) {
+	h := newHarness(t)
+	_ = h.router.Stack().Push(hub.LayerApp, &touchProvider{})
+	h.sess.firePlayer(session.PlayerReady, player("p1", 1, true))
+	h.sess.mu.Lock()
+	fire := h.sess.touch
+	h.sess.mu.Unlock()
+	if fire == nil {
+		t.Fatal("router did not register a touch handler")
+	}
+	down := protocol.TouchState{Seq: 1, Points: [2]protocol.TouchPoint{{Down: true, X: 5, Y: 6}}}
+	fire("p1", down)
+	if got := h.touchOutputs(); len(got) != 1 || got[0].Value.(protocol.TouchState) != down {
+		t.Fatalf("touch outputs %+v", got)
+	}
+	h.router.SetSensitive(true)
+	fire("p1", down)
+	if got := h.touchOutputs(); len(got) != 1 {
+		t.Fatalf("touch delivered while sensitive: %d", len(got))
+	}
+	h.router.SetSensitive(false)
+	h.sess.firePlayer(session.PlayerLeft, protocol.Player{ID: "p1"})
+	got := h.touchOutputs()
+	if len(got) != 2 {
+		t.Fatalf("no release on leave: %d", len(got))
+	}
+	if rel := got[1].Value.(protocol.TouchState); rel.Points[0].Down || rel.Points[1].Down {
+		t.Fatalf("leave sent a down touch: %+v", rel)
+	}
+	h.router.Detach(h.sess)
+	h.sess.mu.Lock()
+	cleared := h.sess.touch == nil
+	h.sess.mu.Unlock()
+	if !cleared {
+		t.Fatal("detach left the touch handler")
 	}
 }
