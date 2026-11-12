@@ -18,8 +18,9 @@
 //     when released, and also by itself when its owner stops renewing it
 //     (the app closed, the page reloaded or Chrome died). Idle tools that
 //     ignore injected input (see DefaultIdleTools) are paused meanwhile.
-//     When the last hold ends, the OS's own idle behaviour comes back
-//     untouched; nothing is changed persistently, and the controller resumes
+//     When the last hold ends, the OS's own idle behaviour comes back after
+//     Grace (a paused idle tool kept counting, so resuming it at once would
+//     close Chrome on the players' results screen), untouched; nothing is changed persistently, and the controller resumes
 //     idle tools at start in case it crashed while holding.
 package useractivity
 
@@ -42,6 +43,9 @@ const (
 	DefaultHoldTTL = 60 * time.Second
 	// DefaultTick is how often an active keeper checks leases and nudges.
 	DefaultTick = 5 * time.Second
+	// DefaultGrace is how long the OS stays awake, and idle tools paused,
+	// after the last hold ends. A new hold within it carries straight on.
+	DefaultGrace = 2 * time.Minute
 )
 
 // Platform is what the keeper asks of the OS. Tests replace it.
@@ -70,6 +74,9 @@ type Keeper struct {
 	Interval time.Duration
 	HoldTTL  time.Duration
 	Tick     time.Duration
+	// Grace delays giving idle control back to the OS after the last hold
+	// ends; zero gives it back at once.
+	Grace    time.Duration
 	Now      func() time.Time
 	Platform Platform
 
@@ -80,6 +87,8 @@ type Keeper struct {
 	holds    map[string]Hold
 	running  bool          // the hold loop is active
 	stop     chan struct{} // closes the hold loop early (tests, Close)
+	awake    bool          // the platform is keeping the OS awake
+	grace    *time.Timer   // pending hand-back after the last hold ended
 }
 
 // New returns a Keeper that uses the platform's OS hooks.
@@ -88,6 +97,7 @@ func New() *Keeper {
 		Interval: DefaultInterval,
 		HoldTTL:  DefaultHoldTTL,
 		Tick:     DefaultTick,
+		Grace:    DefaultGrace,
 		Now:      time.Now,
 		Platform: osPlatform{},
 	}
@@ -158,15 +168,23 @@ func (k *Keeper) add(h Hold) Hold {
 		k.running = true
 		k.stop = make(chan struct{})
 	}
+	if k.grace != nil {
+		k.grace.Stop() // still awake from the last hold: carry on
+		k.grace = nil
+	}
+	wake := !k.awake
+	k.awake = true
 	stop := k.stop
 	holds := k.snapshotLocked()
 	k.mu.Unlock()
 
 	log.Printf("wake lock: %s acquired by %s (%s); %d active", h.ID, h.Owner, reasonOr(h.Reason), len(holds))
-	if start {
+	if wake {
 		if err := k.Platform.SetAwake(true); err != nil {
 			log.Printf("wake lock: keep awake failed: %v", err)
 		}
+	}
+	if start {
 		go k.loop(stop)
 	}
 	// Close a screensaver that is already up right away instead of at the
@@ -297,38 +315,78 @@ func (k *Keeper) expire() bool {
 	return !k.settle()
 }
 
-// settle stops keeping the OS awake once no hold is left. It reports
-// whether it did (or nothing was running).
+// settle stops the hold loop once no hold is left, and gives idle control
+// back to the OS after Grace. It reports whether no hold is left.
 func (k *Keeper) settle() bool {
 	k.mu.Lock()
 	if len(k.holds) > 0 {
 		k.mu.Unlock()
 		return false
 	}
-	wasRunning := k.running
-	if wasRunning {
+	if k.running {
 		k.running = false
 		close(k.stop)
 		k.stop = nil
 	}
-	k.mu.Unlock()
-	if wasRunning {
-		if err := k.Platform.SetAwake(false); err != nil {
-			log.Printf("wake lock: give idle back failed: %v", err)
-		}
-		log.Printf("wake lock: none active; screensaver and idle tools work normally again")
+	if !k.awake || k.grace != nil {
+		k.mu.Unlock()
+		return true
 	}
+	if k.Grace <= 0 {
+		k.mu.Unlock()
+		k.giveBack()
+		return true
+	}
+	var t *time.Timer
+	t = time.AfterFunc(k.Grace, func() {
+		k.mu.Lock()
+		mine := k.grace == t
+		if mine {
+			k.grace = nil
+		}
+		k.mu.Unlock()
+		if mine {
+			k.giveBack()
+		}
+	})
+	k.grace = t
+	k.mu.Unlock()
+	log.Printf("wake lock: none active; idle tools stay paused for %s", k.Grace)
 	return true
 }
 
-// Close ends every hold and gives idle control back to the OS.
+// giveBack hands sleep and idle back to the OS, unless a hold came back.
+func (k *Keeper) giveBack() {
+	k.mu.Lock()
+	if len(k.holds) > 0 || !k.awake {
+		k.mu.Unlock()
+		return
+	}
+	k.awake = false
+	k.mu.Unlock()
+	if err := k.Platform.SetAwake(false); err != nil {
+		log.Printf("wake lock: give idle back failed: %v", err)
+	}
+	log.Printf("wake lock: none active; screensaver and idle tools work normally again")
+}
+
+// Close ends every hold and gives idle control back to the OS at once.
 func (k *Keeper) Close() {
 	k.mu.Lock()
 	k.holds = nil
+	if k.grace != nil {
+		k.grace.Stop()
+		k.grace = nil
+	}
+	if k.running {
+		k.running = false
+		close(k.stop)
+		k.stop = nil
+	}
 	holds := k.snapshotLocked()
 	k.mu.Unlock()
 	k.changed(holds)
-	k.settle()
+	k.giveBack()
 }
 
 func (k *Keeper) forceNudge() {
