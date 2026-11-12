@@ -228,3 +228,39 @@ func TestPinnedHoldNeverExpiresButReleases(t *testing.T) {
 		t.Fatal("still awake after the pinned hold was released")
 	}
 }
+
+func TestGraceKeepsAwakeAfterLastHold(t *testing.T) {
+	k, p, _ := newKeeper(t)
+	k.Grace = 50 * time.Millisecond
+	h := k.AcquirePinned("app", "")
+	k.Release(h.ID)
+	if _, awake, _ := p.state(); !awake {
+		t.Fatal("gave idle back at once; want it kept for the grace period")
+	}
+	eventually(t, "idle given back after grace", func() bool { _, awake, _ := p.state(); return !awake })
+	if _, _, changes := p.state(); len(changes) != 2 {
+		t.Fatalf("SetAwake calls = %v, want [true false]", changes)
+	}
+}
+
+func TestHoldWithinGraceCarriesOn(t *testing.T) {
+	k, p, _ := newKeeper(t)
+	k.Grace = 40 * time.Millisecond
+	h := k.AcquirePinned("app", "")
+	k.Release(h.ID)
+	k.AcquirePinned("app", "")
+	time.Sleep(100 * time.Millisecond)
+	if _, awake, changes := p.state(); !awake || len(changes) != 1 {
+		t.Fatalf("awake=%v changes=%v, want still awake with one SetAwake(true)", awake, changes)
+	}
+}
+
+func TestCloseSkipsGrace(t *testing.T) {
+	k, p, _ := newKeeper(t)
+	k.Grace = time.Hour
+	k.AcquirePinned("app", "")
+	k.Close()
+	if _, awake, _ := p.state(); awake {
+		t.Fatal("Close kept the OS awake; want idle given back at once")
+	}
+}
