@@ -296,6 +296,7 @@
       } else model.release('recenter')
     },
     calibrate: () => motion.calibrate(),
+    cancelCalibration: () => motion.cancelCalibration(),
   })
 
   $: motionReady = $motionView.status === 'on' && $motionView.gyro

@@ -1,16 +1,18 @@
 import { getContext, setContext } from 'svelte'
 import type { Readable } from 'svelte/store'
 import type { CalibrationResult } from '../platform/motion'
+import type { CalibProgress } from '../input/motion'
 import type { ControlSink } from './sink'
 
 export type MotionStatus = 'off' | 'needs-permission' | 'denied' | 'unsupported' | 'on'
 
 export interface PadContext {
   sink: ControlSink
-  motion: Readable<{ status: MotionStatus; calibrated: boolean; gyro: boolean }>
+  motion: Readable<{ status: MotionStatus; calibrated: boolean; gyro: boolean; calib: CalibProgress | null }>
   /** Recenter pressed (true) / released (false): holds bit 17 and re-zeroes the pointer. */
   recenter(down: boolean): void
   calibrate(): Promise<CalibrationResult>
+  cancelCalibration(): void
 }
 
 const KEY = Symbol('yui-pad')

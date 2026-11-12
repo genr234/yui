@@ -156,18 +156,62 @@ describe('MotionController', () => {
     expect(s.model.frame().px).toBe(0)
   })
 
-  test('one-tap calibrate uses the samples that arrive while waiting', async () => {
+  /** Emits `ms` worth of one sample, 20 ms apart. */
+  const hold = (s: ReturnType<typeof setup>, r: RawMotion, ms: number) => {
+    for (let i = 0; i <= ms; i += 20) {
+      s.emit(r)
+      s.tick(20)
+    }
+  }
+
+  test('one tap: waits for the phone to lie flat and still, then calibrates', async () => {
     const s = setup()
     s.c.setWanted(true, false)
-    const done = s.c.calibrate(async () => {
-      s.emit(raw({ az: -G }))
-      s.emit(raw({ az: -G }))
-    })
+    const done = s.c.calibrate()
+    expect(get(s.c.view).calib?.phase).toBe('flat')
+    hold(s, raw({ az: 0, ay: -G }), 1000) // upright in the hand
+    expect(get(s.c.view).calib?.phase).toBe('flat')
+    hold(s, raw({ az: -G, beta: 40 }), 200) // put down, still turning
+    expect(get(s.c.view).calib?.phase).toBe('still')
+    hold(s, raw({ az: -G, beta: 1 }), 300)
+    expect(get(s.c.view).calib?.phase).toBe('hold')
+    expect(get(s.c.view).calib!.progress).toBeGreaterThan(0.3)
+    hold(s, raw({ az: -G, beta: 1 }), 400)
     const r = await done
     expect(r.ok).toBe(true)
-    expect(get(s.c.view).calibrated).toBe(true)
-    s.emit(raw({ az: -G }))
+    expect(get(s.c.view)).toMatchObject({ calibrated: true, calib: null })
+    s.emit(raw({ az: -G, beta: 1 }))
     expect(s.model.frame().accel[2]).toBeCloseTo(1)
+    expect(s.model.frame().gyro[0]).toBeCloseTo(0)
+  })
+
+  test('guided calibration times out with the last problem, and can be cancelled', async () => {
+    const s = setup()
+    s.c.setWanted(true, false)
+    const timedOut = s.c.calibrate(30)
+    hold(s, raw({ az: 0, ay: G }), 100)
+    expect(await timedOut).toEqual({ ok: false, reason: 'flat' })
+    const cancelled = s.c.calibrate()
+    s.c.cancelCalibration()
+    expect((await cancelled).ok).toBe(false)
+    expect(get(s.c.view).calib).toBeNull()
+    expect(get(s.c.view).calibrated).toBe(false)
+  })
+
+  test('calibrates unprompted when an uncalibrated phone rests on a table, not in a hand', () => {
+    const s = setup()
+    s.c.setWanted(true, false)
+    // Flat in a hand: tremor keeps it uncalibrated.
+    for (let i = 0; i < 150; i++) {
+      s.emit(raw({ az: -G, beta: i % 2 ? 3 : -3 }))
+      s.tick(20)
+    }
+    expect(get(s.c.view).calibrated).toBe(false)
+    // On a table: steady bias only.
+    hold(s, raw({ az: -G, alpha: 0.4 }), 1600)
+    expect(get(s.c.view).calibrated).toBe(true)
+    s.emit(raw({ az: -G, alpha: 0.4 }))
+    expect(s.model.frame().gyro[1]).toBeCloseTo(0)
   })
 
   test('a phone without gyro is reported (touch-aim fallback)', () => {
