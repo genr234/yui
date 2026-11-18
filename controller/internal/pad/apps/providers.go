@@ -190,12 +190,21 @@ func (a vpadsAdapter) Deliver(playerID string, outputs []hub.Output) error {
 	fwd := make([]hub.Output, 0, len(outputs))
 	for _, out := range outputs {
 		switch {
+		case out.Target == "pad" && out.Kind == hub.KindTouch:
+			// Surface touches reach only a pad whose attachment asked for them.
+			if !attached || att.Touch != "surface" {
+				continue
+			}
+			out.Target = fmt.Sprintf("slot:%d", att.Slot)
 		case out.Target == "pad":
 			switch {
 			case attached:
 				out.Target = fmt.Sprintf("slot:%d", att.Slot)
 				if att.PointerStick {
 					out.Target += "/pointer-stick"
+				}
+				if att.Touch == "pointer" {
+					out.Target += "/touch-pointer"
 				}
 			case anyAttached:
 				continue // a spectator: the app attached other players

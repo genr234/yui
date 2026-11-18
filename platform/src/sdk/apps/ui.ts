@@ -51,6 +51,7 @@ export function createUiApi(): YuiUiApi {
 		divider: () => makeNode("divider"),
 		icon: (name, props) => makeNode("icon", { ...(props ?? {}), name }),
 		image: (props) => makeNode("image", props ?? {}),
+		camera: (props) => makeNode("camera", props ?? {}),
 		embed: (props) => makeNode("embed", props ?? {}),
 		empty: (message = "nothing here yet") => makeNode("empty", { message }),
 		when: (condition, node) => (condition ? (node as YuiNode) : null),

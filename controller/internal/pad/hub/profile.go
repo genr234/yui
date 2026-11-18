@@ -17,6 +17,8 @@ const (
 	KindState = "state"
 	// KindText is one text op. Value is protocol.Text.
 	KindText = "text"
+	// KindTouch is one touch frame. Value is protocol.TouchState.
+	KindTouch = "touch"
 )
 
 // Output is one mapped sample for an adapter. Adapter matches Adapter.Name.
@@ -80,7 +82,7 @@ func (r Route) ok() bool {
 	switch {
 	case r.Kind == KindState:
 		return r.Button == 0 && r.Control == ""
-	case r.Kind == KindText:
+	case r.Kind == KindText, r.Kind == KindTouch:
 		return r.Button == 0 && r.Control == ""
 	case r.Button != 0:
 		return r.Button&(r.Button-1) == 0 && r.Control == ""
@@ -104,6 +106,8 @@ func (r Route) validate() error {
 		return fmt.Errorf("%w: a state route has no button or control", ErrBadRoute)
 	case r.Kind == KindText:
 		return fmt.Errorf("%w: a text route has no button or control", ErrBadRoute)
+	case r.Kind == KindTouch:
+		return fmt.Errorf("%w: a touch route has no button or control", ErrBadRoute)
 	case r.Button != 0:
 		if r.Button&(r.Button-1) != 0 {
 			return fmt.Errorf("%w: a button route is a single bit", ErrBadRoute)
@@ -147,7 +151,7 @@ func (p Profile) outputsForInput(state protocol.InputState) []Output {
 func (p Profile) outputsForEvent(ev protocol.Event) []Output {
 	var out []Output
 	for _, r := range p.Routes {
-		if !r.ok() || r.Button != 0 || r.Kind == KindState || r.Kind == KindText {
+		if !r.ok() || r.Button != 0 || r.Kind == KindState || r.Kind == KindText || r.Kind == KindTouch {
 			continue
 		}
 		if r.Control != ev.Control || (r.Kind != "" && r.Kind != ev.Kind) {
@@ -174,6 +178,22 @@ func (p Profile) outputsForText(msg protocol.Text) []Output {
 			Target:  r.Target,
 			Kind:    KindText,
 			Value:   msg,
+		})
+	}
+	return out
+}
+
+func (p Profile) outputsForTouch(t protocol.TouchState) []Output {
+	var out []Output
+	for _, r := range p.Routes {
+		if !r.ok() || r.Kind != KindTouch {
+			continue
+		}
+		out = append(out, Output{
+			Adapter: r.Adapter,
+			Target:  r.Target,
+			Kind:    KindTouch,
+			Value:   t,
 		})
 	}
 	return out

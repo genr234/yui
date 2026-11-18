@@ -11,6 +11,14 @@
 //	player/pointer-stick same, with the pointer axes as the right stick
 //	slot:N               whole frame → pad N (0–3), whatever the player's slot
 //	slot:N/pointer-stick same, with the pointer axes as the right stick
+//	slot:N               a touch frame (KindTouch) → pad N's touch points
+//	slot:N/touch-pointer a state frame whose pointer axes also drive touch
+//	                     point 0, always active (a pointing device on a pad
+//	                     whose program reads touch)
+//
+// Suffixes combine ("slot:1/pointer-stick/touch-pointer"). A state frame
+// without /touch-pointer keeps the touch points that touch frames set.
+//
 //	system               whole frame → the system pad
 //	system:<Button>      one button (KindButton bool, or press/release/tap
 //	                     events) → that button on the system pad
@@ -65,8 +73,18 @@ type Adapter struct {
 	buttons map[string]uint32
 	owned   map[int]string // slot → player that last wrote it
 	sysBits uint32
+	slots   [numSlots]slotTouch
 
 	delivered map[string]deliveryStats // debugging: frames per player
+}
+
+// slotTouch is what the adapter remembers about one player pad so touch and
+// state frames, which arrive separately, can be merged into one DSU packet.
+type slotTouch struct {
+	last    dsu.PadState      // last state written, without touch
+	surface [2]dsu.TouchPoint // from touch frames
+	pointer dsu.TouchPoint    // from the pointer axes (/touch-pointer)
+	nextID  uint8
 }
 
 type deliveryStats struct {
@@ -177,8 +195,29 @@ func (a *Adapter) Stats() map[string]any {
 }
 
 func (a *Adapter) deliverOne(playerID string, out hub.Output) error {
-	target, pointerStick := strings.CutSuffix(out.Target, "/pointer-stick")
+	target := out.Target
+	var pointerStick, touchPointer bool
+	for {
+		if t, ok := strings.CutSuffix(target, "/pointer-stick"); ok {
+			target, pointerStick = t, true
+		} else if t, ok := strings.CutSuffix(target, "/touch-pointer"); ok {
+			target, touchPointer = t, true
+		} else {
+			break
+		}
+	}
 	switch {
+	case out.Kind == hub.KindTouch && (target == "player" || strings.HasPrefix(target, "slot:")):
+		t, ok := out.Value.(protocol.TouchState)
+		if !ok {
+			return fmt.Errorf("pads: %s needs a touch frame", out.Target)
+		}
+		slot, ok := a.resolveSlot(playerID, target)
+		if !ok {
+			return nil
+		}
+		a.setTouch(playerID, slot, t)
+		return nil
 	case target == "player" || strings.HasPrefix(target, "slot:"):
 		state, ok := out.Value.(protocol.InputState)
 		if out.Kind != hub.KindState || !ok {
@@ -191,10 +230,18 @@ func (a *Adapter) deliverOne(playerID string, out hub.Output) error {
 		ps := a.convert(playerID, state, pointerStick)
 		a.mu.Lock()
 		a.owned[slot] = playerID
-		a.mu.Unlock()
+		st := &a.slots[slot]
+		st.last = ps
+		if touchPointer {
+			ps.Touches = [2]dsu.TouchPoint{a.pointerTouch(playerID, st, state)}
+		} else {
+			st.pointer = dsu.TouchPoint{}
+			ps.Touches = st.surface
+		}
 		if a.players != nil {
 			a.players.SetSlot(slot, ps)
 		}
+		a.mu.Unlock()
 		return nil
 	case target == "system":
 		state, ok := out.Value.(protocol.InputState)
@@ -221,6 +268,73 @@ func (a *Adapter) deliverOne(playerID string, out hub.Output) error {
 		return nil
 	}
 	return fmt.Errorf("pads: unknown target %q", out.Target)
+}
+
+// DSU's touch area, in the units a client reads x and y in.
+const (
+	touchW = 1919
+	touchH = 941
+)
+
+// newContact gives a point that just went down a fresh id. a.mu held.
+func (st *slotTouch) newContact() uint8 {
+	st.nextID++
+	if st.nextID == 0 {
+		st.nextID = 1
+	}
+	return st.nextID
+}
+
+// pointerTouch maps the frame's pointer axes onto touch point 0, always
+// active. a.mu held.
+func (a *Adapter) pointerTouch(playerID string, st *slotTouch, state protocol.InputState) dsu.TouchPoint {
+	if !st.pointer.Active {
+		st.pointer = dsu.TouchPoint{Active: true, ID: st.newContact()}
+	}
+	// Same Recenter origin as /pointer-stick, so one recenter press
+	// re-zeroes both.
+	o := a.origin[playerID]
+	st.pointer.X = scaleAxis(clampAxis(int32(state.PX)-int32(o[0])), touchW)
+	st.pointer.Y = scaleAxis(clampAxis(int32(state.PY)-int32(o[1])), touchH)
+	return st.pointer
+}
+
+// scaleAxis maps -32767..32767 onto 0..max.
+func scaleAxis(v int16, max int) uint16 {
+	n := (int(v) + 32767) * max / 65534
+	if n < 0 {
+		n = 0
+	}
+	if n > max {
+		n = max
+	}
+	return uint16(n)
+}
+
+// setTouch applies a touch frame to a slot and re-sends the slot's pad.
+func (a *Adapter) setTouch(playerID string, slot int, t protocol.TouchState) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	st := &a.slots[slot]
+	for i, p := range t.Points {
+		cur := &st.surface[i]
+		if !p.Down {
+			*cur = dsu.TouchPoint{ID: cur.ID}
+			continue
+		}
+		if !cur.Active {
+			cur.ID = st.newContact()
+		}
+		cur.Active = true
+		cur.X = uint16(uint32(p.X) * touchW / 65535)
+		cur.Y = uint16(uint32(p.Y) * touchH / 65535)
+	}
+	a.owned[slot] = playerID
+	ps := st.last
+	ps.Touches = st.surface
+	if a.players != nil {
+		a.players.SetSlot(slot, ps)
+	}
 }
 
 func level(out hub.Output) (bool, bool) {
@@ -309,6 +423,9 @@ func (a *Adapter) Release(playerID string) {
 			slots = append(slots, slot)
 			delete(a.owned, slot)
 		}
+	}
+	for _, slot := range slots {
+		a.slots[slot] = slotTouch{}
 	}
 	a.mu.Unlock()
 	if a.players == nil {

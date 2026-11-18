@@ -289,3 +289,26 @@ func TestPeriodicResend(t *testing.T) {
 		t.Fatal("no periodic resend")
 	}
 }
+
+func TestEncodeTouch(t *testing.T) {
+	s := controllerDataVector()
+	s.Touches[0] = TouchPoint{Active: true, ID: 5, X: 0x0123, Y: 0x0345}
+	s.Touches[1] = TouchPoint{Active: true, ID: 6, X: 1919, Y: 941}
+	p := encodeControllerData(9, 1, 1, s)[20:]
+	want := []byte{
+		1, 5, 0x23, 0x01, 0x45, 0x03,
+		1, 6, 0x7f, 0x07, 0xad, 0x03,
+	}
+	if !bytes.Equal(p[36:48], want) {
+		t.Fatalf("touch bytes % x, want % x", p[36:48], want)
+	}
+	// An inactive point is all zero even when it carries stale coordinates.
+	s.Touches[1] = TouchPoint{ID: 9, X: 100, Y: 100}
+	p = encodeControllerData(9, 1, 1, s)[20:]
+	if !bytes.Equal(p[42:48], make([]byte, 6)) {
+		t.Fatalf("inactive touch % x", p[42:48])
+	}
+	if p[36] != 1 {
+		t.Fatal("first point lost")
+	}
+}

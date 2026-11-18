@@ -1,7 +1,21 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { HAPTIC_NAMES, avatarImage, decodeInput, encodeInput, hexToBytes, inputToHex, parseControl, seqNewer, INPUT_SIZE } from "./index";
+import {
+  HAPTIC_NAMES,
+  avatarImage,
+  decodeInput,
+  decodeTouch,
+  encodeInput,
+  encodeTouch,
+  hexToBytes,
+  inputFrameType,
+  inputToHex,
+  parseControl,
+  seqNewer,
+  INPUT_SIZE,
+  TOUCH_SIZE,
+} from "./index";
 
 const fx = join(import.meta.dir, "..", "fixtures");
 const load = (dir: string) =>
@@ -28,6 +42,60 @@ describe("input fixtures", () => {
     const b = new Uint8Array(hexToBytes(cases[0].hex));
     b[0] = 2;
     expect(() => decodeInput(b.buffer)).toThrow();
+  });
+});
+
+describe("touch fixtures", () => {
+  const cases = load("touch").map((c) => ({ file: c.file, ...JSON.parse(c.raw) }));
+  test("at least 3 cases", () => expect(cases.length).toBeGreaterThanOrEqual(3));
+  for (const c of cases) {
+    test(`${c.name}: encode`, () => {
+      const buf = encodeTouch(c.fields);
+      expect(buf.byteLength).toBe(TOUCH_SIZE);
+      expect(inputToHex(buf)).toBe(c.hex);
+    });
+    test(`${c.name}: decode`, () => {
+      expect(decodeTouch(hexToBytes(c.hex))).toEqual(c.fields);
+      expect(inputFrameType(hexToBytes(c.hex))).toBe(2);
+    });
+  }
+  test("decode rejects wrong length, version and type", () => {
+    expect(() => decodeTouch(new ArrayBuffer(19))).toThrow();
+    const b = new Uint8Array(hexToBytes(cases[0].hex));
+    b[0] = 2;
+    expect(() => decodeTouch(b)).toThrow();
+    b[0] = 1;
+    b[1] = 1;
+    expect(() => decodeTouch(b)).toThrow();
+  });
+  test("decodes from a view with an offset", () => {
+    const inner = new Uint8Array(hexToBytes(cases[0].hex));
+    const padded = new Uint8Array(inner.length + 3);
+    padded.set(inner, 3);
+    expect(decodeTouch(padded.subarray(3))).toEqual(cases[0].fields);
+  });
+});
+
+describe("inputFrameType", () => {
+  test("state frames are 1, bad frames throw", () => {
+    expect(inputFrameType(encodeInput({ seq: 0, tMs: 0, buttons: 0, lx: 0, ly: 0, rx: 0, ry: 0, accel: [0, 0, 0], gyro: [0, 0, 0], px: 0, py: 0 }))).toBe(1);
+    expect(() => inputFrameType(new ArrayBuffer(0))).toThrow();
+    expect(() => inputFrameType(new Uint8Array([2, 1]))).toThrow();
+  });
+});
+
+describe("surface and caps.video", () => {
+  test("hello caps.video is optional but must be a boolean", () => {
+    const hello = (video: unknown) =>
+      JSON.stringify({ t: "hello", v: 1, caps: { motion: true, haptics: true, wakeLock: true, video }, screen: { w: 1, h: 1, orientation: "landscape" } });
+    expect(parseControl(hello(true)).t).toBe("hello");
+    expect(parseControl(hello(undefined)).t).toBe("hello");
+    expect(() => parseControl(hello("yes"))).toThrow();
+  });
+  test("surface id length and on-size rules", () => {
+    expect(() => parseControl(JSON.stringify({ t: "surface", id: "a".repeat(33), state: "off" }))).toThrow();
+    expect(() => parseControl('{"t":"surface","id":"a","state":"on","width":0,"height":480}')).toThrow();
+    expect(parseControl('{"t":"surface","id":"a","state":"off"}')).toEqual({ t: "surface", id: "a", state: "off" });
   });
 });
 

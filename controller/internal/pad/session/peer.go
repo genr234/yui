@@ -34,6 +34,12 @@ type peer struct {
 	// audio is this phone's Opus send track (nil without session audio).
 	// Only the speaker's track gets samples; the others stay silent.
 	audio *webrtc.TrackLocalStaticSample
+	// video is this phone's H.264 send track (nil without Config.Video).
+	// Only the track of the phone that shows a surface gets packets.
+	video *webrtc.TrackLocalStaticRTP
+	// relayed caches whether the selected pair uses a relay: 0 unknown,
+	// 1 direct, 2 relayed. It feeds the roster; Relayed reads it live.
+	relayed atomic.Int32
 
 	closed   atomic.Bool
 	fallback atomic.Bool
@@ -44,7 +50,7 @@ type peer struct {
 	pending   []webrtc.ICECandidateInit
 }
 
-func openPeer(api *webrtc.API, servers []webrtc.ICEServer, id string, gen int, withAudio bool, hooks peerHooks) (*peer, error) {
+func openPeer(api *webrtc.API, servers []webrtc.ICEServer, id string, gen int, withAudio, withVideo bool, hooks peerHooks) (*peer, error) {
 	pc, err := api.NewPeerConnection(webrtc.Configuration{ICEServers: servers})
 	if err != nil {
 		return nil, err
@@ -74,6 +80,20 @@ func openPeer(api *webrtc.API, servers []webrtc.ICEServer, id string, gen int, w
 			}
 		}()
 	}
+	if withVideo {
+		track, err := newVideoTrack(id)
+		if err != nil {
+			_ = pc.Close()
+			return nil, err
+		}
+		sender, err := pc.AddTrack(track)
+		if err != nil {
+			_ = pc.Close()
+			return nil, err
+		}
+		p.video = track
+		go drainRTCP(sender)
+	}
 	ordered := true
 	control, err := pc.CreateDataChannel("control", &webrtc.DataChannelInit{Ordered: &ordered})
 	if err != nil {
@@ -93,6 +113,12 @@ func openPeer(api *webrtc.API, servers []webrtc.ICEServer, id string, gen int, w
 	p.control = control
 	p.input = input
 
+	control.OnOpen(func() {
+		if p.closed.Load() {
+			return
+		}
+		hooks.onControlOpen(id, gen)
+	})
 	control.OnMessage(func(msg webrtc.DataChannelMessage) {
 		if p.closed.Load() {
 			return
@@ -142,6 +168,8 @@ type peerHooks struct {
 	onICE       func(playerID string, gen int, candidate webrtc.ICECandidateInit)
 	onICEFailed func(playerID string, gen int)
 	onICEUp     func(playerID string, gen int)
+	// onControlOpen fires when the peer's control channel opens.
+	onControlOpen func(playerID string, gen int)
 }
 
 func (p *peer) Close() {

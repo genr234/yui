@@ -13,6 +13,8 @@ import type { LibraryTitle } from "../library";
 import { getLaunchItem } from "./launch-intent";
 import { createControllersHost, registerControllersHost } from "./controllers";
 import { yuiControllersRuntime } from "./controllers-runtime";
+import { createSurfacesHost } from "./surfaces";
+import { createCameraHost } from "./camera";
 import { createProfilesHost, registerProfilesHost } from "./profiles";
 import { createWebHost, listenForEmbeds, registerWebHost } from "./web";
 import { yuiProfilesRuntime } from "./profiles-runtime";
@@ -146,6 +148,18 @@ export function nativeSpecToWire(appId: string, spec: YuiNativeSpec) {
 		audio: spec.audio ?? "none",
 		saves: spec.saves ?? [],
 		...(window ? { window } : {}),
+		...(spec.install ? { install: spec.install } : {}),
+		...(spec.surfaces?.length
+			? {
+					surfaces: spec.surfaces.map((surface) => ({
+						id: surface.id,
+						title: surface.window?.title,
+						hidden: surface.hidden ?? true,
+						width: surface.width,
+						height: surface.height,
+					})),
+				}
+			: {}),
 	};
 }
 
@@ -207,11 +221,19 @@ export function createYuiContext(app: YuiSimpleApp, onRender: () => void): YuiCo
 		webHost.dispose();
 	});
 
+	// ctx.surfaces: private video views of the program's windows.
+	const surfacesHost = createSurfacesHost(app, ensurePermission, requireGrantedPermission);
+	disposables.add(() => surfacesHost.dispose());
+
 	// ctx.wakeLock: every lock this app holds ends when the app closes.
 	const wakeLocks = createWakeLocks(app.id);
 	disposables.add(() => {
 		void wakeLocks.releaseAll();
 	});
+
+	// ctx.camera: the host owns the stream; it stops when the app closes.
+	const cameraHost = createCameraHost(app, ensurePermission, requireGrantedPermission);
+	disposables.add(() => cameraHost.dispose());
 
 	// ctx.profiles exists only when the manifest declares `profiles`.
 	const profilesHost = isPermissionDeclared(app, "profiles") ? createProfilesHost(app, ensurePermission) : undefined;
@@ -334,6 +356,7 @@ export function createYuiContext(app: YuiSimpleApp, onRender: () => void): YuiCo
 		native: {
 			async launch(spec) {
 				await ensurePermission("native");
+				if (spec.surfaces?.length) await ensurePermission("surfaces");
 				const status = await bridge.send<NativeStatusWire>("native.launch", nativeSpecToWire(app.id, spec));
 				return nativeStatusFor(app.id, status);
 			},
@@ -462,9 +485,11 @@ export function createYuiContext(app: YuiSimpleApp, onRender: () => void): YuiCo
 				await controllersHost.virtualPads("press", [button, action ?? "tap"]);
 			},
 		},
+		surfaces: surfacesHost.api,
 		wakeLock: {
 			request: (reason) => wakeLocks.request(reason),
 		},
+		camera: cameraHost.api,
 		launch: {
 			item: getLaunchItem(app.id),
 		},

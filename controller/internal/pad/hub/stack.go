@@ -237,6 +237,20 @@ func (s *Stack) Input(playerID string, state protocol.InputState) error {
 	return s.deliver(playerID, provider.Profile().outputsForInput(state))
 }
 
+// Touch routes a touch frame through the top provider's profile: every route
+// with Kind == KindTouch gets one Output. The frame is dropped while the top
+// provider has no such route.
+func (s *Stack) Touch(playerID string, t protocol.TouchState) error {
+	if playerID == "" {
+		return ErrEmptyPlayer
+	}
+	provider := s.snapshot()
+	if provider == nil {
+		return nil
+	}
+	return s.deliver(playerID, provider.Profile().outputsForTouch(t))
+}
+
 // Event delivers a control event to the top provider, then mapped outputs.
 func (s *Stack) Event(playerID string, ev protocol.Event) error {
 	if playerID == "" {

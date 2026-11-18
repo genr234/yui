@@ -291,6 +291,63 @@ func TestLayoutValidation(t *testing.T) {
 	}
 }
 
+// A sketch node is a generic control: it is routed by its id, and the object
+// values of its change and submit events reach the app untouched.
+func TestSketchNodeAndEventsReachTheApp(t *testing.T) {
+	r := newRig(t)
+	if err := r.ctl.SetFocus(Focus{AppID: quiz, Name: "Quiz", Active: true}); err != nil {
+		t.Fatal(err)
+	}
+	var sketch protocol.Node
+	raw := `{"type":"column","props":{"gap":8},"children":[{"type":"sketch","props":{"id":"turn-1","colors":["#e63946"],"sizes":[4,8]}}]}`
+	if err := json.Unmarshal([]byte(raw), &sketch); err != nil {
+		t.Fatal(err)
+	}
+	wait := protocol.Node{Type: "text", Props: map[string]any{"text": "watch"}}
+	if err := r.ctl.SetLayouts(quiz, map[string]*protocol.Node{"p1": &sketch, "*": &wait}); err != nil {
+		t.Fatal(err)
+	}
+	if got := layoutType(t, r, player("p1", true)); !contains(got, `"type":"sketch"`) || !contains(got, `"turn-1"`) {
+		t.Fatalf("sketch node lost: %s", got)
+	}
+	for _, frame := range []string{
+		`{"t":"event","control":"turn-1","kind":"change","value":{"stroke":1,"color":"#e63946","size":8,"points":[[0.1,0.2,0],[0.2,0.3,33]]}}`,
+		`{"t":"event","control":"turn-1","kind":"submit","value":{"stroke":1}}`,
+		`{"t":"event","control":"turn-1","kind":"tap","value":"undo"}`,
+	} {
+		msg, err := protocol.ParseControl([]byte(frame))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := r.stack.Event("p1", msg.(protocol.Event)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	evs := r.takeEvents()
+	if len(evs) != 3 || evs[0].Target != "turn-1" || evs[0].Kind != "change" || evs[1].Kind != "submit" || evs[2].Value != "undo" {
+		t.Fatalf("events %+v", evs)
+	}
+	change, ok := evs[0].Value.(map[string]any)
+	if !ok || change["stroke"] != float64(1) || len(change["points"].([]any)) != 2 {
+		t.Fatalf("change value %#v", evs[0].Value)
+	}
+	if sub, ok := evs[1].Value.(map[string]any); !ok || sub["stroke"] != float64(1) {
+		t.Fatalf("submit value %#v", evs[1].Value)
+	}
+
+	// A new sketch id (the next turn) routes; the old id no longer does.
+	next := protocol.Node{Type: "sketch", Props: map[string]any{"id": "turn-2"}}
+	if err := r.ctl.SetLayouts(quiz, map[string]*protocol.Node{"p2": &next, "*": &wait}); err != nil {
+		t.Fatal(err)
+	}
+	_ = r.stack.Event("p2", protocol.Event{Control: "turn-2", Kind: "submit", Value: map[string]any{"stroke": float64(1)}})
+	_ = r.stack.Event("p1", protocol.Event{Control: "turn-1", Kind: "submit", Value: map[string]any{"stroke": float64(1)}})
+	evs = r.takeEvents()
+	if len(evs) != 1 || evs[0].Target != "turn-2" || evs[0].PlayerID != "p2" {
+		t.Fatalf("after the turn changed: %+v", evs)
+	}
+}
+
 func TestKeymapSubwaySwipesAndDpadReachCDP(t *testing.T) {
 	r := newRig(t)
 	arrows := map[string]string{"up": "ArrowUp", "down": "ArrowDown", "left": "ArrowLeft", "right": "ArrowRight"}
@@ -672,4 +729,63 @@ func stringIndex(s, sub string) int {
 		}
 	}
 	return -1
+}
+
+func TestAttachmentTouchModes(t *testing.T) {
+	r := newRig(t)
+	r.hasHost.Store(true)
+	_ = r.ctl.SetFocus(Focus{AppID: arcade, Active: true})
+	remote := hub.MotionRemotePreset(nil)
+	_ = r.ctl.SetLayouts(arcade, map[string]*protocol.Node{"*": &remote})
+	r.ctl.SessionStarted(native.Info{ID: "s1", AppID: arcade, VirtualPads: []int{0, 1}})
+
+	for _, bad := range []string{"mouse", "Surface"} {
+		if _, err := r.ctl.Attach(arcade, Attachment{PlayerID: "p1", Slot: 0, Touch: bad}); !errors.Is(err, ErrBadTouch) {
+			t.Fatalf("touch %q: %v", bad, err)
+		}
+	}
+	a, err := r.ctl.Attach(arcade, Attachment{PlayerID: "p1", Slot: 0, Touch: "surface"})
+	if err != nil || a.Touch != "surface" {
+		t.Fatalf("attach %+v %v", a, err)
+	}
+	if _, err := r.ctl.Attach(arcade, Attachment{PlayerID: "p2", Slot: 1, Touch: "pointer", PointerStick: true}); err != nil {
+		t.Fatal(err)
+	}
+	r.pads.take()
+
+	ts := protocol.TouchState{Seq: 1, Points: [2]protocol.TouchPoint{{Down: true, X: 1, Y: 2}}}
+	// Surface mode: touch goes to the attached slot.
+	_ = r.stack.Touch("p1", ts)
+	got := r.pads.take()
+	if len(got) != 1 || got[0].out.Kind != hub.KindTouch || got[0].out.Target != "slot:0" {
+		t.Fatalf("surface touch %+v", got)
+	}
+	// Pointer mode: surface touch is dropped; state frames get the suffix.
+	_ = r.stack.Touch("p2", ts)
+	if got := r.pads.take(); len(got) != 0 {
+		t.Fatalf("pointer touch forwarded %+v", got)
+	}
+	_ = r.stack.Input("p2", protocol.InputState{TMs: 1})
+	got = r.pads.take()
+	if len(got) != 1 || got[0].out.Target != "slot:1/pointer-stick/touch-pointer" {
+		t.Fatalf("pointer state %+v", got)
+	}
+	// Surface mode state frames have no suffix.
+	_ = r.stack.Input("p1", protocol.InputState{TMs: 1})
+	if got := r.pads.take(); len(got) != 1 || got[0].out.Target != "slot:0" {
+		t.Fatalf("surface state %+v", got)
+	}
+	// An unattached player's touch is dropped once others are attached.
+	_ = r.stack.Touch("p3", ts)
+	if got := r.pads.take(); len(got) != 0 {
+		t.Fatalf("spectator touch %+v", got)
+	}
+	// Detaching a surface holder lifts their fingers.
+	if err := r.ctl.Detach(arcade, "p1"); err != nil {
+		t.Fatal(err)
+	}
+	got = r.pads.take()
+	if len(got) != 2 || got[1].out.Kind != hub.KindTouch || got[1].out.Value != (protocol.TouchState{}) {
+		t.Fatalf("detach %+v", got)
+	}
 }

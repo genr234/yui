@@ -1,5 +1,6 @@
 <script lang="ts">
   import BellIcon from "lucide-svelte/icons/bell";
+  import CameraIcon from "lucide-svelte/icons/camera";
   import ClipboardIcon from "lucide-svelte/icons/clipboard";
   import CodeIcon from "lucide-svelte/icons/code-2";
   import DatabaseIcon from "lucide-svelte/icons/database";
@@ -34,6 +35,7 @@
       return GlobeIcon;
     if (permission.includes("storage")) return DatabaseIcon;
     if (permission.includes("clipboard")) return ClipboardIcon;
+    if (permission === "camera") return CameraIcon;
     if (permission.includes("notification")) return BellIcon;
     if (permission.includes("fullscreen")) return MaximizeIcon;
     if (permission.includes("command")) return CodeIcon;

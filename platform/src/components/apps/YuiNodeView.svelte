@@ -12,6 +12,7 @@
     rememberEmbedStorage,
   } from "../../sdk/apps/embed-storage";
   import PadJoin from "./PadJoin.svelte";
+  import CameraPreview from "./CameraPreview.svelte";
   import WebEmbed from "./WebEmbed.svelte";
   import type {
     YuiChildren,
@@ -569,6 +570,15 @@
     src={stringProp("src")}
     alt={stringProp("alt")}
     style={`width: ${cssSizeProp("width", "auto")}; height: ${cssSizeProp("height", "auto")};`}
+  />
+{:else if node.type === "camera"}
+  <CameraPreview
+    appId={app?.id ?? ""}
+    mirror={booleanProp("mirror")}
+    fit={stringProp("fit", "cover") === "contain" ? "contain" : "cover"}
+    width={prop("width", "100%")}
+    height={prop("height", "auto")}
+    radius={prop("radius", 12)}
   />
 {:else if node.type === "embed" && prop("web")}
   <WebEmbed

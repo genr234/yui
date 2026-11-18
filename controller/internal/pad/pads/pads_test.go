@@ -191,3 +191,97 @@ func TestListenRealServers(t *testing.T) {
 	}
 	a.Release("p1")
 }
+
+func touchOut(target string, ts protocol.TouchState) hub.Output {
+	return hub.Output{Adapter: Name, Target: target, Kind: hub.KindTouch, Value: ts}
+}
+
+func TestSurfaceTouchScalesAndKeepsAcrossStateFrames(t *testing.T) {
+	players := newSink()
+	a := New(players, nil, nil)
+	// A state frame first, so the slot has buttons.
+	_ = a.Deliver("p1", []hub.Output{stateOut("slot:0", protocol.InputState{Buttons: protocol.ButtonSouth})})
+	if got, _ := players.get(0); got.Touches[0].Active {
+		t.Fatal("touch active without a touch frame")
+	}
+
+	down := protocol.TouchState{Points: [2]protocol.TouchPoint{
+		{Down: true, X: 0, Y: 0}, {Down: true, X: 65535, Y: 65535},
+	}}
+	_ = a.Deliver("p1", []hub.Output{touchOut("slot:0", down)})
+	got, _ := players.get(0)
+	if !got.Cross {
+		t.Fatal("touch frame lost the buttons")
+	}
+	if got.Touches[0] != (dsu.TouchPoint{Active: true, ID: 1, X: 0, Y: 0}) ||
+		got.Touches[1] != (dsu.TouchPoint{Active: true, ID: 2, X: 1919, Y: 941}) {
+		t.Fatalf("touches %+v", got.Touches)
+	}
+
+	// Centre.
+	mid := protocol.TouchState{Points: [2]protocol.TouchPoint{{Down: true, X: 32768, Y: 32768}}}
+	_ = a.Deliver("p1", []hub.Output{touchOut("slot:0", mid)})
+	got, _ = players.get(0)
+	if got.Touches[0].X != 959 || got.Touches[0].Y != 470 || got.Touches[0].ID != 1 || got.Touches[1].Active {
+		t.Fatalf("mid %+v", got.Touches)
+	}
+
+	// A later state frame keeps the touch.
+	_ = a.Deliver("p1", []hub.Output{stateOut("slot:0", protocol.InputState{})})
+	got, _ = players.get(0)
+	if !got.Touches[0].Active || got.Cross {
+		t.Fatalf("state frame dropped touch or kept button: %+v", got)
+	}
+
+	// Lift, then touch again: a new contact id.
+	_ = a.Deliver("p1", []hub.Output{touchOut("slot:0", protocol.TouchState{})})
+	got, _ = players.get(0)
+	if got.Touches[0].Active {
+		t.Fatal("release ignored")
+	}
+	_ = a.Deliver("p1", []hub.Output{touchOut("slot:0", mid)})
+	got, _ = players.get(0)
+	if got.Touches[0].ID == 1 {
+		t.Fatalf("contact id not incremented: %+v", got.Touches[0])
+	}
+
+	// Release clears touches with the pad.
+	a.Release("p1")
+	_ = a.Deliver("p1", []hub.Output{stateOut("slot:0", protocol.InputState{})})
+	if got, _ := players.get(0); got.Touches[0].Active {
+		t.Fatal("touch survived Release")
+	}
+}
+
+func TestTouchPointerFromPointerAxes(t *testing.T) {
+	players := newSink()
+	a := New(players, nil, nil)
+	cases := []struct {
+		px, py int16
+		x, y   uint16
+	}{
+		{-32767, -32767, 0, 0},
+		{32767, 32767, 1919, 941},
+		{0, 0, 959, 470},
+	}
+	for _, c := range cases {
+		_ = a.Deliver("p1", []hub.Output{stateOut("slot:1/pointer-stick/touch-pointer", protocol.InputState{PX: c.px, PY: c.py})})
+		got, _ := players.get(1)
+		tp := got.Touches[0]
+		if !tp.Active || tp.X != c.x || tp.Y != c.y || got.Touches[1].Active {
+			t.Fatalf("pointer %d,%d -> %+v", c.px, c.py, got.Touches)
+		}
+		if got.RX == 0 && c.px != 0 {
+			t.Fatal("suffixes did not combine: pointer-stick lost")
+		}
+	}
+	got, _ := players.get(1)
+	if got.Touches[0].ID != 1 {
+		t.Fatalf("pointer contact id changed: %d", got.Touches[0].ID)
+	}
+	// Dropping the suffix drops the pointer touch.
+	_ = a.Deliver("p1", []hub.Output{stateOut("slot:1", protocol.InputState{})})
+	if got, _ := players.get(1); got.Touches[0].Active {
+		t.Fatal("pointer touch stayed without the suffix")
+	}
+}

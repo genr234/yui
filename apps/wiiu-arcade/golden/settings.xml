@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<content>
+	<language>58</language>
+	<check_update>false</check_update>
+	<receive_untested_updates>false</receive_untested_updates>
+	<use_discord_presence>false</use_discord_presence>
+	<save_screenshot>false</save_screenshot>
+	<vk_warning>true</vk_warning>
+	<gp_download>true</gp_download>
+	<macos_disclaimer>true</macos_disclaimer>
+	<fullscreen>true</fullscreen>
+	<play_boot_sound>false</play_boot_sound>
+	<console_language>1</console_language>
+	<open_pad>true</open_pad>
+	<pad_position>
+		<x>-1</x>
+		<y>-1</y>
+	</pad_position>
+	<pad_size>
+		<x>854</x>
+		<y>480</y>
+	</pad_size>
+	<pad_maximized>false</pad_maximized>
+	<Graphic>
+		<api>1</api>
+		<VSync>1</VSync>
+		<AsyncCompile>true</AsyncCompile>
+	</Graphic>
+	<Audio>
+		<TVDevice>default</TVDevice>
+		<PadDevice></PadDevice>
+		<TVVolume>50</TVVolume>
+		<PadVolume>0</PadVolume>
+	</Audio>
+	<Input>
+		<DSUC host="127.0.0.1" port="26760"/>
+	</Input>
+</content>

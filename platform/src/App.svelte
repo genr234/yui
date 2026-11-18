@@ -3,6 +3,7 @@
   import AttractScreen from "./components/AttractScreen.svelte";
   import OnScreenKeyboard from "./components/OnScreenKeyboard.svelte";
   import LetterboxBars from "./components/bars/LetterboxBars.svelte";
+  import CameraIndicator from "./components/CameraIndicator.svelte";
   import PadCursor from "./components/PadCursor.svelte";
   import FederatedStoreModal from "./components/FederatedStoreModal.svelte";
   import PermissionCards from "./components/PermissionCards.svelte";
@@ -982,3 +983,4 @@
 {/if}
 
 <PadCursor />
+<CameraIndicator />

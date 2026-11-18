@@ -17,9 +17,11 @@ export type YuiPermission =
 	| "native"
 	| "library"
 	| "virtual-pads"
+	| "surfaces"
 	| "controllers"
 	| "profiles"
 	| "audio.speaker"
+	| "camera"
 	| string;
 
 export type YuiChildren =
@@ -109,8 +111,12 @@ export type YuiContext = {
 	/** Only with the `profiles` permission declared. */
 	profiles?: YuiProfilesApi;
 	virtualPads: YuiVirtualPadsApi;
+	/** Private video views of the program's windows (permission `surfaces`). */
+	surfaces: YuiSurfacesApi;
 	/** Keep the kiosk awake while nobody touches it (videos, cutscenes). */
 	wakeLock: YuiWakeLockApi;
+	/** The kiosk's own camera (permission `camera`). */
+	camera: YuiCameraApi;
 	/** What the shell opened this app for, e.g. a library title from Jump back in. */
 	launch: { item: YuiLaunchItem | null };
 	log: Console;
@@ -190,6 +196,16 @@ export type YuiNativeSpec = {
 	 */
 	saves?: string[];
 	/**
+	 * "shared" (default): the runtime is extracted once for the kiosk and is read-only to the program.
+	 * "private": the runtime's files are placed in `{{dataDir}}/runtime/` and the program runs from
+	 * there, for programs that keep settings beside their executable. Files the program or the app
+	 * adds there survive launches and runtime updates. `executable`, `files` and `saves` paths
+	 * under `runtime/` refer to that directory.
+	 */
+	install?: "shared" | "private";
+	/** At most 2. Needs the `surfaces` permission. */
+	surfaces?: YuiNativeSurface[];
+	/**
 	 * Ask the controller to place the program's main window borderless at this
 	 * aspect ratio, centred on the screen, so the overlay's bars stay visible
 	 * above and below it. Without it the program keeps its own window.
@@ -203,6 +219,45 @@ export type YuiNativeWindow = {
 	aspect: number | `${number}:${number}`;
 	/** Only "center" exists today. */
 	align?: "center";
+};
+
+/** A video view of one of the program's windows, for one player's phone. */
+export type YuiNativeSurface = {
+	/** `[a-z0-9][a-z0-9-]{0,31}`; the id used in `ctx.surfaces` and in `surface` layout nodes. */
+	id: string;
+	/** Which top-level window of the program to capture: an RE2 pattern matched against window titles. */
+	window: { title: string };
+	/** Keep the window off the kiosk's display (default true). */
+	hidden?: boolean;
+	/** Encoded size, default 854x480. Even numbers, 160..1920 by 120..1080. */
+	width?: number;
+	height?: number;
+};
+
+export type YuiSurfaceStatus = {
+	id: string;
+	/** waiting: window not found yet. ready: can be shown. streaming: on a phone. */
+	state: "waiting" | "ready" | "streaming" | "failed" | "closed";
+	/** The player who sees it, or null. */
+	player_id: string | null;
+	width: number;
+	height: number;
+	fps: number;
+	error?: string;
+};
+
+export type YuiSurfacesApi = {
+	/** Whether this kiosk can stream surfaces at all. */
+	available(): Promise<{ available: boolean; reason?: "unsupported" | "no_encoder" }>;
+	/** This app's surfaces (those of its current native session). */
+	list(): Promise<YuiSurfaceStatus[]>;
+	/**
+	 * Show a surface on one player's phone, or on nobody (null). Moves it if another
+	 * player had it. Rejects with code "not_ready" | "no_video" | "no_video_link" |
+	 * "unknown_surface" | "unknown_player" in the message after `YUI_SURFACES: `.
+	 */
+	show(surface: string, player: YuiPlayerRef | null): Promise<YuiSurfaceStatus>;
+	on(event: "status", handler: (surfaces: YuiSurfaceStatus[]) => void): () => void;
 };
 
 /** Save-file backup progress of a session that declared `saves`. */
@@ -322,6 +377,10 @@ export type YuiPlayer = {
 	connected: boolean;
 	/** Playing as a Yui account this session. Never says which account. */
 	accountLinked: boolean;
+	/** What this phone can do, once it has said hello. */
+	caps?: { motion: boolean; haptics: boolean; video: boolean };
+	/** True when the phone's link goes through a relay (higher latency). */
+	relayed?: boolean;
 };
 
 export type YuiPlayerRef = YuiPlayer | string;
@@ -373,7 +432,7 @@ export type YuiControllersApi = {
 	 */
 	haptic(player: YuiPlayerRef | "all", pattern: YuiHapticName | number | number[], options?: { intensity?: number }): Promise<unknown>;
 	sound(player: YuiPlayerRef | "speaker", url: string, options?: { volume?: number }): Promise<unknown>;
-	/** Pad node builders: button, choice, dpad, stick, trackpad, keyboard, list, motion, preset, text, row, column, grid, spacer. */
+	/** Pad node builders: button, choice, dpad, stick, trackpad, keyboard, list, motion, preset, surface, sketch, text, row, column, grid, spacer. */
 	ui: Record<string, (...args: any[]) => YuiPadNode>;
 };
 
@@ -406,6 +465,7 @@ export type YuiVirtualPadAttachment = {
 	backend: "dsu";
 	slot: number;
 	pointer_stick?: boolean;
+	touch?: "surface" | "pointer";
 	/** "host:port/slot", the same value {{virtualPad:<slot>}} expands to. */
 	address: string;
 };
@@ -413,7 +473,7 @@ export type YuiVirtualPadAttachment = {
 export type YuiVirtualPadsApi = {
 	attach(
 		player: YuiPlayerRef,
-		options: { backend?: "dsu"; slot: number; pointerStick?: boolean },
+		options: { backend?: "dsu"; slot: number; pointerStick?: boolean; touch?: "surface" | "pointer" },
 	): Promise<YuiVirtualPadAttachment>;
 	detach(player: YuiPlayerRef): Promise<void>;
 	list(): Promise<YuiVirtualPadAttachment[]>;
@@ -447,6 +507,63 @@ export type YuiSaveEntry = { key: string; size: number; updatedAt: string; queue
  */
 export type YuiWakeLockApi = {
 	request(reason?: string): Promise<YuiWakeLock>;
+};
+
+/** Codes after `YUI_CAMERA: ` in a `ctx.camera` rejection. */
+export type YuiCameraErrorCode = "unsupported" | "blocked" | "not_found" | "busy" | "not_open" | "failed";
+
+export type YuiCameraOptions = {
+	/** Ideal capture size; the camera may give something else (see the handle). Default 640x480. */
+	width?: number;
+	height?: number;
+	/** "user" faces the people at the kiosk, "environment" faces away. Default: the camera's choice. */
+	facing?: "user" | "environment";
+};
+
+export type YuiCameraHandle = {
+	id: string;
+	/** What the camera actually delivers. */
+	width: number;
+	height: number;
+	/** Gives this handle back; the camera turns off when the last one is stopped. Safe to call twice. */
+	stop(): Promise<void>;
+};
+
+export type YuiCameraSnapshot = { dataUrl: string; width: number; height: number };
+
+export type YuiCameraState = {
+	state: "open" | "closed" | "error";
+	width?: number;
+	height?: number;
+	/** With state "error": the camera was lost (unplugged, taken by another program). */
+	error?: YuiCameraErrorCode;
+};
+
+/**
+ * `ctx.camera`: the kiosk's own camera, behind the `camera` permission. The
+ * platform draws a "Camera on" badge over everything for as long as it runs,
+ * and turns it off when the app closes. Pictures never leave the kiosk unless
+ * the app sends them somewhere; the platform uploads nothing.
+ *
+ * Live video does not cross into the app. Show it with
+ * `ctx.ui.camera({ mirror?, fit?: "cover" | "contain", width?, height?, radius? })`,
+ * a preview of the open camera (a placeholder while it is closed), and take
+ * pictures with `snapshot`.
+ */
+export type YuiCameraApi = {
+	/** Whether this kiosk has a camera the page can use. Does not turn it on. */
+	available(): Promise<boolean>;
+	/**
+	 * Turns the camera on (asking for the permission if needed). Rejects with
+	 * `YUI_CAMERA: blocked | not_found | busy | unsupported | failed`.
+	 */
+	open(options?: YuiCameraOptions): Promise<YuiCameraHandle>;
+	/**
+	 * A JPEG still of the open camera, scaled down to `maxWidth` (default 640,
+	 * never above 1280, never enlarged). Rejects with `YUI_CAMERA: not_open`.
+	 */
+	snapshot(options?: { maxWidth?: number; quality?: number }): Promise<YuiCameraSnapshot>;
+	on(event: "state", handler: (state: YuiCameraState) => void): () => void;
 };
 
 export type YuiSavesApi = {

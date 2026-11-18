@@ -12,6 +12,8 @@ const (
 	InputSize      = 48
 	InputVersion   = 1
 	InputTypeState = 1
+	InputTypeTouch = 2
+	TouchSize      = 20
 )
 
 // Button bits: a generic gamepad named by position (see protocol/src/index.ts).
@@ -118,4 +120,73 @@ func DecodeInput(b []byte) (InputState, error) {
 func SeqNewer(a, b uint16) bool {
 	d := a - b
 	return d != 0 && d < 0x8000
+}
+
+// TouchPoint is one finger on a surface; X and Y span the video content
+// rectangle, 0..65535, and are 0 when the point is not down.
+type TouchPoint struct {
+	Down bool   `json:"down"`
+	X    uint16 `json:"x"`
+	Y    uint16 `json:"y"`
+}
+
+// TouchState is one decoded 20-byte touch frame.
+type TouchState struct {
+	Seq    uint16        `json:"seq"`
+	TMs    uint32        `json:"tMs"`
+	Points [2]TouchPoint `json:"points"`
+}
+
+// EncodeTouch serialises s into the 20-byte little-endian layout.
+func EncodeTouch(s TouchState) []byte {
+	b := make([]byte, TouchSize)
+	le := binary.LittleEndian
+	b[0] = InputVersion
+	b[1] = InputTypeTouch
+	le.PutUint16(b[2:], s.Seq)
+	le.PutUint32(b[4:], s.TMs)
+	for i, p := range s.Points {
+		if p.Down {
+			b[8] |= 1 << i
+		}
+		le.PutUint16(b[10+i*4:], p.X)
+		le.PutUint16(b[12+i*4:], p.Y)
+	}
+	return b
+}
+
+// DecodeTouch parses a touch frame; it errors on wrong length, version or type.
+func DecodeTouch(b []byte) (TouchState, error) {
+	var s TouchState
+	if len(b) != TouchSize {
+		return s, fmt.Errorf("touch: expected %d bytes, got %d", TouchSize, len(b))
+	}
+	if b[0] != InputVersion {
+		return s, fmt.Errorf("touch: unsupported version %d", b[0])
+	}
+	if b[1] != InputTypeTouch {
+		return s, fmt.Errorf("touch: unsupported type %d", b[1])
+	}
+	le := binary.LittleEndian
+	s.Seq = le.Uint16(b[2:])
+	s.TMs = le.Uint32(b[4:])
+	for i := range s.Points {
+		s.Points[i] = TouchPoint{
+			Down: b[8]&(1<<i) != 0,
+			X:    le.Uint16(b[10+i*4:]),
+			Y:    le.Uint16(b[12+i*4:]),
+		}
+	}
+	return s, nil
+}
+
+// FrameType returns b[1] after checking len(b) >= 2 and b[0] == InputVersion.
+func FrameType(b []byte) (byte, error) {
+	if len(b) < 2 {
+		return 0, fmt.Errorf("input: frame too short (%d bytes)", len(b))
+	}
+	if b[0] != InputVersion {
+		return 0, fmt.Errorf("input: unsupported version %d", b[0])
+	}
+	return b[1], nil
 }

@@ -366,6 +366,7 @@ type vpadParams struct {
 	Backend      string `json:"backend"`
 	Slot         *int   `json:"slot"`
 	PointerStick bool   `json:"pointer_stick"`
+	Touch        string `json:"touch"`
 	Button       string `json:"button"`
 	Action       string `json:"action"`
 }
@@ -382,7 +383,7 @@ func (padVPadsAttachCommand) Handle(r *Registry, params json.RawMessage) (any, e
 		return nil, errors.New("slot is required")
 	}
 	return r.padControllers().Attach(p.AppID, apps.Attachment{
-		PlayerID: p.PlayerID, Backend: p.Backend, Slot: *p.Slot, PointerStick: p.PointerStick,
+		PlayerID: p.PlayerID, Backend: p.Backend, Slot: *p.Slot, PointerStick: p.PointerStick, Touch: p.Touch,
 	})
 }
 

@@ -18,6 +18,9 @@ import (
 type Runtime struct {
 	cfg      config.Config
 	staticFS embed.FS
+	// cameraGrantKey is the last target and origin granted video capture
+	// (only the injection loop touches it).
+	cameraGrantKey string
 }
 
 type rpcRequest struct {

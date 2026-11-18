@@ -58,6 +58,8 @@ func (r *Registry) Native() *native.Manager {
 	})
 	// The input hub follows sessions: native layer, virtual pads, watchdog.
 	r.nativeMgr.AddObserver(nativeHubObserver{r: r})
+	// Surfaces follow the session too: its windows become shareable views.
+	r.nativeMgr.AddObserver(nativeSurfaceObserver{r: r})
 	return r.nativeMgr
 }
 
@@ -70,6 +72,9 @@ func (r *Registry) nativeIfStarted() *native.Manager {
 // nativeAssetInUse is the asset syncer's InUse hook (contracts §1 orphan
 // grace): files the active native session uses are not deleted.
 func (r *Registry) nativeAssetInUse(id string) bool {
+	if r.videoAssetInUse(id) {
+		return true
+	}
 	if mgr := r.nativeIfStarted(); mgr != nil {
 		return mgr.InUse(id)
 	}
@@ -117,15 +122,26 @@ func (a registryAssets) Asset(id string) (native.AssetInfo, bool) {
 }
 
 type nativeLaunchParams struct {
-	AppID       string              `json:"app_id"`
-	Runtime     string              `json:"runtime"`
-	Executable  string              `json:"executable"`
-	Args        []string            `json:"args"`
-	Files       []native.ConfigFile `json:"files"`
-	VirtualPads []int               `json:"virtual_pads"`
-	Audio       string              `json:"audio"`
-	Saves       []string            `json:"saves"`
-	Window      *native.WindowSpec  `json:"window"`
+	AppID       string               `json:"app_id"`
+	Runtime     string               `json:"runtime"`
+	Executable  string               `json:"executable"`
+	Args        []string             `json:"args"`
+	Files       []native.ConfigFile  `json:"files"`
+	VirtualPads []int                `json:"virtual_pads"`
+	Audio       string               `json:"audio"`
+	Saves       []string             `json:"saves"`
+	Window      *native.WindowSpec   `json:"window"`
+	Install     string               `json:"install"`
+	Surfaces    []nativeSurfaceParam `json:"surfaces"`
+}
+
+// nativeSurfaceParam is one entry of native.launch `surfaces` (contract C3).
+type nativeSurfaceParam struct {
+	ID     string `json:"id"`
+	Title  string `json:"title"`
+	Hidden *bool  `json:"hidden"`
+	Width  int    `json:"width"`
+	Height int    `json:"height"`
 }
 
 type NativeLaunchCommand struct{}
@@ -135,6 +151,20 @@ func (NativeLaunchCommand) Handle(r *Registry, params json.RawMessage) (any, err
 	var p nativeLaunchParams
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, err
+	}
+	var surfaces []native.SurfaceSpec
+	for _, s := range p.Surfaces {
+		surfaces = append(surfaces, native.SurfaceSpec{ID: s.ID, Title: s.Title, Hidden: s.Hidden == nil || *s.Hidden, Width: s.Width, Height: s.Height})
+	}
+	// A launch without surfaces never depends on the encoder.
+	if len(surfaces) > 0 {
+		if av := r.Video().Available(); !av.Available {
+			reason := av.Reason
+			if reason == "" {
+				reason = "unsupported"
+			}
+			return nil, errors.New("surfaces are not available on this kiosk (" + reason + ")")
+		}
 	}
 	scope := r.snapshotConfig().ActiveAccountID
 	st, err := r.Native().Launch(native.Spec{
@@ -148,6 +178,8 @@ func (NativeLaunchCommand) Handle(r *Registry, params json.RawMessage) (any, err
 		Audio:       p.Audio,
 		Saves:       p.Saves,
 		Window:      p.Window,
+		Install:     p.Install,
+		Surfaces:    surfaces,
 	})
 	if err != nil {
 		return nil, err

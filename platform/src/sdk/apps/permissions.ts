@@ -60,6 +60,10 @@ const permissionCopy: Record<string, { label: string; description: string }> = {
 		label: "Virtual controllers",
 		description: "Let programs this app starts read the players' phones as game controllers.",
 	},
+	surfaces: {
+		label: "Private screens",
+		description: "Show a private screen on one player's phone.",
+	},
 	controllers: {
 		label: "Phone controllers",
 		description: "See who joined from their phone, show them controls, and receive their input.",
@@ -71,6 +75,10 @@ const permissionCopy: Record<string, { label: string; description: string }> = {
 	saves: {
 		label: "Save files",
 		description: "Keep save files for this app, and for players who allow it, on their Yui account.",
+	},
+	camera: {
+		label: "Camera",
+		description: "See through this kiosk's camera. Pictures stay on the kiosk unless the app sends them somewhere.",
 	},
 	"audio.speaker": {
 		label: "Phone speaker",

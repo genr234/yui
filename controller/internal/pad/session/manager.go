@@ -62,6 +62,9 @@ type Config struct {
 	InactiveWarning time.Duration
 	// SeatOfferTTL is how long a seat offer waits for an answer (default 20 s).
 	SeatOfferTTL time.Duration
+	// Video gives every peer an H.264 send track in its first offer, for
+	// private views (see VideoWriter). Off leaves the offer as it was.
+	Video bool
 }
 
 // Player is a roster entry: the contracts §2 Player JSON, which carries the
@@ -77,6 +80,11 @@ type Player struct {
 	// interval. Absent until measured.
 	RTTMillis *int     `json:"rtt_ms,omitempty"`
 	InputHz   *float64 `json:"input_hz,omitempty"`
+	// Caps is what the phone said in its hello; absent until then.
+	Caps *protocol.Caps `json:"caps,omitempty"`
+	// Relayed is true when the phone's link goes through a relay. Absent
+	// without a live link.
+	Relayed *bool `json:"relayed,omitempty"`
 }
 
 // SessionView is the bridge session object: code, the current QR URL and
@@ -162,6 +170,8 @@ type Manager struct {
 	audioRightTarget *webrtc.TrackLocalStaticSample
 	onControl        func(playerID string, msg any)
 	onInput          func(playerID string, state protocol.InputState)
+	onTouch          func(playerID string, t protocol.TouchState)
+	onPeer           func(playerID string, up bool)
 	onPlayer         func(ev PlayerEvent)
 	cable            *cable
 	// lastActive is the clock reading of the last join, leave or accepted
@@ -190,6 +200,7 @@ type playerState struct {
 	hasRate   bool
 	hello     *protocol.Hello
 	fallback  bool
+	touch     touchTrack
 }
 
 type pendingPing struct {
@@ -438,6 +449,16 @@ func (m *Manager) rosterLocked() []Player {
 			if st.hasRate {
 				hz := st.inputHz
 				out[i].InputHz = &hz
+			}
+			if st.hello != nil {
+				caps := st.hello.Caps
+				out[i].Caps = &caps
+			}
+			if peer := m.peers[p.ID]; peer != nil && !peer.closed.Load() && !peer.fallback.Load() {
+				if v := peer.relayed.Load(); v != 0 {
+					relayed := v == relayedYes
+					out[i].Relayed = &relayed
+				}
 			}
 		}
 	}
@@ -1057,8 +1078,9 @@ func (m *Manager) negotiate(p protocol.Player) {
 	if old != nil {
 		// The replaced peer may have been the sound's target.
 		m.syncSpeaker()
+		m.notifyPeer(p.ID, false)
 	}
-	created, err := openPeer(api, servers, p.ID, gen, m.cfg.Audio != nil, m.hooks())
+	created, err := openPeer(api, servers, p.ID, gen, m.cfg.Audio != nil, m.cfg.Video, m.hooks())
 	if err != nil {
 		log.Printf("pad session: peer %s: %v", p.ID, err)
 		return
@@ -1108,8 +1130,9 @@ func (m *Manager) hooks() peerHooks {
 				log.Printf("pad session: ice %s: %v", id, err)
 			}
 		},
-		onICEFailed: m.noteICEFailed,
-		onICEUp:     m.noteICEUp,
+		onICEFailed:   m.noteICEFailed,
+		onICEUp:       m.noteICEUp,
+		onControlOpen: m.noteControlOpen,
 	}
 }
 
@@ -1131,9 +1154,13 @@ func (m *Manager) noteICEFailed(id string, gen int) {
 	if st != nil {
 		st.fallback = true
 	}
-	peer.fallback.Store(true)
+	was := peer.fallback.Swap(true)
 	m.mu.Unlock()
 	log.Printf("pad link player=%s path=server: ICE failed; control falls back to ActionCable", id)
+	if !was {
+		// No video can flow without ICE.
+		m.notifyPeer(id, false)
+	}
 }
 
 func (m *Manager) noteICEUp(id string, gen int) {
@@ -1146,8 +1173,14 @@ func (m *Manager) noteICEUp(id string, gen int) {
 	if st := m.players[id]; st != nil {
 		st.fallback = false
 	}
-	peer.fallback.Store(false)
+	was := peer.fallback.Swap(false)
 	go logLink(id, peer)
+	go m.trackRelayed(peer)
+	if was {
+		// ICE recovered on the same peer (the control channel stays open,
+		// so noteControlOpen will not fire again).
+		go m.notifyPeer(id, true)
+	}
 }
 
 // logLink writes the phone's link to the controller log as it comes up and
@@ -1212,10 +1245,24 @@ func (m *Manager) acceptICE(playerID string, raw json.RawMessage) {
 func (m *Manager) forgetSeqLocked(playerID string) {
 	if st := m.players[playerID]; st != nil {
 		st.hasInput = false
+		st.touch.hasSeq = false
 	}
 }
 
 func (m *Manager) applyInput(playerID string, raw []byte) {
+	kind, err := protocol.FrameType(raw)
+	if err != nil {
+		log.Printf("pad session: input %s: %v", playerID, err)
+		return
+	}
+	switch kind {
+	case protocol.InputTypeState:
+	case protocol.InputTypeTouch:
+		m.applyTouch(playerID, raw)
+		return
+	default:
+		return // a frame type from a newer pad
+	}
 	state, err := protocol.DecodeInput(raw)
 	if err != nil {
 		log.Printf("pad session: input %s: %v", playerID, err)
@@ -1251,6 +1298,7 @@ func (m *Manager) removePlayer(playerID string) {
 	player := protocol.Player{ID: playerID}
 	if st := m.players[playerID]; st != nil {
 		player = st.Player
+		st.touch.stop()
 	}
 	delete(m.players, playerID)
 	delete(m.pings, playerID)
@@ -1280,6 +1328,7 @@ func (m *Manager) closePeer(playerID string) {
 	if peer != nil {
 		m.syncSpeaker()
 		peer.Close()
+		m.notifyPeer(playerID, false)
 	}
 }
 
@@ -1289,8 +1338,11 @@ func (m *Manager) closePeers() {
 	m.peers = map[string]*peer{}
 	m.mu.Unlock()
 	m.syncSpeaker()
-	for _, peer := range peers {
+	for id, peer := range peers {
 		peer.Close()
+		if peer != nil {
+			m.notifyPeer(id, false)
+		}
 	}
 }
 

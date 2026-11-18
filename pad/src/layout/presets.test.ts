@@ -108,3 +108,10 @@ describe('tree helpers', () => {
     expect(wantsMotion(null)).toBe(false)
   })
 })
+
+describe('scanTree frame', () => {
+  test('a motion node with frame "screen" is reported; the default is absent', () => {
+    expect(scanTree({ type: 'row', children: [{ type: 'motion', props: { frame: 'screen' } }] })).toEqual({ motion: true, pointer: false, frame: 'screen' })
+    expect(scanTree({ type: 'motion', props: { frame: 'remote' } })).toEqual({ motion: true, pointer: false })
+  })
+})

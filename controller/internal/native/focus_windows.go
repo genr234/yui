@@ -4,9 +4,11 @@ package native
 
 import (
 	"os"
+	"regexp"
 	"runtime"
 	"sync"
 	"time"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -21,6 +23,7 @@ var (
 	procPostMessageW        = user32.NewProc("PostMessageW")
 	procAttachThreadInput   = user32.NewProc("AttachThreadInput")
 	procKeybdEvent          = user32.NewProc("keybd_event")
+	procGetWindowTextW      = user32.NewProc("GetWindowTextW")
 )
 
 const (
@@ -128,15 +131,35 @@ func (SystemFocus) Capture() FocusToken {
 	return FocusToken(windows.GetForegroundWindow())
 }
 
-func (SystemFocus) Give(pid int, stop <-chan struct{}) {
+// windowTitle returns the window's title, "" when it has none.
+func windowTitle(hwnd windows.HWND) string {
+	buf := make([]uint16, 512)
+	n, _, _ := procGetWindowTextW.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	if n == 0 {
+		return ""
+	}
+	return windows.UTF16ToString(buf[:n])
+}
+
+// mainWindow returns pid's first top-level window that is not a surface.
+func mainWindow(pid int, skip []*regexp.Regexp) (windows.HWND, bool) {
+	var wins []titledWindow
+	for _, hwnd := range topWindows(pid) {
+		wins = append(wins, titledWindow{id: uintptr(hwnd), title: windowTitle(hwnd)})
+	}
+	w, ok := pickWindow(wins, skip)
+	return windows.HWND(w.id), ok
+}
+
+func (SystemFocus) Give(pid int, skip []*regexp.Regexp, stop <-chan struct{}) {
 	deadline := time.Now().Add(focusTimeout)
 	ticker := time.NewTicker(focusPoll)
 	defer ticker.Stop()
 	for {
-		if fg := windows.GetForegroundWindow(); fg != 0 && windowPID(fg) == pid {
+		if fg := windows.GetForegroundWindow(); fg != 0 && windowPID(fg) == pid && !titleSkipped(windowTitle(fg), skip) {
 			return
 		}
-		if wins := topWindows(pid); len(wins) > 0 && bringToFront(wins[0]) {
+		if hwnd, ok := mainWindow(pid, skip); ok && bringToFront(hwnd) {
 			return
 		}
 		if time.Now().After(deadline) {

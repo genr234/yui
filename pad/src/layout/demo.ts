@@ -76,3 +76,30 @@ export const demoRemote: Node = {
   type: 'preset',
   props: { name: 'motion-remote', labels: { South: 'A', R2: 'B', West: '1', North: '2', Select: '−', Start: '+' } },
 }
+
+/** A landscape sample for the pad simulator (`?demo=surface`): a surface between two stick columns. */
+export const demoSurface: Node = {
+  type: 'row',
+  props: { gap: 10 },
+  children: [
+    {
+      type: 'column',
+      props: { gap: 10, flex: 1 },
+      children: [
+        { type: 'button', props: { id: 'l1', label: 'L', bit: 4 } },
+        { type: 'stick', props: { id: 'ls', side: 'left', click_bit: 11 } },
+        { type: 'dpad', props: { id: 'dp' } },
+      ],
+    },
+    { type: 'surface', props: { id: 'screen', surface: 'second-screen', touch: true, flex: 3 } },
+    {
+      type: 'column',
+      props: { gap: 10, flex: 1 },
+      children: [
+        { type: 'button', props: { id: 'r1', label: 'R', bit: 5 } },
+        { type: 'stick', props: { id: 'rs', side: 'right', click_bit: 12 } },
+        { type: 'motion', props: { id: 'motion', frame: 'screen' } },
+      ],
+    },
+  ],
+}

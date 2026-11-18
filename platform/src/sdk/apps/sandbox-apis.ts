@@ -1,7 +1,7 @@
 /**
  * ctx APIs that cross the app sandbox boundary generically: `ctx.native`,
  * `ctx.library`, `ctx.assets`, `ctx.launch`, `ctx.controllers`, `ctx.profiles`,
- * `ctx.virtualPads` and `ctx.wakeLock`.
+ * `ctx.virtualPads`, `ctx.surfaces`, `ctx.wakeLock` and `ctx.camera`.
  *
  * Apps run in a sandboxed iframe (AppHost). `sandboxApiSource` is spliced
  * into the sandbox script and adds the APIs to the sandbox's ctx as RPC
@@ -10,13 +10,13 @@
  * `{ type: "push", api, event, data }` messages. New APIs can be added here
  * without touching AppHost again.
  */
-import type { YuiContext, YuiNativeEvent, YuiWakeLock } from "./types";
+import type { YuiCameraHandle, YuiContext, YuiNativeEvent, YuiWakeLock } from "./types";
 import { controllersHostFor, type ControllersHost } from "./controllers";
 import { yuiControllersRuntime } from "./controllers-runtime";
 import { profileCalls, profilesHostFor } from "./profiles";
 import { yuiProfilesRuntime } from "./profiles-runtime";
 
-export const sandboxApis = ["native", "library", "assets", "controllers", "virtualPads", "profiles", "web", "embeds", "saves", "wakeLock"] as const;
+export const sandboxApis = ["native", "library", "assets", "controllers", "virtualPads", "surfaces", "profiles", "web", "embeds", "saves", "wakeLock", "camera"] as const;
 export type SandboxApi = (typeof sandboxApis)[number];
 
 /**
@@ -145,6 +145,12 @@ function yuiExtendContext(ctx) {
     systemPad: () => rpc("virtualPads", "systemPad"),
     press: (button, action) => rpc("virtualPads", "press", [button, action || "tap"])
   };
+  ctx.surfaces = {
+    available: () => rpc("surfaces", "available"),
+    list: () => rpc("surfaces", "list"),
+    show: (surface, player) => rpc("surfaces", "show", [surface, player == null ? null : yuiPlayerId(player)]),
+    on: (event, handler) => yuiSubscribe("surfaces", event, handler)
+  };
   ctx.wakeLock = {
     request: async (reason) => {
       const held = await rpc("wakeLock", "request", [reason == null ? "" : String(reason)]);
@@ -162,6 +168,24 @@ function yuiExtendContext(ctx) {
       };
     }
   };
+  // Live video stays on the host: ctx.ui.camera draws it there.
+  if (ctx.ui) ctx.ui.camera = (props) => ({ type: "camera", props: props || {}, children: [] });
+  ctx.camera = {
+    available: () => rpc("camera", "available"),
+    open: async (options) => {
+      const held = await rpc("camera", "open", [options == null ? undefined : options]);
+      let stopped = false;
+      const stop = async () => {
+        if (stopped) return;
+        stopped = true;
+        await rpc("camera", "stop", [held.id]).catch(() => {});
+      };
+      disposables.add(() => { stop(); });
+      return { id: held.id, width: held.width, height: held.height, stop };
+    },
+    snapshot: (options) => rpc("camera", "snapshot", [options == null ? undefined : options]),
+    on: (event, handler) => yuiSubscribe("camera", event, handler)
+  };
   ctx.launch = { item: yuiLaunchItem };
   return ctx;
 }
@@ -178,6 +202,8 @@ const virtualPadCalls = new Set(["attach", "detach", "list", "systemPad", "press
 /** Wake locks a sandbox holds, by host ctx and token (the sandbox only sees the token). */
 const sandboxWakeLocks = new WeakMap<YuiContext, Map<string, YuiWakeLock>>();
 let wakeLockTokens = 0;
+/** Camera handles a sandbox holds, by host ctx and id. */
+const sandboxCameraHandles = new WeakMap<YuiContext, Map<string, YuiCameraHandle>>();
 /** One sandbox per host ctx receives controller pushes; a reloaded sandbox replaces it. */
 const sandboxPushes = new WeakMap<ControllersHost, () => void>();
 
@@ -242,6 +268,17 @@ export async function handleSandboxApiCall(
 			ctx.embeds.on(channel, (data) => push("embeds", first, data));
 			return undefined;
 		}
+		case "surfaces.available":
+			return ctx.surfaces.available();
+		case "surfaces.list":
+			return ctx.surfaces.list();
+		case "surfaces.show":
+			return ctx.surfaces.show(first, second ?? null);
+		case "surfaces.subscribe": {
+			if (first !== "status") throw new Error(`YUI_SURFACES: unknown event ${String(first)}`);
+			ctx.surfaces.on("status", (surfaces) => push("surfaces", "status", surfaces));
+			return undefined;
+		}
 		case "wakeLock.request": {
 			// The host ctx owns the lock, so it is released when the app
 			// closes even if the sandbox never says so.
@@ -262,6 +299,36 @@ export async function handleSandboxApiCall(
 				held?.delete(first);
 				await lock.release();
 			}
+			return undefined;
+		}
+		case "camera.available":
+			return ctx.camera.available();
+		case "camera.open": {
+			// The host ctx owns the handle, so the camera goes off when the
+			// app closes even if the sandbox never says so.
+			const handle = await ctx.camera.open(first ?? undefined);
+			let held = sandboxCameraHandles.get(ctx);
+			if (!held) {
+				held = new Map();
+				sandboxCameraHandles.set(ctx, held);
+			}
+			held.set(handle.id, handle);
+			return { id: handle.id, width: handle.width, height: handle.height };
+		}
+		case "camera.stop": {
+			const held = sandboxCameraHandles.get(ctx);
+			const handle = typeof first === "string" ? held?.get(first) : undefined;
+			if (handle) {
+				held?.delete(first);
+				await handle.stop();
+			}
+			return undefined;
+		}
+		case "camera.snapshot":
+			return ctx.camera.snapshot(first ?? undefined);
+		case "camera.subscribe": {
+			if (first !== "state") throw new Error(`YUI_CAMERA: unknown event ${String(first)}`);
+			ctx.camera.on("state", (state) => push("camera", "state", state));
 			return undefined;
 		}
 		case "saves.put":
