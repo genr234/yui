@@ -21,6 +21,7 @@ export type YuiPermission =
 	| "controllers"
 	| "profiles"
 	| "audio.speaker"
+	| "camera"
 	| string;
 
 export type YuiChildren =
@@ -112,6 +113,8 @@ export type YuiContext = {
 	surfaces: YuiSurfacesApi;
 	/** Keep the kiosk awake while nobody touches it (videos, cutscenes). */
 	wakeLock: YuiWakeLockApi;
+	/** The kiosk's own camera (permission `camera`). */
+	camera: YuiCameraApi;
 	/** What the shell opened this app for, e.g. a library title from Jump back in. */
 	launch: { item: YuiLaunchItem | null };
 	log: Console;
@@ -413,7 +416,7 @@ export type YuiControllersApi = {
 	 */
 	haptic(player: YuiPlayerRef | "all", pattern: YuiHapticName | number | number[], options?: { intensity?: number }): Promise<unknown>;
 	sound(player: YuiPlayerRef | "speaker", url: string, options?: { volume?: number }): Promise<unknown>;
-	/** Pad node builders: button, choice, dpad, stick, trackpad, keyboard, list, motion, preset, surface, text, row, column, grid, spacer. */
+	/** Pad node builders: button, choice, dpad, stick, trackpad, keyboard, list, motion, preset, surface, sketch, text, row, column, grid, spacer. */
 	ui: Record<string, (...args: any[]) => YuiPadNode>;
 };
 
@@ -488,6 +491,63 @@ export type YuiSaveEntry = { key: string; size: number; updatedAt: string; queue
  */
 export type YuiWakeLockApi = {
 	request(reason?: string): Promise<YuiWakeLock>;
+};
+
+/** Codes after `YUI_CAMERA: ` in a `ctx.camera` rejection. */
+export type YuiCameraErrorCode = "unsupported" | "blocked" | "not_found" | "busy" | "not_open" | "failed";
+
+export type YuiCameraOptions = {
+	/** Ideal capture size; the camera may give something else (see the handle). Default 640x480. */
+	width?: number;
+	height?: number;
+	/** "user" faces the people at the kiosk, "environment" faces away. Default: the camera's choice. */
+	facing?: "user" | "environment";
+};
+
+export type YuiCameraHandle = {
+	id: string;
+	/** What the camera actually delivers. */
+	width: number;
+	height: number;
+	/** Gives this handle back; the camera turns off when the last one is stopped. Safe to call twice. */
+	stop(): Promise<void>;
+};
+
+export type YuiCameraSnapshot = { dataUrl: string; width: number; height: number };
+
+export type YuiCameraState = {
+	state: "open" | "closed" | "error";
+	width?: number;
+	height?: number;
+	/** With state "error": the camera was lost (unplugged, taken by another program). */
+	error?: YuiCameraErrorCode;
+};
+
+/**
+ * `ctx.camera`: the kiosk's own camera, behind the `camera` permission. The
+ * platform draws a "Camera on" badge over everything for as long as it runs,
+ * and turns it off when the app closes. Pictures never leave the kiosk unless
+ * the app sends them somewhere; the platform uploads nothing.
+ *
+ * Live video does not cross into the app. Show it with
+ * `ctx.ui.camera({ mirror?, fit?: "cover" | "contain", width?, height?, radius? })`,
+ * a preview of the open camera (a placeholder while it is closed), and take
+ * pictures with `snapshot`.
+ */
+export type YuiCameraApi = {
+	/** Whether this kiosk has a camera the page can use. Does not turn it on. */
+	available(): Promise<boolean>;
+	/**
+	 * Turns the camera on (asking for the permission if needed). Rejects with
+	 * `YUI_CAMERA: blocked | not_found | busy | unsupported | failed`.
+	 */
+	open(options?: YuiCameraOptions): Promise<YuiCameraHandle>;
+	/**
+	 * A JPEG still of the open camera, scaled down to `maxWidth` (default 640,
+	 * never above 1280, never enlarged). Rejects with `YUI_CAMERA: not_open`.
+	 */
+	snapshot(options?: { maxWidth?: number; quality?: number }): Promise<YuiCameraSnapshot>;
+	on(event: "state", handler: (state: YuiCameraState) => void): () => void;
 };
 
 export type YuiSavesApi = {

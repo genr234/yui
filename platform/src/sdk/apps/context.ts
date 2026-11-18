@@ -13,6 +13,7 @@ import { getLaunchItem } from "./launch-intent";
 import { createControllersHost, registerControllersHost } from "./controllers";
 import { yuiControllersRuntime } from "./controllers-runtime";
 import { createSurfacesHost } from "./surfaces";
+import { createCameraHost } from "./camera";
 import { createProfilesHost, registerProfilesHost } from "./profiles";
 import { createWebHost, listenForEmbeds, registerWebHost } from "./web";
 import { yuiProfilesRuntime } from "./profiles-runtime";
@@ -226,6 +227,10 @@ export function createYuiContext(app: YuiSimpleApp, onRender: () => void): YuiCo
 	disposables.add(() => {
 		void wakeLocks.releaseAll();
 	});
+
+	// ctx.camera: the host owns the stream; it stops when the app closes.
+	const cameraHost = createCameraHost(app, ensurePermission, requireGrantedPermission);
+	disposables.add(() => cameraHost.dispose());
 
 	// ctx.profiles exists only when the manifest declares `profiles`.
 	const profilesHost = isPermissionDeclared(app, "profiles") ? createProfilesHost(app, ensurePermission) : undefined;
@@ -481,6 +486,7 @@ export function createYuiContext(app: YuiSimpleApp, onRender: () => void): YuiCo
 		wakeLock: {
 			request: (reason) => wakeLocks.request(reason),
 		},
+		camera: cameraHost.api,
 		launch: {
 			item: getLaunchItem(app.id),
 		},

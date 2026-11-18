@@ -17,6 +17,7 @@ const allowedPermissions = new Set<YuiPermission>([
 	"profiles",
 	"audio.speaker",
 	"saves",
+	"camera",
 	"assets:game",
 	"assets:runtime",
 	"assets:media",

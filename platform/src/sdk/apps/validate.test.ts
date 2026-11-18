@@ -14,7 +14,7 @@ const arrows = { up: "ArrowUp", down: "ArrowDown", left: "ArrowLeft", right: "Ar
 
 describe("controllers manifest", () => {
 	test("the shipped web games and the sample app validate", async () => {
-		for (const path of ["subway-surfers", "fruit-ninja", "party-quiz"]) {
+		for (const path of ["subway-surfers", "fruit-ninja", "party-quiz", "odd-one-out"]) {
 			const mod = await import(`../../../../apps/${path}/app.yui.js`);
 			expect(() => validateSimpleApp(mod.default)).not.toThrow();
 			expect(mod.default.controllers).toBeDefined();

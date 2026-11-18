@@ -201,6 +201,7 @@ export function yuiControllersRuntime(backend: ControllersBackend): ControllersR
 		list: node("list"),
 		motion: node("motion"),
 		surface: node("surface"),
+		sketch: node("sketch"),
 		preset: (name: string, props?: Record<string, unknown>) => ({ type: "preset", props: { ...(props ?? {}), name } }),
 	};
 

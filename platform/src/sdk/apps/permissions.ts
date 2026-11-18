@@ -76,6 +76,10 @@ const permissionCopy: Record<string, { label: string; description: string }> = {
 		label: "Save files",
 		description: "Keep save files for this app, and for players who allow it, on their Yui account.",
 	},
+	camera: {
+		label: "Camera",
+		description: "See through this kiosk's camera. Pictures stay on the kiosk unless the app sends them somewhere.",
+	},
 	"audio.speaker": {
 		label: "Phone speaker",
 		description: "Play this app's sound, or a program it started, on a player's phone.",

@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from "svelte";
   import AttractScreen from "./components/AttractScreen.svelte";
   import OnScreenKeyboard from "./components/OnScreenKeyboard.svelte";
+  import CameraIndicator from "./components/CameraIndicator.svelte";
   import PadCursor from "./components/PadCursor.svelte";
   import FederatedStoreModal from "./components/FederatedStoreModal.svelte";
   import PermissionCards from "./components/PermissionCards.svelte";
@@ -974,3 +975,4 @@
 />
 
 <PadCursor />
+<CameraIndicator />

@@ -5,6 +5,7 @@ import { platformAssetUrl } from "./assets";
 import appsCss from "./styles/apps.css?inline";
 import attractCss from "./styles/attract.css?inline";
 import baseCss from "./styles/base.css?inline";
+import cameraCss from "./styles/camera.css?inline";
 import dashboardCss from "./styles/dashboard.css?inline";
 import interactionsCss from "./styles/interactions.css?inline";
 import keyboardCss from "./styles/keyboard.css?inline";
@@ -31,6 +32,7 @@ const css = [
 	settingsCss,
 	pluginsCss,
 	yuiAppCss,
+	cameraCss,
 	interactionsCss,
 	padCursorCss,
 	attractCss,

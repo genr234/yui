@@ -59,6 +59,8 @@ func (r *Runtime) injectOnce(ctx context.Context) error {
 		return fmt.Errorf("active page has no debugger websocket")
 	}
 
+	r.ensureCameraGrant(ctx, target)
+
 	conn, _, err := websocket.DefaultDialer.DialContext(ctx, target.WebSocketDebuggerURL, nil)
 	if err != nil {
 		return fmt.Errorf("connect cdp target: %w", err)

@@ -145,6 +145,27 @@ describe("ctx.controllers runtime", () => {
 		expect(() => rt.api.on("nope", () => {})).toThrow();
 	});
 
+	test("a sketch node reaches the phone and its change and submit events reach the app", async () => {
+		const fake = fakeBackend();
+		const rt = yuiControllersRuntime(fake.backend);
+		const seen: any[] = [];
+		rt.api.on("event", (e: any) => seen.push([e.control, e.kind, e.value]));
+		rt.api.layout(() => rt.api.ui.column({ gap: 8 }, [rt.api.ui.sketch({ id: "t1", colors: ["#e63946"], sizes: [4, 8], disabled: false })]));
+		await rt.api.ready();
+		await tick();
+		expect(fake.layouts[0].p1.children[0]).toEqual({
+			type: "sketch",
+			props: { id: "t1", colors: ["#e63946"], sizes: [4, 8], disabled: false },
+		});
+		const batch = { stroke: 1, color: "#e63946", size: 4, points: [[0.1, 0.2, 0], [0.3, 0.4, 33]] };
+		rt.push("input", { player_id: "p1", target: "t1", kind: "change", value: batch });
+		rt.push("input", { player_id: "p1", target: "t1", kind: "submit", value: { stroke: 1 } });
+		expect(seen).toEqual([
+			["t1", "change", batch],
+			["t1", "submit", { stroke: 1 }],
+		]);
+	});
+
 	test("removing the layout function clears the phones' app layouts", async () => {
 		const fake = fakeBackend();
 		const rt = yuiControllersRuntime(fake.backend);
