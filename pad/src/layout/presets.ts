@@ -150,21 +150,34 @@ function gamepad(o: Opts, ctx: PresetContext): Node {
   )
 }
 
+/**
+ * A Wii Remote. Portrait is the remote pointed at the TV, laid out top to
+ * bottom like the real one: d-pad, A, then B (the real B is a trigger on
+ * the back; a phone has none, so it sits right under A, in thumb reach),
+ * − HOME +, and 1 above 2. Sideways is the remote held like a classic pad:
+ * d-pad left, 1 and 2 right. HOME (R1) only shows when the app labels R1:
+ * the pad's own Home bit is Yui's menu.
+ */
 function motionRemote(o: Opts, ctx: PresetContext): Node {
+  const home = o.labels.R1 ? btn(o, 'R1', { shape: 'pill', size: 'small' }) : null
+  const minusHomePlus = (gap: number, props: Record<string, unknown> = {}) =>
+    row([btn(o, 'Select', { shape: 'round', size: 'small' }), home, btn(o, 'Start', { shape: 'round', size: 'small' })], { gap, ...props })
   if (ctx.landscape) {
     // Sideways: the remote's top is the screen's left edge. The d-pad reports
     // directions in the remote's own frame (rotate 90), like the motion axes.
-    return row(
+    return column(
       [
         { type: 'motion', props: { id: `${o.base}.motion`, pointer: false } },
-        column([spacer(), dpad(o, { rotate: 90 }), spacer()], { flex: 1 }),
-        spacer(0.3),
-        row([btn(o, 'West', { shape: 'round', size: 'large' }), btn(o, 'North', { shape: 'round', size: 'large' })], {
-          flex: 1,
-          gap: 20,
-        }),
+        row(
+          [
+            column([spacer(), dpad(o, { rotate: 90 }), spacer()], { flex: 3 }),
+            column([spacer(), minusHomePlus(10), spacer()], { flex: 3 }),
+            row([btn(o, 'West', { shape: 'round', size: 'large' }), btn(o, 'North', { shape: 'round', size: 'large' })], { flex: 3, gap: 16 }),
+          ],
+          { flex: 1, gap: 16 },
+        ),
       ],
-      { flex: 1, gap: 16 },
+      { flex: 1, gap: 8 },
     )
   }
   const aim: Node = ctx.motionReady
@@ -180,12 +193,15 @@ function motionRemote(o: Opts, ctx: PresetContext): Node {
   return column(
     [
       aim,
-      row([dpad(o)], { flex: 1 }),
-      row([btn(o, 'South', { shape: 'round', size: 'large', variant: 'primary' }), btn(o, 'R2', { size: 'large' })], { gap: 12 }),
-      row([btn(o, 'Select', small), btn(o, 'Start', small)], { gap: 40 }),
-      row([btn(o, 'West', { shape: 'round' }), btn(o, 'North', { shape: 'round' })], { gap: 24 }),
+      row([spacer(0.6), dpad(o), spacer(0.6)], { flex: 3 }),
+      row([spacer(), btn(o, 'South', { shape: 'round', size: 'large', variant: 'primary' }), spacer()], { flex: 2 }),
+      row([btn(o, 'R2')], { flex: 1 }),
+      minusHomePlus(18),
+      row([spacer(), column([btn(o, 'West', { shape: 'round', size: 'small' }), btn(o, 'North', { shape: 'round', size: 'small' })], { gap: 8 }), spacer()], {
+        flex: 2,
+      }),
     ],
-    { flex: 1, gap: 14 },
+    { flex: 1, gap: 10 },
   )
 }
 

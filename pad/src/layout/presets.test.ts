@@ -62,9 +62,26 @@ describe('motion-remote preset', () => {
     expect(dpad.props!.rotate).toBeUndefined()
   })
 
-  test('sideways: d-pad (remote frame) + 1 + 2, motion without pointer', () => {
+  test('upright reads top to bottom like a Wii Remote: d-pad, A, B, − +, 1, 2', () => {
+    const n = expandPreset({ name: 'motion-remote', labels }, portrait)
+    const order = collect(n)
+      .filter((x) => x.type === 'dpad' || x.type === 'button')
+      .map((x) => (x.type === 'dpad' ? 'dpad' : String(x.props!.label)))
+    expect(order).toEqual(['dpad', 'A', 'B', '−', '+', '1', '2'])
+  })
+
+  test('HOME shows only when the app labels R1 (the pad Home bit is Yui\'s menu)', () => {
+    const withHome = expandPreset({ name: 'motion-remote', labels: { ...labels, R1: 'HOME' } }, portrait)
+    expect(buttons(withHome).HOME).toBe(5)
+    for (const ctx of [portrait, landscape]) {
+      expect(Object.keys(buttons(expandPreset({ name: 'motion-remote', labels }, ctx)))).not.toContain('R1')
+    }
+    expect(buttons(expandPreset({ name: 'motion-remote', labels: { ...labels, R1: 'HOME' } }, landscape)).HOME).toBe(5)
+  })
+
+  test('sideways: d-pad (remote frame), − +, 1 + 2, motion without pointer', () => {
     const n = expandPreset({ name: 'motion-remote', labels }, landscape)
-    expect(buttons(n)).toEqual({ '1': 2, '2': 3 })
+    expect(buttons(n)).toEqual({ '1': 2, '2': 3, '−': 8, '+': 9 })
     expect(collect(n).find((x) => x.type === 'dpad')!.props!.rotate).toBe(90)
     expect(scanTree(n)).toEqual({ motion: true, pointer: false })
   })

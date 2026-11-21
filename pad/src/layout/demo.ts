@@ -74,7 +74,7 @@ export const demoShell: Node = {
 
 export const demoRemote: Node = {
   type: 'preset',
-  props: { name: 'motion-remote', labels: { South: 'A', R2: 'B', West: '1', North: '2', Select: '−', Start: '+' } },
+  props: { name: 'motion-remote', labels: { South: 'A', R2: 'B', West: '1', North: '2', Select: '−', Start: '+', R1: 'HOME' } },
 }
 
 /** A landscape sample for the pad simulator (`?demo=surface`): a surface between two stick columns. */

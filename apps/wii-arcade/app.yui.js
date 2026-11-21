@@ -634,6 +634,8 @@ const WIIMOTE_BUTTONS = [
 	["Buttons/2", "North"],
 	["Buttons/-", "Select"],
 	["Buttons/+", "Start"],
+	// The pad's own Home (bit 10) opens Yui's menu, so the Wii's HOME rides on R1.
+	["Buttons/Home", "R1"],
 	["D-Pad/Up", "Up"],
 	["D-Pad/Down", "Down"],
 	["D-Pad/Left", "Left"],

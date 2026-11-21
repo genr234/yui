@@ -53,6 +53,8 @@ describe("dolphin config golden files", () => {
 		expect(text).toContain("IMUAccelerometer/Up = `Accel Up`");
 		expect(text).toContain("IMUGyroscope/Yaw Right = `Gyro Yaw Right`");
 		expect(text).toContain("IMUIR/Recenter = `Touch Button`");
+		// The Wii's HOME (the pad's own Home is Yui's menu) is on R1.
+		expect(text).toContain("Buttons/Home = `R1`");
 	});
 
 	test("hotkeys use the system pad, including Connect Wii Remote 1-4", () => {
