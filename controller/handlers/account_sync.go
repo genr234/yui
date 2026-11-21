@@ -819,7 +819,8 @@ func (r *Registry) streamRemoteCommands(ctx context.Context) error {
 		return err
 	}
 	if err := conn.WriteMessage(websocket.TextMessage, subscribe); err != nil {
-		return err
+		// An account switch can close the socket between dial and subscribe.
+		return ended(err)
 	}
 
 	for {

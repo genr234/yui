@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -206,4 +207,45 @@ func mustJSON(t *testing.T, value any) json.RawMessage {
 		t.Fatal(err)
 	}
 	return data
+}
+
+func TestMetadataFromAppSourceIgnoresKeySuffixes(t *testing.T) {
+	source := `const meta = { titleId: info.title_id : "x", padId: "p1" };
+export default {
+  schema: "yui.simple-js.v0",
+  id: "dev.example.real",
+  name: "Real",
+  version: "1.0.0",
+};`
+	meta, err := metadataFromAppSource(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta.ID != "dev.example.real" {
+		t.Fatalf("id = %q, want dev.example.real", meta.ID)
+	}
+}
+
+func TestMetadataFromAppSourceReadsEveryBundledApp(t *testing.T) {
+	entries, err := filepath.Glob(filepath.Join("..", "..", "apps", "*", "app.yui.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) == 0 {
+		t.Skip("no bundled apps found")
+	}
+	for _, entry := range entries {
+		data, err := os.ReadFile(entry)
+		if err != nil {
+			t.Fatal(err)
+		}
+		meta, err := metadataFromAppSource(string(data))
+		if err != nil {
+			t.Errorf("%s: %v", entry, err)
+			continue
+		}
+		if want := "dev.genr." + filepath.Base(filepath.Dir(entry)); meta.ID != want {
+			t.Errorf("%s: id = %q, want %q", entry, meta.ID, want)
+		}
+	}
 }

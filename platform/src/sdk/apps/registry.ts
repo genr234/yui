@@ -1,4 +1,5 @@
 import { webField } from "./web";
+import { stringArrayField, stringField } from "./source-fields";
 import { validateSimpleApp } from "./validate";
 import type { YuiDevApp, YuiSimpleApp } from "./types";
 import { bridge } from "../bridge";
@@ -79,17 +80,6 @@ function normalizeEntry(manifestPath: string, entry: string) {
 	return `${appDirectory(manifestPath)}${entry.replace(/^\.\//, "")}`;
 }
 
-function stringField(source: string, field: string) {
-	const match = source.match(new RegExp(`\\b${field}\\s*:\\s*(["'])([\\s\\S]*?)\\1`));
-	return match?.[2];
-}
-
-function stringArrayField(source: string, field: string) {
-	const match = source.match(new RegExp(`${field}\\s*:\\s*\\[([\\s\\S]*?)\\]`));
-	if (!match) return undefined;
-	return [...match[1].matchAll(/(["'])([\s\S]*?)\1/g)].map((item) => item[2]);
-}
-
 function metadataFromSource(source: string) {
 	const web = webField(source);
 	const app = {
@@ -125,9 +115,17 @@ export async function discoverLocalDevApps(): Promise<YuiDevApp[]> {
 			const entry = normalizeEntry(path, manifest.entry);
 			const source = appModules[entry];
 			if (!source) {
-				throw new Error(`Missing app entry: ${entry}`);
+				console.error(`[yui] skipping ${path}: missing app entry ${entry}`);
+				return undefined;
 			}
-			const app = metadataFromSource(source);
+			let app: ReturnType<typeof metadataFromSource>;
+			try {
+				app = metadataFromSource(source);
+			} catch (error) {
+				// One broken app must not take the whole catalog down with it.
+				console.error(`[yui] skipping ${entry}:`, error);
+				return undefined;
+			}
 
 			return {
 				id: app.id,
@@ -142,7 +140,7 @@ export async function discoverLocalDevApps(): Promise<YuiDevApp[]> {
 		}),
 	);
 
-	localDevAppsCache = apps.sort((a, b) => a.name.localeCompare(b.name));
+	localDevAppsCache = apps.filter((app): app is NonNullable<typeof app> => app !== undefined).sort((a, b) => a.name.localeCompare(b.name));
 	return localDevAppsCache.map(cloneDevApp);
 }
 

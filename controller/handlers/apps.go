@@ -26,20 +26,25 @@ const (
 	maxAppFetchBytes        = 2 * 1024 * 1024
 )
 
+// keyStart keeps a field regex on a real object key: without it `id\s*:`
+// matched `meta.title_id : ""` in Wii U Arcade and read its app id as "".
+// Go's RE2 has no lookbehind, so it consumes the preceding character instead.
+const keyStart = `(?:^|[^\w.$])`
+
 var appMetadataFields = map[string]*regexp.Regexp{
-	"schema":      regexp.MustCompile(`schema\s*:\s*["']([^"']+)["']`),
-	"id":          regexp.MustCompile(`id\s*:\s*["']([^"']+)["']`),
-	"name":        regexp.MustCompile(`name\s*:\s*["']([^"']+)["']`),
-	"version":     regexp.MustCompile(`version\s*:\s*["']([^"']+)["']`),
-	"description": regexp.MustCompile(`description\s*:\s*["']([^"']+)["']`),
-	"author":      regexp.MustCompile(`author\s*:\s*["']([^"']+)["']`),
-	"homepage":    regexp.MustCompile(`homepage\s*:\s*["']([^"']+)["']`),
-	"license":     regexp.MustCompile(`license\s*:\s*["']([^"']+)["']`),
-	"icon":        regexp.MustCompile(`icon\s*:\s*["']([^"']+)["']`),
-	"category":    regexp.MustCompile(`category\s*:\s*["']([^"']+)["']`),
+	"schema":      regexp.MustCompile(keyStart + `schema\s*:\s*["']([^"']+)["']`),
+	"id":          regexp.MustCompile(keyStart + `id\s*:\s*["']([^"']+)["']`),
+	"name":        regexp.MustCompile(keyStart + `name\s*:\s*["']([^"']+)["']`),
+	"version":     regexp.MustCompile(keyStart + `version\s*:\s*["']([^"']+)["']`),
+	"description": regexp.MustCompile(keyStart + `description\s*:\s*["']([^"']+)["']`),
+	"author":      regexp.MustCompile(keyStart + `author\s*:\s*["']([^"']+)["']`),
+	"homepage":    regexp.MustCompile(keyStart + `homepage\s*:\s*["']([^"']+)["']`),
+	"license":     regexp.MustCompile(keyStart + `license\s*:\s*["']([^"']+)["']`),
+	"icon":        regexp.MustCompile(keyStart + `icon\s*:\s*["']([^"']+)["']`),
+	"category":    regexp.MustCompile(keyStart + `category\s*:\s*["']([^"']+)["']`),
 }
 
-var appPermissionsField = regexp.MustCompile(`permissions\s*:\s*\[([\s\S]*?)\]`)
+var appPermissionsField = regexp.MustCompile(keyStart + `permissions\s*:\s*\[([\s\S]*?)\]`)
 var appPermissionItem = regexp.MustCompile(`["']([^"']+)["']`)
 var appIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,}[a-z0-9_-]$`)
 var appHTTPClient = &http.Client{Timeout: 15 * time.Second}
