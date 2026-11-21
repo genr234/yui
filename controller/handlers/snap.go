@@ -54,31 +54,46 @@ func (s snapSource) capture(ctx context.Context) (router.SnapImage, error) {
 	return router.SnapImage{JPEG: shot.JPEG, W: shot.W, H: shot.H}, nil
 }
 
-// nativeWindowState remembers the rect of the placed native window, from the
-// same native.window events the overlay gets (nil when none applies).
+// nativeWindowState remembers the last native.window event (the placed
+// native window's rect, or a nil rect when none applies). Snapshots read the
+// rect; the overlay reads the whole event with `native.window` after a
+// reload or a bridge reconnect, since the event itself is only sent once.
 type nativeWindowState struct {
-	mu   sync.Mutex
-	rect *native.Rect
+	mu sync.Mutex
+	ev *native.WindowEvent
 }
 
 func (s *nativeWindowState) set(ev native.WindowEvent) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.rect = nil
 	if ev.Rect != nil {
 		r := *ev.Rect
-		s.rect = &r
+		ev.Rect = &r
 	}
+	s.ev = &ev
 }
 
 func (s *nativeWindowState) get() *native.Rect {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.rect == nil {
+	ev := s.event()
+	if ev == nil {
 		return nil
 	}
-	r := *s.rect
-	return &r
+	return ev.Rect
+}
+
+// event is a copy of the last event, nil before the first one.
+func (s *nativeWindowState) event() *native.WindowEvent {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.ev == nil {
+		return nil
+	}
+	ev := *s.ev
+	if ev.Rect != nil {
+		r := *ev.Rect
+		ev.Rect = &r
+	}
+	return &ev
 }
 
 // snapGameArea is router.Config.Snap.

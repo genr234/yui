@@ -83,13 +83,25 @@ if (typeof window !== "undefined") {
 	});
 }
 
+/**
+ * The last native window the controller placed, whichever app was open when
+ * it arrived. `native.window` is sent once per placement, so it is kept here
+ * rather than dropped: the app view can mount after the event, or remount
+ * while the game keeps running (leaving the app and coming back), and the
+ * bars must still find it.
+ */
+let lastNative: { appId: string; rect: Rect } | null = null;
+
+function syncNative() {
+	const app = get(activeApp);
+	nativeRect.set(app && lastNative && lastNative.appId === app.id ? lastNative : null);
+}
+
 /** AppHost: the app that is open (null when it closes). */
 export function setBarsApp(app: BarsApp | null) {
 	activeApp.set(app);
-	if (!app) {
-		webRect.set(null);
-		nativeRect.set(null);
-	}
+	if (!app) webRect.set(null);
+	syncNative();
 }
 
 /** WebEmbed: its aspect-fitted frame in viewport CSS px, or null when it goes away. */
@@ -97,12 +109,34 @@ export function reportWebRect(appId: string, rect: Rect | null) {
 	webRect.set(rect && rect.w > 0 && rect.h > 0 ? { appId, rect } : null);
 }
 
-/** Feed a `native.window` event. Ignored unless it is for the open app. */
+/** Feed a `native.window` event (or the `native.window` command's answer). */
 export function applyNativeWindow(win: NativeWindow | null | undefined, innerWidth = window.innerWidth) {
 	if (!win || typeof win.app_id !== "string") return;
-	if (get(activeApp)?.id !== win.app_id) return;
 	const rect = nativeRectToCss(win, innerWidth);
-	nativeRect.set(rect ? { appId: win.app_id, rect } : null);
+	if (rect) lastNative = { appId: win.app_id, rect };
+	else if (lastNative?.appId === win.app_id) lastNative = null;
+	syncNative();
+}
+
+function clearNative(appId?: string) {
+	if (!lastNative || (appId !== undefined && lastNative.appId !== appId)) return;
+	lastNative = null;
+	syncNative();
+}
+
+/**
+ * Asks the controller where the native window is now. Events pushed while the
+ * bridge was down are lost, and the overlay can be (re)injected after a game
+ * started, so this runs on start and on every reconnect.
+ */
+export async function refreshNativeWindow(innerWidth?: number) {
+	try {
+		const win = await bridge.send<NativeWindow | null>("native.window");
+		if (win) applyNativeWindow(win, innerWidth);
+		else clearNative();
+	} catch {
+		// An older controller has no `native.window` command: keep what the events said.
+	}
 }
 
 /** Subscribe to the controller's native events; returns an unsubscribe function. */
@@ -110,13 +144,14 @@ export function watchNativeWindow(): () => void {
 	const offWindow = bridge.on<NativeWindow>("native.window", (data) => applyNativeWindow(data));
 	const offStatus = bridge.on<{ app_id?: string; state?: string }>("native.status", (data) => {
 		const state = data?.state;
-		if (state === "exited" || state === "crashed" || state === "failed" || state === "idle") {
-			if (get(nativeRect)?.appId === data?.app_id) nativeRect.set(null);
-		}
+		if (state === "exited" || state === "crashed" || state === "failed" || state === "idle") clearNative(data?.app_id);
 	});
+	const offOpen = bridge.onOpen(() => void refreshNativeWindow());
+	void refreshNativeWindow();
 	return () => {
 		offWindow();
 		offStatus();
+		offOpen();
 	};
 }
 

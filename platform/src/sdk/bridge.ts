@@ -309,6 +309,7 @@ class DemoBridge {
 				},
 			],
 			"native.status": { state: "idle" },
+			"native.window": null,
 			"storage.get": null,
 			"fs.list": [],
 		};

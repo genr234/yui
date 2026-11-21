@@ -1,11 +1,23 @@
 import { describe, expect, mock, test } from "bun:test";
 
 const listeners = new Map<string, (data: unknown) => void>();
+const openListeners = new Set<() => void>();
+let nativeWindowAnswer: unknown = null;
+let sends = 0;
 mock.module("./bridge", () => ({
 	bridge: {
 		on: (event: string, fn: (data: unknown) => void) => {
 			listeners.set(event, fn);
 			return () => listeners.delete(event);
+		},
+		onOpen: (fn: () => void) => {
+			openListeners.add(fn);
+			return () => openListeners.delete(fn);
+		},
+		send: async (method: string) => {
+			sends += 1;
+			if (method !== "native.window") throw new Error(`unexpected ${method}`);
+			return nativeWindowAnswer;
 		},
 	},
 }));
@@ -49,20 +61,58 @@ describe("native.window", () => {
 		expect(g.nativeRectToCss({ rect: { x: 0, y: 0, w: 10, h: 10 }, screen: { w: 0, h: 0 } }, 540)).toBeNull();
 	});
 
-	test("only the open app's event counts, and fullscreen clears it", () => {
+	const screen = { w: 1080, h: 1920 };
+	const placed = { x: 0, y: 656, w: 1080, h: 608 };
+
+	test("only the open app's window counts, and fullscreen clears it", () => {
 		const stop = g.watchNativeWindow();
-		const screen = { w: 1080, h: 1920 };
-		g.applyNativeWindow({ app_id: "a.b.c", rect: { x: 0, y: 656, w: 1080, h: 608 }, screen }, 540);
-		expect(get(g.gameRect)).toBeNull();
 		g.setBarsApp({ id: "a.b.c", name: "Game" });
-		g.applyNativeWindow({ app_id: "x.y.z", rect: { x: 0, y: 656, w: 1080, h: 608 }, screen }, 540);
+		g.applyNativeWindow({ app_id: "x.y.z", rect: placed, screen }, 540);
 		expect(get(g.gameRect)).toBeNull();
-		g.applyNativeWindow({ app_id: "a.b.c", rect: { x: 0, y: 656, w: 1080, h: 608 }, screen }, 540);
+		g.applyNativeWindow({ app_id: "a.b.c", rect: placed, screen }, 540);
 		expect(get(g.gameRect)).toEqual({ x: 0, y: 328, w: 540, h: 304 });
 		g.applyNativeWindow({ app_id: "a.b.c", rect: null, screen }, 540);
 		expect(get(g.gameRect)).toBeNull();
-		g.applyNativeWindow({ app_id: "a.b.c", rect: { x: 0, y: 656, w: 1080, h: 608 }, screen }, 540);
+		g.applyNativeWindow({ app_id: "a.b.c", rect: placed, screen }, 540);
 		listeners.get("native.status")?.({ app_id: "a.b.c", state: "exited" });
+		expect(get(g.gameRect)).toBeNull();
+		stop();
+		g.setBarsApp(null);
+	});
+
+	test("a window placed before the app view mounts still shows once it does", () => {
+		g.applyNativeWindow({ app_id: "a.b.c", rect: placed, screen }, 540);
+		expect(get(g.gameRect)).toBeNull();
+		g.setBarsApp({ id: "a.b.c", name: "Game" });
+		expect(get(g.gameRect)).toEqual({ x: 0, y: 328, w: 540, h: 304 });
+		g.setBarsApp(null);
+	});
+
+	test("leaving the app and coming back keeps the running game's bars", () => {
+		g.setBarsApp({ id: "a.b.c", name: "Game" });
+		g.applyNativeWindow({ app_id: "a.b.c", rect: placed, screen }, 540);
+		g.setBarsApp(null); // AppHost destroyed while Dolphin keeps running
+		expect(get(g.gameRect)).toBeNull();
+		g.setBarsApp({ id: "a.b.c", name: "Game" });
+		expect(get(g.gameRect)).toEqual({ x: 0, y: 328, w: 540, h: 304 });
+		listeners.get("native.status")?.({ app_id: "a.b.c", state: "exited" });
+		g.setBarsApp(null);
+	});
+
+	test("asks the controller on start and on reconnect, since missed events are gone", async () => {
+		nativeWindowAnswer = { app_id: "a.b.c", rect: placed, screen };
+		g.setBarsApp({ id: "a.b.c", name: "Game" });
+		const before = sends;
+		const stop = g.watchNativeWindow();
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(sends).toBe(before + 1);
+		expect(get(g.gameRect)).not.toBeNull();
+		nativeWindowAnswer = null;
+		for (const fn of openListeners) fn();
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(sends).toBe(before + 2);
 		expect(get(g.gameRect)).toBeNull();
 		stop();
 		g.setBarsApp(null);

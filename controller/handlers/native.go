@@ -23,6 +23,7 @@ func NativeCommands() []Command {
 		NativeLaunchCommand{},
 		NativeStopCommand{},
 		NativeStatusCommand{},
+		NativeWindowCommand{},
 		NativeSavesBackupCommand{},
 	}
 }
@@ -228,6 +229,25 @@ func (NativeStatusCommand) Handle(r *Registry, _ json.RawMessage) (any, error) {
 		return native.Status{State: native.StateIdle}, nil
 	}
 	return mgr.Status(), nil
+}
+
+// NativeWindowCommand returns the last `native.window` event, or null when
+// no native window is placed. The overlay asks on start and on every bridge
+// reconnect: the event is sent once per placement, so a reload or a socket
+// drop during launch would otherwise leave the letterbox bars off for the
+// whole session.
+type NativeWindowCommand struct{}
+
+func (NativeWindowCommand) Name() string { return "native.window" }
+func (NativeWindowCommand) Handle(r *Registry, _ json.RawMessage) (any, error) {
+	ev := r.nativeWin.event()
+	if ev == nil || ev.Rect == nil {
+		return nil, nil
+	}
+	if mgr := r.nativeIfStarted(); mgr == nil || !mgr.Status().Active() {
+		return nil, nil
+	}
+	return ev, nil
 }
 
 // registrySaves adapts the kiosk saves API to native.SaveRemote. Timeouts
