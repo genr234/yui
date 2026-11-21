@@ -13,7 +13,9 @@ permissions:
 jobs:
   publish-server:
     name: Publish Rails server image
-    runs-on: ubuntu-latest
+    # ubuntu-latest (26.04) only has prebuilt Ruby for the newest patch of each
+    # series; 24.04 still has the 3.4.7 that .ruby-version and the image pin.
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Check out repository
