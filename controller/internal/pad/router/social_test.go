@@ -166,3 +166,26 @@ func TestInputButtonsThrottledAndChangedOnly(t *testing.T) {
 		t.Fatalf("release note %+v", n)
 	}
 }
+
+func TestCalibrateStepsReachTheOverlayAndNothingElse(t *testing.T) {
+	h, _ := socialHarness(t)
+	cal := func(id string, v any) {
+		h.sess.fireControl(id, protocol.System{T: "system", Action: "calibrate", Value: v})
+	}
+	cal("1", "aim-center")
+	cal("2", "aim-right")
+	cal("1", "")
+	cal("1", "bogus")   // unknown step: dropped
+	cal("1", 3.0)       // not a string: dropped
+	cal("9", "aim-top") // not a player: dropped
+	got := h.eventsNamed(CalibrateEvent)
+	want := []CalibrateNote{{"1", "aim-center"}, {"2", "aim-right"}, {"1", ""}}
+	if len(got) != len(want) {
+		t.Fatalf("calibrate events %v, want %v", got, want)
+	}
+	for i, w := range want {
+		if got[i].(CalibrateNote) != w {
+			t.Fatalf("event %d = %+v, want %+v", i, got[i], w)
+		}
+	}
+}

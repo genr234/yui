@@ -3,6 +3,7 @@
   import AttractScreen from "./components/AttractScreen.svelte";
   import OnScreenKeyboard from "./components/OnScreenKeyboard.svelte";
   import LetterboxBars from "./components/bars/LetterboxBars.svelte";
+  import CalibrationTargets from "./components/CalibrationTargets.svelte";
   import CameraIndicator from "./components/CameraIndicator.svelte";
   import PadCursor from "./components/PadCursor.svelte";
   import FederatedStoreModal from "./components/FederatedStoreModal.svelte";
@@ -982,5 +983,6 @@
   <LetterboxBars sensitive={authVisible || section === "settings"} />
 {/if}
 
+<CalibrationTargets />
 <PadCursor />
 <CameraIndicator />

@@ -198,6 +198,15 @@ class DemoBridge {
 		} | null;
 		players: Array<Record<string, unknown>>;
 	} = { session: null, players: [] };
+
+	constructor() {
+		// Demo build only: lets a screenshot script push a controller event.
+		if (typeof window !== "undefined") {
+			(window as unknown as { __yuiDemoEmit?: (event: string, data: unknown) => void }).__yuiDemoEmit = (event, data) => {
+				for (const fn of [...(this.listeners.get(event) ?? [])]) fn(data);
+			};
+		}
+	}
 	private wifiTimer?: number;
 
 	/** Demo only: the kiosk hotspot "starts" a moment after the session. */

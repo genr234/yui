@@ -505,6 +505,20 @@
     if (step > calibStep && calibStep >= 0) pressTick()
     calibStep = step
   }
+  // The kiosk draws where to point during the aim steps (a ring, then the
+  // game's right and top edges): tell it which one, or "" when not aiming.
+  let aimSent = ''
+  $: {
+    const step = $motionView.calib?.step ?? ''
+    const aim = step === 'aim-center' || step === 'aim-right' || step === 'aim-top' ? step : ''
+    if (aim !== aimSent) {
+      aimSent = aim
+      send({ t: 'system', action: 'calibrate', value: aim })
+    }
+  }
+  onDestroy(() => {
+    if (aimSent) send({ t: 'system', action: 'calibrate', value: '' })
+  })
   // Outside the reactive flush: setWanted updates motionView, which the
   // statements above read, and a store change mid-flush would not re-run them.
   $: wantMotion(info.motion, info.pointer, info.frame ?? 'remote')

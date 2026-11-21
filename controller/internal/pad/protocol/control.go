@@ -270,7 +270,7 @@ var (
 	textOps       = set("insert", "backspace", "enter")
 	seatResults   = set("pending", "accepted", "declined", "expired", "cancelled", "failed")
 	seatRoles     = set("giver", "recipient")
-	systemActions = set("home", "resume", "quit", "save_state", "load_state", "be_speaker", "volume", "sensitive", "playing", "pokes")
+	systemActions = set("home", "resume", "quit", "save_state", "load_state", "be_speaker", "volume", "sensitive", "playing", "pokes", "calibrate")
 )
 
 func set(v ...string) map[string]bool {

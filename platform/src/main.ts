@@ -5,6 +5,7 @@ import { platformAssetUrl } from "./assets";
 import appsCss from "./styles/apps.css?inline";
 import attractCss from "./styles/attract.css?inline";
 import barsCss from "./styles/bars.css?inline";
+import calibrateCss from "./styles/calibrate.css?inline";
 import baseCss from "./styles/base.css?inline";
 import cameraCss from "./styles/camera.css?inline";
 import dashboardCss from "./styles/dashboard.css?inline";
@@ -38,6 +39,7 @@ const css = [
 	cameraCss,
 	interactionsCss,
 	barsCss,
+	calibrateCss,
 	padCursorCss,
 	attractCss,
 ].join("\n");

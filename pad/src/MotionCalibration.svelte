@@ -7,6 +7,7 @@
   import { createEventDispatcher } from 'svelte'
   import type { MotionView } from './input/motion'
   import type { CalibProblem, CalibStep, CalibView } from './input/calibration'
+  import CalibIllustration from './CalibIllustration.svelte'
 
   export let view: MotionView
 
@@ -18,74 +19,62 @@
     rest: {
       title: 'Hold it flat and still',
       how: [
-        'Stand where you will play.',
-        'Hold the phone flat on your open palm, screen facing up, level like a tray.',
-        'Tuck your elbow against your side and keep as still as you can until the bar fills (3 seconds).',
-        'A table works too, if one is in reach.',
+        'Lay the phone flat on your open palm, screen up, like a tray.',
+        'Tuck your elbow in and keep still until the bar fills (3 s).',
       ],
-      settle: 'Waiting for the phone to be flat and still…',
-      move: 'Waiting for the phone to be flat and still…',
+      settle: 'Hold it flat, screen up…',
+      move: 'Hold it flat, screen up…',
       hold: 'Measuring. Keep still…',
     },
     pitch: {
       title: 'Tip the top up',
       how: [
-        'Start flat on your palm, screen up.',
-        'Tip the top edge (the end with the front camera) up toward the ceiling until the phone stands straight up, screen facing you.',
-        'Hold it there, still, until the bar fills.',
-        "Don't twist it or let it lean to either side on the way.",
+        'From flat, tip the camera end (yellow dot) up until the phone stands straight up, screen facing you.',
+        "Hold it there. Don't twist or lean it.",
       ],
       settle: 'Hold it flat, screen up, to start…',
-      move: 'Tip the top edge up…',
+      move: 'Tip the camera end up…',
       hold: 'Hold it upright. Keep still…',
     },
     roll: {
       title: 'Roll it onto its side',
       how: [
-        'Hold it flat on your palm again, screen up.',
-        'Roll your wrist so one long side goes down toward the floor, until the phone stands on that edge, screen facing sideways.',
-        'Hold it there, still, until the bar fills.',
-        "Keep the top and bottom level, and don't twist it.",
+        'Flat again, then roll your wrist until the phone stands on a long side, screen facing sideways.',
+        'Hold it there. Keep the top and bottom level.',
       ],
       settle: 'Hold it flat, screen up, to start…',
       move: 'Roll one long side down…',
       hold: 'Hold it on its side. Keep still…',
     },
     'aim-center': {
-      title: 'Aim at the middle of the TV',
+      title: 'Aim at the ring on the kiosk',
       how: [
-        'Stay exactly where you will play.',
-        'Hold it like a TV remote: screen facing up, front-camera end pointing at the TV.',
-        'Aim at the exact middle of the TV screen and hold still.',
+        'Stand where you will play, facing the kiosk.',
+        'Hold the phone like a TV remote, camera end toward the kiosk, and point at the glowing ring in the middle of the game.',
       ],
-      settle: 'Aim at the middle of the TV and hold still…',
-      move: 'Aim at the middle of the TV and hold still…',
-      hold: 'Hold still on the middle…',
+      settle: 'Point at the ring on the kiosk…',
+      move: 'Point at the ring on the kiosk…',
+      hold: 'Hold still on the ring…',
     },
     'aim-right': {
       title: 'Aim at the right edge',
-      how: [
-        "Stay where you are. Don't step sideways.",
-        "Turn the phone with your wrist until it aims at the middle of the TV's right edge.",
-        'Hold still on the edge.',
-      ],
-      settle: "Turn to the TV's right edge…",
-      move: "Turn to the TV's right edge…",
-      hold: 'Hold still on the right edge…',
+      how: ["Don't step sideways. Turn your wrist until you point at the glowing bar on the game's right edge."],
+      settle: 'Turn to the glowing right edge…',
+      move: 'Turn to the glowing right edge…',
+      hold: 'Hold still on the edge…',
     },
     'aim-top': {
       title: 'Aim at the top edge',
-      how: ["Still in the same spot, aim at the middle of the TV's top edge.", 'Hold still on the edge.'],
-      settle: "Aim at the middle of the TV's top edge…",
-      move: "Aim at the middle of the TV's top edge…",
-      hold: 'Hold still on the top edge…',
+      how: ["Now point at the glowing bar on the game's top edge (in the middle of the kiosk, not its top)."],
+      settle: 'Point at the glowing top edge…',
+      move: 'Point at the glowing top edge…',
+      hold: 'Hold still on the edge…',
     },
     verify: {
       title: 'Check the aim',
       how: [
-        'Point around the TV. The dot should follow your aim.',
-        "The dot should reach the box's edge when you aim at the TV's edge.",
-        'If it does, aim at the middle of the TV and press Done. If not, start over.',
+        "Point around the kiosk's game. The dot should follow and reach the box's edge at the game's edge.",
+        'If it does, point at the middle and press Done. If not, start over.',
       ],
       settle: '',
       move: '',
@@ -105,9 +94,9 @@
       s === 'pitch'
         ? 'It twisted on the way. Hold it flat again and tip it up slowly and straight.'
         : "That didn't match the first tilt. Hold it flat again and roll it slowly, without twisting.",
-    'not-remote': () => 'Hold it screen-up, like a TV remote, not standing up.',
+    'not-remote': () => 'Hold it screen-up, like a TV remote, camera end toward the kiosk.',
     'wrong-way': () => 'That was down. Aim up, at the top edge.',
-    'too-big': () => "That's past the TV's edge. Aim back at the edge itself.",
+    'too-big': () => "That's past the game's edge. Point at the glowing bar itself.",
   }
 
   $: c = view.calib as CalibView | null
@@ -127,7 +116,7 @@
         : 'This game uses motion. Before you can play, calibrate this phone once. It takes about a minute.'}
     </p>
     <ul class="needs">
-      <li>Stand where you'll play, facing the TV</li>
+      <li>Stand where you'll play, facing the kiosk</li>
       <li>No table needed</li>
     </ul>
     <button class="primary" on:click={() => dispatch('start')}>Start calibration</button>
@@ -148,6 +137,10 @@
     </ol>
 
     <h1>{c.noGyro ? 'No gyroscope' : text.title}</h1>
+
+    {#if c.step !== 'verify'}
+      <CalibIllustration step={c.step} phase={c.phase} angle={c.angle} />
+    {/if}
 
     {#if c.step === 'verify'}
       {#if c.noGyro}

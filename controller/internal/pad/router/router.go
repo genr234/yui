@@ -400,6 +400,10 @@ func (r *Router) onControl(playerID string, msg any) {
 			r.setPokes(playerID, m.Value)
 			return
 		}
+		if m.Action == "calibrate" {
+			r.onCalibrate(playerID, m.Value)
+			return
+		}
 		err = r.stack.System(playerID, m)
 	case protocol.Snap:
 		r.onSnap(playerID)

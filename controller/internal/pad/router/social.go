@@ -18,7 +18,19 @@ const (
 	// InputEvent: the buttons of players whose buttons changed, at most about
 	// 10 Hz. Data is InputNote.
 	InputEvent = "pad.input"
+	// CalibrateEvent: a player's motion calibration is on an aim step (or
+	// left it), so the kiosk can draw where to point. Data is CalibrateNote.
+	CalibrateEvent = "pad.calibrate"
 )
+
+// CalibrateNote is the pad.calibrate payload. Step is "aim-center",
+// "aim-right", "aim-top", or "" when the player is not aiming.
+type CalibrateNote struct {
+	PlayerID string `json:"player_id"`
+	Step     string `json:"step"`
+}
+
+var calibrateSteps = map[string]bool{"": true, "aim-center": true, "aim-right": true, "aim-top": true}
 
 // Limits. Anything over them is dropped silently.
 const (
@@ -124,6 +136,23 @@ func (r *Router) onReact(playerID string, m protocol.React) {
 	s.lastReact[playerID] = now
 	s.mu.Unlock()
 	r.emit(ReactionEvent, Reaction{PlayerID: playerID, Emote: m.Emote})
+}
+
+func (r *Router) onCalibrate(playerID string, value any) {
+	step, ok := value.(string)
+	if value == nil {
+		step, ok = "", true
+	}
+	if !ok || !calibrateSteps[step] {
+		return
+	}
+	r.mu.Lock()
+	_, ready := r.players[playerID]
+	r.mu.Unlock()
+	if !ready {
+		return
+	}
+	r.emit(CalibrateEvent, CalibrateNote{PlayerID: playerID, Step: step})
 }
 
 func (r *Router) onPoke(from string, m protocol.Poke) {
