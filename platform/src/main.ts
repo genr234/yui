@@ -9,6 +9,7 @@ import baseCss from "./styles/base.css?inline";
 import cameraCss from "./styles/camera.css?inline";
 import dashboardCss from "./styles/dashboard.css?inline";
 import interactionsCss from "./styles/interactions.css?inline";
+import joinCss from "./styles/join.css?inline";
 import keyboardCss from "./styles/keyboard.css?inline";
 import overlayPermissionsCss from "./styles/overlay-permissions.css?inline";
 import padCursorCss from "./styles/pad-cursor.css?inline";
@@ -27,6 +28,7 @@ const css = [
 	keyboardCss,
 	shellCss,
 	topbarCss,
+	joinCss,
 	workspaceCss,
 	dashboardCss,
 	appsCss,

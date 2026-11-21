@@ -197,6 +197,14 @@ button.topbar-chip {
 	box-shadow: var(--yui-shadow-overlay);
 	text-align: left;
 	animation: session-pop 160ms var(--yui-ease-out);
+	/* Never taller than the screen: it scrolls, and End stays pinned below. */
+	max-height: calc(100vh - 160px);
+	max-height: calc(100dvh - 160px);
+	max-width: calc(100vw - 24px);
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	-webkit-overflow-scrolling: touch;
+	touch-action: pan-y;
 }
 
 @keyframes session-pop {
@@ -449,6 +457,10 @@ button.topbar-chip {
 }
 
 .session-end {
+	position: sticky;
+	bottom: 0;
+	z-index: 1;
+	box-shadow: 0 -10px 0 var(--yui-surface);
 	min-height: 48px;
 	border: 1px solid var(--yui-line);
 	border-radius: var(--yui-radius-control);
