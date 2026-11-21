@@ -486,7 +486,6 @@
       } else model.release('recenter')
     },
     touch: (points) => touchSender.update(points),
-    startCalibration: () => motion.startCalibration(),
   })
 
   // Motion only counts once calibrated: until then a layout uses its touch fallback.
@@ -552,6 +551,13 @@
   function resume() {
     homeOpen = false
     send({ t: 'system', action: 'resume' })
+  }
+  /** Menu's "Recenter aim": back to the game, pointer re-zeroed, and the game's recenter (bit 17) tapped. */
+  function recenterFromMenu() {
+    resume()
+    motion.recenter()
+    model.hold('recenter', 1 << BIT.Recenter)
+    setTimeout(() => model.release('recenter'), 120)
   }
   function quit() {
     homeOpen = false
@@ -763,6 +769,12 @@
       onQuit={quit}
       {playing}
       onVolume={changeVolume}
+      motion={$motionView.status === 'off' ? null : $motionView}
+      onRecenter={recenterFromMenu}
+      onCalibrate={() => {
+        resume()
+        motion.startCalibration()
+      }}
       vibration={hapticsSupported() ? vibration : null}
       onVibration={changeVibration}
       onSpeaker={(channel) => send(channel ? { t: 'system', action: 'be_speaker', channel } : { t: 'system', action: 'be_speaker' })}

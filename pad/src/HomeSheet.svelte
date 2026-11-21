@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { MotionView } from './input/motion'
   import type { Player, Peer } from '@yui/protocol'
   import { colorHex } from './colors'
   import Avatar from './Avatar.svelte'
@@ -17,6 +18,12 @@
   /** Something (an app or a game) is running on the kiosk, so Quit means something. */
   export let playing = false
   export let onVolume: (v: number) => void
+  /** Set while the game uses motion: its status, for the Motion row. */
+  export let motion: MotionView | null = null
+  /** Re-zero the pointer where the phone points now (closes the menu). */
+  export let onRecenter: () => void = () => {}
+  /** Open the calibration screen (closes the menu). */
+  export let onCalibrate: () => void = () => {}
   /** Take the sound here; with a channel, join the current speaker as that half of a stereo pair. */
   export let onSpeaker: (channel?: 'left' | 'right') => void
   /** Vibration on/off for this phone; null hides the switch (no haptics here). */
@@ -139,6 +146,15 @@
     if (await account(() => onAccountLink(code))) enteringCode = false
   }
 
+  function motionLabel(m: MotionView): string {
+    if (m.status === 'denied') return 'Motion blocked in this browser'
+    if (m.status === 'unsupported') return 'This phone has no motion sensor'
+    if (m.status === 'skipped') return 'Motion skipped: touch controls'
+    if (m.status === 'needs-permission') return 'Motion needs permission'
+    if (!m.calibrated) return 'Motion needs calibrating'
+    return m.gyro ? 'Motion on, aiming with the phone' : 'Motion on (no gyroscope: aim by touch)'
+  }
+
   function quit() {
     if (!confirmQuit) {
       confirmQuit = true
@@ -193,6 +209,23 @@
         Per-feature rows go here (one row per feature, e.g. reactions, snapshot,
         game-specific options). Keep Resume/Close first and Quit game last.
       -->
+      {#if motion}
+        <div class="motion-row">
+          <span class="motion-state">
+            <span class="dot" class:on={motion.status === 'on' && motion.calibrated}></span>
+            {motionLabel(motion)}
+          </span>
+          <div class="motion-actions">
+            {#if motion.status === 'on' && motion.calibrated}
+              <button class="secondary" type="button" on:click={onRecenter}>Recenter aim</button>
+            {/if}
+            {#if motion.status === 'on' || motion.status === 'skipped'}
+              <button class="secondary" type="button" on:click={onCalibrate}>{motion.calibrated ? 'Recalibrate' : 'Calibrate'}</button>
+            {/if}
+          </div>
+        </div>
+      {/if}
+
       {#if player.slot || seat.outgoing || seat.result}
         <SeatGive {spectators} {seat} secondsLeft={seatSeconds} onOffer={onSeatOffer} onCancel={onSeatCancel} onDismissResult={onSeatDismiss} />
       {/if}
@@ -431,6 +464,36 @@
     margin: 0;
     color: var(--kit-red);
     font-weight: 800;
+  }
+  .motion-row {
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+    border-radius: var(--yui-radius-card);
+    background: var(--kit-well);
+    color: var(--ink);
+  }
+  .motion-state {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 800;
+  }
+  .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--kit-panel-line);
+  }
+  .dot.on {
+    background: var(--kit-green);
+  }
+  .motion-actions {
+    display: flex;
+    gap: 10px;
+  }
+  .motion-actions button {
+    flex: 1;
   }
   .big {
     min-height: 72px;

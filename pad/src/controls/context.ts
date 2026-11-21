@@ -14,8 +14,6 @@ export interface PadContext {
   recenter(down: boolean): void
   /** Fingers on a surface (u16 over its video content); sends touch frames. Does nothing while the input channel is closed. */
   touch(points: [TouchPoint, TouchPoint]): void
-  /** Opens the guided calibration screen. */
-  startCalibration(): void
 }
 
 const KEY = Symbol('yui-pad')
