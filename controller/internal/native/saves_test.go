@@ -321,6 +321,25 @@ func (r *testRig) dataDir() string {
 	return filepath.Join(r.root, "data", "account-1", "dev.example.arcade")
 }
 
+// stopAndSettle stops the session and waits until its session-end backup has
+// finished writing, so t.TempDir cleanup doesn't race it.
+func stopAndSettle(t *testing.T, rig *testRig) {
+	t.Helper()
+	_, _ = rig.mgr.Stop("", true)
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		rig.mgr.mu.Lock()
+		ended := rig.mgr.cur == nil
+		rig.mgr.mu.Unlock()
+		if ended {
+			rig.mgr.waitSaves(10 * time.Second)
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("session did not end after Stop")
+}
+
 func waitSavesState(t *testing.T, m *Manager, want string) SaveStatus {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
@@ -373,7 +392,7 @@ func TestLaunchKeepsNewerLocalData(t *testing.T) {
 	if s := rig.mgr.Status().Saves; s == nil || s.State != SavesKeptLocal {
 		t.Fatalf("saves status = %+v", s)
 	}
-	_, _ = rig.mgr.Stop("", true)
+	stopAndSettle(t, rig)
 }
 
 func TestLaunchRestoresIntoEmptyDataDirOnce(t *testing.T) {
@@ -457,7 +476,7 @@ func TestExplicitBackupWhileRunning(t *testing.T) {
 	if st.Saves == nil || st.Saves.State != SavesSaved || remote.uploads != 1 {
 		t.Fatalf("status = %+v uploads=%d", st.Saves, remote.uploads)
 	}
-	_, _ = rig.mgr.Stop("", true)
+	stopAndSettle(t, rig)
 }
 
 func TestBackupWithoutSavesIsAnError(t *testing.T) {
