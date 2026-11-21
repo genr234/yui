@@ -25,8 +25,8 @@ const MIN_SCORE = 6
 let classifier: Promise<Classifier> | null = null
 
 /** Loads the detector once. Rejects when the cascade can't be fetched. */
-export function loadFaceFinder(): Promise<Classifier> {
-  classifier ??= fetch(cascadeUrl)
+export function loadFaceFinder(resolveUrl: (url: string) => string = (url) => url): Promise<Classifier> {
+  classifier ??= fetch(resolveUrl(cascadeUrl))
     .then((res) => {
       if (!res.ok) throw new Error(`cascade ${res.status}`)
       return res.arrayBuffer()
@@ -50,21 +50,25 @@ export function toGray(rgba: Uint8ClampedArray, width: number, height: number): 
 
 /** The biggest confident face in a gray image, or null. */
 export function findFace(image: GrayImage, classify: Classifier): Face | null {
+  return findFaces(image, classify, 0.25).reduce<Face | null>(
+    (best, face) => !best || face.size > best.size ? face : best, null,
+  )
+}
+
+export function findFaces(image: GrayImage, classify: Classifier, minShare: number): Face[] {
   const edge = Math.min(image.nrows, image.ncols)
   const raw = runCascade(image, classify, {
     shiftfactor: 0.1,
-    minsize: Math.round(edge * 0.25),
+    minsize: Math.round(edge * minShare),
     maxsize: edge,
     scalefactor: 1.1,
   })
-  let best: Face | null = null
-  let bestSize = 0
+  const faces: Face[] = []
   for (const [r, c, s, q] of clusterDetections(raw, 0.2)) {
-    if (q < MIN_SCORE || s <= bestSize) continue
-    bestSize = s
-    best = { x: c / image.ncols, y: r / image.nrows, size: s / edge }
+    if (q < MIN_SCORE) continue
+    faces.push({ x: c / image.ncols, y: r / image.nrows, size: s / edge })
   }
-  return best
+  return faces
 }
 
 /**

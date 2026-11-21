@@ -531,6 +531,9 @@ export type YuiCameraHandle = {
 
 export type YuiCameraSnapshot = { dataUrl: string; width: number; height: number };
 
+/** A face center and box dimensions in shares of the unmirrored camera frame. */
+export type YuiCameraFace = { x: number; y: number; width: number; height: number };
+
 export type YuiCameraState = {
 	state: "open" | "closed" | "error";
 	width?: number;
@@ -564,6 +567,8 @@ export type YuiCameraApi = {
 	 */
 	snapshot(options?: { maxWidth?: number; quality?: number }): Promise<YuiCameraSnapshot>;
 	on(event: "state", handler: (state: YuiCameraState) => void): () => void;
+	/** Local face tracking on the open camera. Null means tracking is unavailable. */
+	on(event: "face", handler: (face: YuiCameraFace | null) => void): () => void;
 };
 
 export type YuiSavesApi = {

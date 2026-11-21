@@ -3,7 +3,7 @@
  * the `camera` permission.
  *
  * The sandboxed app cannot call getUserMedia, so the overlay owns the stream.
- * The app gets handles, JPEG stills (`snapshot`) and a `ctx.ui.camera(...)`
+ * The app gets handles, normalized face positions, JPEG stills (`snapshot`) and a `ctx.ui.camera(...)`
  * preview node that shows the stream on the host side; live video never
  * crosses the sandbox boundary, and nothing here uploads a frame.
  *
@@ -15,6 +15,7 @@
 import type {
 	YuiCameraApi,
 	YuiCameraErrorCode,
+	YuiCameraFace,
 	YuiCameraHandle,
 	YuiCameraOptions,
 	YuiCameraState,
@@ -22,6 +23,8 @@ import type {
 	YuiSimpleApp,
 } from "./types";
 import { isPermissionDeclared } from "./permissions";
+import { platformAssetUrl } from "../../assets";
+import { createFaceLock } from "./face-lock";
 
 type Ensure = (permission: YuiPermission) => Promise<void>;
 
@@ -140,10 +143,12 @@ export function createCameraHost(
 ): CameraHost {
 	const handles = new Set<string>();
 	const listeners = new Set<(state: YuiCameraState) => void>();
+	const faceListeners = new Set<(face: YuiCameraFace | null) => void>();
 	let disposed = false;
 	let starting: Promise<void> | null = null;
 	let counter = 0;
 	let offPermissions: (() => void) | undefined;
+	let stopTracking: (() => void) | undefined;
 
 	const owns = () => live !== null && live.appId === app.id;
 	const emit = (state: YuiCameraState) => {
@@ -156,8 +161,71 @@ export function createCameraHost(
 		}
 	};
 
+	function frameVideo(current: NonNullable<typeof live>) {
+		if (!current.frames) {
+			const video = deps.createVideo();
+			video.muted = true;
+			video.playsInline = true;
+			video.srcObject = current.stream;
+			current.frames = video;
+			void video.play().catch(() => {});
+		}
+		return current.frames;
+	}
+
+	function trackFaces() {
+		if (stopTracking || !live || !owns() || !faceListeners.size) return;
+		const current = live;
+		let stopped = false;
+		let timer: ReturnType<typeof setInterval> | undefined;
+		const publish = (face: YuiCameraFace | null) => {
+			for (const fn of [...faceListeners]) {
+				try { fn(face); } catch (error) { console.error(error); }
+			}
+		};
+		stopTracking = () => {
+			stopped = true;
+			clearInterval(timer);
+			stopTracking = undefined;
+		};
+		void import("../../../../pad/src/face/face").then(async ({ findFaces, loadFaceFinder, toGray }) => {
+			const classifier = await loadFaceFinder(platformAssetUrl);
+			if (stopped || live !== current) return;
+			const video = frameVideo(current);
+			let context: CanvasRenderingContext2D | null = null;
+			let lastFrame = -1;
+			let lastFrameAt = 0;
+			const track = createFaceLock();
+			timer = setInterval(() => {
+				if (video.readyState < 2 || !video.videoWidth || video.currentTime === lastFrame) {
+					if (Date.now() - lastFrameAt > 250) publish(null);
+					return;
+				}
+				lastFrame = video.currentTime;
+				lastFrameAt = Date.now();
+				try {
+					const { width, height } = snapshotSize(video.videoWidth, video.videoHeight, 192);
+					if (context?.canvas.width !== width || context.canvas.height !== height) {
+						context = deps.createCanvas(width, height).getContext("2d", { willReadFrequently: true });
+					}
+					if (!context) throw cameraError("failed");
+					context.drawImage(video, 0, 0, width, height);
+					const gray = toGray(context.getImageData(0, 0, width, height).data, width, height);
+					const faces = findFaces(gray, classifier, 0.18).map(({ x, y, size }) => {
+						const pixels = size * Math.min(width, height);
+						return { x, y, width: pixels / width, height: pixels / height };
+					});
+					publish(track(faces, lastFrameAt));
+				} catch {
+					publish(null);
+				}
+			}, 50);
+		}).catch(() => { if (!stopped) publish(null); });
+	}
+
 	/** Ends the stream (if this app has it) and every handle. */
 	function shutDown(state: YuiCameraState = { state: "closed" }) {
+		stopTracking?.();
 		handles.clear();
 		offPermissions?.();
 		offPermissions = undefined;
@@ -201,9 +269,13 @@ export function createCameraHost(
 		} catch (error) {
 			throw cameraError(cameraErrorCode(error));
 		}
-		if (disposed) {
+		try {
+			if (disposed) throw cameraError("failed");
+			if (live && !owns()) throw cameraError("busy");
+			requireGranted("camera");
+		} catch (error) {
 			for (const track of stream.getTracks()) track.stop();
-			throw cameraError("failed");
+			throw error;
 		}
 		const track = stream.getVideoTracks()[0];
 		const settings = track?.getSettings?.() ?? {};
@@ -219,6 +291,7 @@ export function createCameraHost(
 		});
 		watchPermission();
 		emit({ state: "open", width: live?.width, height: live?.height });
+		trackFaces();
 	}
 
 	const api: YuiCameraApi = {
@@ -263,15 +336,7 @@ export function createCameraHost(
 			requireGranted("camera");
 			if (!owns() || !live || handles.size === 0) throw cameraError("not_open");
 			const current = live;
-			let video = current.frames;
-			if (!video) {
-				video = deps.createVideo();
-				video.muted = true;
-				video.playsInline = true;
-				video.srcObject = current.stream;
-				current.frames = video;
-				void video.play().catch(() => {});
-			}
+			const video = frameVideo(current);
 			await waitForFrame(video);
 			if (live !== current) throw cameraError("not_open");
 			const size = snapshotSize(video.videoWidth, video.videoHeight, options?.maxWidth);
@@ -285,12 +350,22 @@ export function createCameraHost(
 					: 0.8;
 			return { dataUrl: canvas.toDataURL("image/jpeg", quality), width: size.width, height: size.height };
 		},
-		on(event, handler) {
+		on(event: "state" | "face", handler: ((state: YuiCameraState) => void) | ((face: YuiCameraFace | null) => void)) {
 			requireGranted("camera");
-			if (event !== "state") throw new Error(`YUI_CAMERA: unknown event ${String(event)}`);
 			if (disposed) return () => {};
-			listeners.add(handler);
-			return () => listeners.delete(handler);
+			if (event === "face") {
+				const listener = handler as (face: YuiCameraFace | null) => void;
+				faceListeners.add(listener);
+				trackFaces();
+				return () => {
+					faceListeners.delete(listener);
+					if (!faceListeners.size) stopTracking?.();
+				};
+			}
+			if (event !== "state") throw new Error(`YUI_CAMERA: unknown event ${String(event)}`);
+			const listener = handler as (state: YuiCameraState) => void;
+			listeners.add(listener);
+			return () => listeners.delete(listener);
 		},
 	};
 
@@ -300,6 +375,7 @@ export function createCameraHost(
 			disposed = true;
 			shutDown();
 			listeners.clear();
+			faceListeners.clear();
 		},
 	};
 }

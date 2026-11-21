@@ -80,7 +80,7 @@ function normalizeEntry(manifestPath: string, entry: string) {
 }
 
 function stringField(source: string, field: string) {
-	const match = source.match(new RegExp(`${field}\\s*:\\s*(["'])([\\s\\S]*?)\\1`));
+	const match = source.match(new RegExp(`\\b${field}\\s*:\\s*(["'])([\\s\\S]*?)\\1`));
 	return match?.[2];
 }
 

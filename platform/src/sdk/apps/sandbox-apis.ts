@@ -327,8 +327,9 @@ export async function handleSandboxApiCall(
 		case "camera.snapshot":
 			return ctx.camera.snapshot(first ?? undefined);
 		case "camera.subscribe": {
-			if (first !== "state") throw new Error(`YUI_CAMERA: unknown event ${String(first)}`);
-			ctx.camera.on("state", (state) => push("camera", "state", state));
+			if (first === "face") ctx.camera.on("face", (face) => push("camera", "face", face));
+			else if (first === "state") ctx.camera.on("state", (state) => push("camera", "state", state));
+			else throw new Error(`YUI_CAMERA: unknown event ${String(first)}`);
 			return undefined;
 		}
 		case "saves.put":
