@@ -23,6 +23,8 @@ export interface CascadeParams {
   maxsize: number
   /** Grow the window by this factor between passes. */
   scalefactor: number
+  /** Only window centres inside this box (pixels) are tried. Default: the whole image. */
+  region?: { top: number; bottom: number; left: number; right: number }
 }
 
 export type Classifier = (r: number, c: number, s: number, pixels: Uint8Array, ldim: number) => number
@@ -80,8 +82,13 @@ export function runCascade(image: GrayImage, classify: Classifier, params: Casca
   while (scale <= params.maxsize) {
     const step = Math.max(params.shiftfactor * scale, 1) | 0
     const offset = (scale / 2 + 1) | 0
-    for (let r = offset; r <= image.nrows - offset; r += step) {
-      for (let c = offset; c <= image.ncols - offset; c += step) {
+    const reg = params.region
+    const r0 = reg ? Math.max(offset, Math.ceil(reg.top)) : offset
+    const r1 = reg ? Math.min(image.nrows - offset, Math.floor(reg.bottom)) : image.nrows - offset
+    const c0 = reg ? Math.max(offset, Math.ceil(reg.left)) : offset
+    const c1 = reg ? Math.min(image.ncols - offset, Math.floor(reg.right)) : image.ncols - offset
+    for (let r = r0; r <= r1; r += step) {
+      for (let c = c0; c <= c1; c += step) {
         const q = classify(r, c, scale, image.pixels, image.ldim)
         if (q > 0) detections.push([r, c, scale, q])
       }

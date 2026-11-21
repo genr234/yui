@@ -2,7 +2,7 @@ export default {
   schema: "yui.simple-js.v0",
   id: "dev.genr.roaring-knight",
   name: "Deltarune Boss Practice",
-  version: "0.7.0",
+  version: "0.7.1",
   category: "Games",
   description: "Start a Deltarune boss fight directly.",
   permissions: ["assets:runtime", "fullscreen", "controllers", "camera"],
@@ -25,6 +25,8 @@ export default {
     const state = ctx.state({
       ready: false, error: "", fight: "", head: "off", run: 0,
       rehearsal: false, paused: false, sensitivity: "Medium",
+      // Setup feedback: is a face in view, and how much of the hold is done (0–100).
+      seen: false, hold: 0,
     });
     let camera;
     let subscribed = false;
@@ -69,6 +71,7 @@ export default {
       pauseForRecovery();
       neutral = undefined;
       samples = [];
+      setSetup(false, 0);
       previous = undefined;
       state.head = "setup";
       release();
@@ -83,12 +86,19 @@ export default {
       }
     }
 
+    // Only re-render when the setup feedback visibly changes.
+    function setSetup(seen, hold) {
+      if (state.seen !== seen) state.seen = seen;
+      if (state.hold !== hold) state.hold = hold;
+    }
+
     function onFace(face) {
       if (!camera || state.head === "recenter") return;
       const now = Date.now();
       if (!face) {
         if (neutral && now - lastFaceAt < 110) return;
         samples = [];
+        if (!neutral) setSetup(false, 0);
         if (neutral && state.head !== "lost") state.head = "lost";
         if (neutral && now - lastFaceAt >= 450) pauseForRecovery();
         release();
@@ -96,9 +106,10 @@ export default {
       }
 
       if (!neutral) {
-        if (samples.length && faceDistance(face, samples[0]) > 0.12) samples = [];
+        if (samples.length && faceDistance(face, samples[0]) > SETUP_WOBBLE) samples = [];
         samples.push(face);
-        if (samples.length < 12) return;
+        setSetup(true, Math.round((samples.length / SETUP_SAMPLES) * 10) * 10);
+        if (samples.length < SETUP_SAMPLES) return;
         neutral = averageFace(samples);
         pilotReady = true;
       } else if ((previous && faceDistance(face, previous) > 0.65)
@@ -167,6 +178,11 @@ export default {
       state.rehearsal = true;
     }
 
+    function headMessage() {
+      if (state.head !== "setup") return headMessages[state.head];
+      return state.seen ? `Face found. Hold still… ${state.hold}%` : headMessages.searching;
+    }
+
     function headControls() {
       const setup = state.head === "setup" || state.head === "recenter";
       return ctx.ui.column({ gap: 8 }, [
@@ -184,7 +200,7 @@ export default {
             ctx.ui.button({ label: "Practice steering", onClick: openRehearsal }),
           ] : []),
           ...(state.paused ? [ctx.ui.text("Fight paused")] : []),
-          ...(headMessages[state.head] ? [ctx.ui.text(headMessages[state.head])] : []),
+          ...(headMessage() ? [ctx.ui.text(headMessage())] : []),
         ]),
         ...(state.rehearsal ? [ctx.ui.row({ gap: 8, align: "center", wrap: true }, [
           ctx.ui.text(`Sensitivity · ${state.sensitivity}`),
@@ -193,7 +209,8 @@ export default {
             release();
           } })),
         ])] : []),
-        ...(setup ? [ctx.ui.camera({ mirror: true, width: 192, fit: "contain" })] : []),
+        // The preview boxes the face it follows, so the player sees the camera has them.
+        ...(setup || state.head === "lost" ? [ctx.ui.camera({ mirror: true, width: 240, fit: "contain" })] : []),
         ...(camera && state.paused && state.head === "on" ? [
           ctx.ui.row({ gap: 8 }, [ctx.ui.button({ label: "Resume fight", onClick: recover })]),
         ] : []),
@@ -299,6 +316,7 @@ const fights = chapters.flatMap((chapter) => chapter.fights);
 const headMessages = {
   opening: "Opening the kiosk camera…",
   setup: "Face the camera and hold still to center your steering.",
+  searching: "Looking for your face… Stand facing the camera, one or two arm's lengths away, with your face in the light.",
   on: "Head control on. Lean gently to steer the heart.",
   lost: "Face out of view. Look toward the camera.",
   recenter: "Position changed. Recenter to restore steering.",
@@ -323,6 +341,9 @@ function averageFace(samples) {
 }
 
 const sensitivity = { Low: 0.23, Medium: 0.16, High: 0.11 };
+/** Steady readings needed to set the center, and how far (in face sizes) they may wander. */
+const SETUP_SAMPLES = 10;
+const SETUP_WOBBLE = 0.2;
 
 function smooth(target, previous) {
   const weight = Math.abs(target) < Math.abs(previous) || target * previous < 0 ? 0.7 : 0.5;

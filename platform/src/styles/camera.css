@@ -69,3 +69,14 @@
 	font-size: 14px;
 	font-weight: 600;
 }
+
+/* The face being tracked: green while the camera has it. */
+.yui-app-camera-face {
+	position: absolute;
+	box-sizing: border-box;
+	border: 3px solid #27c068;
+	border-radius: 12px;
+	box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35), 0 0 16px rgba(39, 192, 104, 0.7);
+	pointer-events: none;
+	transition: left 80ms linear, top 80ms linear, width 80ms linear, height 80ms linear;
+}

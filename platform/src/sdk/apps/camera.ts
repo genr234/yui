@@ -24,7 +24,6 @@ import type {
 } from "./types";
 import { isPermissionDeclared } from "./permissions";
 import { platformAssetUrl } from "../../assets";
-import { createFaceLock } from "./face-lock";
 
 type Ensure = (permission: YuiPermission) => Promise<void>;
 
@@ -56,6 +55,23 @@ export type LiveCamera = {
 
 let live: (LiveCamera & { frames?: HTMLVideoElement }) | null = null;
 const watchers = new Set<(camera: LiveCamera | null) => void>();
+
+/** The face the tracker follows (frame shares, like YuiCameraFace), for the preview's box. */
+let trackedFace: YuiCameraFace | null = null;
+const faceWatchers = new Set<(face: YuiCameraFace | null) => void>();
+
+/** Calls `fn` now and whenever the tracked face moves, appears or is lost. */
+export function watchTrackedFace(fn: (face: YuiCameraFace | null) => void): () => void {
+	faceWatchers.add(fn);
+	fn(trackedFace);
+	return () => faceWatchers.delete(fn);
+}
+
+function setTrackedFace(face: YuiCameraFace | null) {
+	if (face === trackedFace || (!face && !trackedFace)) return;
+	trackedFace = face;
+	for (const fn of [...faceWatchers]) fn(face);
+}
 
 /** The running camera, or null. */
 export function liveCamera(): LiveCamera | null {
@@ -179,6 +195,7 @@ export function createCameraHost(
 		let stopped = false;
 		let timer: ReturnType<typeof setInterval> | undefined;
 		const publish = (face: YuiCameraFace | null) => {
+			setTrackedFace(face);
 			for (const fn of [...faceListeners]) {
 				try { fn(face); } catch (error) { console.error(error); }
 			}
@@ -187,15 +204,18 @@ export function createCameraHost(
 			stopped = true;
 			clearInterval(timer);
 			stopTracking = undefined;
+			setTrackedFace(null);
 		};
-		void import("../../../../pad/src/face/face").then(async ({ findFaces, loadFaceFinder, toGray }) => {
+		void Promise.all([import("../../../../pad/src/face/face"), import("../../../../pad/src/face/tracker")]).then(async ([{ loadFaceFinder, toGray }, { FaceTracker }]) => {
 			const classifier = await loadFaceFinder(platformAssetUrl);
 			if (stopped || live !== current) return;
 			const video = frameVideo(current);
 			let context: CanvasRenderingContext2D | null = null;
 			let lastFrame = -1;
 			let lastFrameAt = 0;
-			const track = createFaceLock();
+			// Searches densely (dim, backlit, smallish faces), spread over a few
+			// frames; then follows the one face cheaply. See pad/src/face/tracker.ts.
+			const tracker = new FaceTracker(classifier);
 			timer = setInterval(() => {
 				if (video.readyState < 2 || !video.videoWidth || video.currentTime === lastFrame) {
 					if (Date.now() - lastFrameAt > 250) publish(null);
@@ -211,11 +231,13 @@ export function createCameraHost(
 					if (!context) throw cameraError("failed");
 					context.drawImage(video, 0, 0, width, height);
 					const gray = toGray(context.getImageData(0, 0, width, height).data, width, height);
-					const faces = findFaces(gray, classifier, 0.18).map(({ x, y, size }) => {
-						const pixels = size * Math.min(width, height);
-						return { x, y, width: pixels / width, height: pixels / height };
-					});
-					publish(track(faces, lastFrameAt));
+					const face = tracker.update(gray);
+					if (!face) {
+						publish(null);
+						return;
+					}
+					const pixels = face.size * Math.min(width, height);
+					publish({ x: face.x, y: face.y, width: pixels / width, height: pixels / height });
 				} catch {
 					publish(null);
 				}

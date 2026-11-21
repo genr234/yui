@@ -7,7 +7,8 @@
 	 */
 	import { onMount } from "svelte";
 	import CameraOffIcon from "lucide-svelte/icons/camera-off";
-	import { watchCamera, type LiveCamera } from "../../sdk/apps/camera";
+	import { watchCamera, watchTrackedFace, type LiveCamera } from "../../sdk/apps/camera";
+	import type { YuiCameraFace } from "../../sdk/apps/types";
 
 	export let appId = "";
 	export let mirror = false;
@@ -19,7 +20,17 @@
 	let camera: LiveCamera | null = null;
 	let video: HTMLVideoElement | undefined;
 
-	onMount(() => watchCamera((next) => (camera = next && next.appId === appId ? next : null)));
+	// The face being tracked, drawn as a box so the player can see the camera has them.
+	let face: YuiCameraFace | null = null;
+
+	onMount(() => {
+		const offCamera = watchCamera((next) => (camera = next && next.appId === appId ? next : null));
+		const offFace = watchTrackedFace((next) => (face = next));
+		return () => {
+			offCamera();
+			offFace();
+		};
+	});
 
 	// Attach the stream to the video element; detach when it goes away.
 	$: if (video) {
@@ -32,6 +43,9 @@
 
 	const css = (value: string | number) => (typeof value === "number" ? `${value}px` : value);
 	$: ratio = camera ? `${camera.width} / ${camera.height}` : "4 / 3";
+	$: box = face && camera
+		? `left: ${((mirror ? 1 - face.x : face.x) - face.width / 2) * 100}%; top: ${(face.y - face.height / 2) * 100}%; width: ${face.width * 100}%; height: ${face.height * 100}%;`
+		: "";
 	$: frame = `width: ${css(width)}; height: ${css(height)}; border-radius: ${css(radius)}; aspect-ratio: ${ratio};`;
 </script>
 
@@ -45,6 +59,7 @@
 			playsinline
 			autoplay
 		></video>
+		{#if box}<span class="yui-app-camera-face" style={box}></span>{/if}
 	{:else}
 		<div class="yui-app-camera-off">
 			<CameraOffIcon size={28} strokeWidth={2} />
