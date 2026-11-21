@@ -270,7 +270,7 @@ describe('MotionController', () => {
     s.c.startCalibration()
     expect(get(s.c.view).calib?.step).toBe('rest')
     // A phone with no gyro only needs the rest step.
-    for (let i = 0; i <= 2100; i += 20) {
+    for (let i = 0; i <= 3100; i += 20) {
       s.emit(raw({ hasGyro: false }))
       s.tick(20)
     }

@@ -51,9 +51,14 @@ const QUIRKY: Browser = {
 class Phone {
   R: Mat = I
   t = 0
+  /**
+   * `tremor`: deg/s of hand shake while "holding still" (standing, no table).
+   * Three incommensurate sines per axis: zero-mean, and it really turns the phone.
+   */
   constructor(
     private wiz: CalibrationWizard,
     private browser: Browser,
+    private tremor = 0,
   ) {}
 
   private emit(w: Vec3) {
@@ -66,7 +71,22 @@ class Phone {
   }
 
   hold(ms: number) {
-    for (let i = 0; i < ms; i += 20) this.emit([0, 0, 0])
+    for (let i = 0; i < ms; i += 20) {
+      if (!this.tremor) {
+        this.emit([0, 0, 0])
+        continue
+      }
+      const s = this.t / 1000
+      const a = this.tremor
+      const w: Vec3 = [
+        a * Math.sin(2 * Math.PI * 7.3 * s),
+        a * Math.sin(2 * Math.PI * 5.1 * s + 1),
+        a * Math.sin(2 * Math.PI * 9.7 * s + 2),
+      ]
+      const n = Math.hypot(w[0], w[1], w[2])
+      if (n > 0) this.R = mul(this.R, rot([w[0] / n, w[1] / n, w[2] / n], n * 0.02))
+      this.emit(w)
+    }
   }
 
   /** Turns `deg` about a device axis over `ms`. */
@@ -96,10 +116,10 @@ const Y: Vec3 = [0, 1, 0]
 const Z: Vec3 = [0, 0, 1]
 
 /** The whole guided run, done the way the screen asks. */
-function runAll(browser: Browser) {
+function runAll(browser: Browser, tremor = 0) {
   const wiz = new CalibrationWizard()
-  const p = new Phone(wiz, browser)
-  p.hold(2200) // rest on the table
+  const p = new Phone(wiz, browser, tremor)
+  p.hold(3200) // flat in the palm (or on a table)
   expect(wiz.step).toBe('pitch')
   p.hold(500)
   p.turnBody(X, 90) // top edge up to standing
@@ -137,21 +157,31 @@ describe('guided calibration', () => {
   ] as const) {
     test(`${name}: measures pitch, yaw and roll exactly`, () => {
       const { cal } = runAll(browser)
-      expect(cal.version).toBe(2)
-      // pitch = about x, yaw = about z, roll = about y, in deg/s
-      const f = readBack(cal, browser, [30, 50, -70])
-      expect(f.gyro[0]).toBeCloseTo(30, 0)
-      expect(f.gyro[1]).toBeCloseTo(-70, 0)
-      expect(f.gyro[2]).toBeCloseTo(50, 0)
-      expect(f.accel[2]).toBeCloseTo(1, 2)
-      // Rest reads zero: the drift is gone.
-      const still = readBack(cal, browser, [0, 0, 0])
-      for (const v of still.gyro) expect(Math.abs(v)).toBeLessThan(0.05)
-      // The TV's edges as this player aimed at them (20° right, 8° up, nose 10° up while turning).
-      expect(cal.pointer!.yaw).toBeGreaterThan(19)
-      expect(cal.pointer!.yaw).toBeLessThan(21)
-      expect(cal.pointer!.pitch).toBeCloseTo(8, 0)
+      expectExact(cal, browser, 0.05)
     })
+
+    test(`${name}: standing, hand-held with tremor, still within a fraction of a degree`, () => {
+      const { cal } = runAll(browser, 2.5)
+      expectExact(cal, browser, 0.4)
+    })
+  }
+
+  function expectExact(cal: Calibration, browser: Browser, driftLimit: number) {
+    expect(cal.version).toBe(2)
+    // pitch = about x, yaw = about z, roll = about y, in deg/s
+    const f = readBack(cal, browser, [30, 50, -70])
+    expect(f.gyro[0]).toBeCloseTo(30, 0)
+    expect(f.gyro[1]).toBeCloseTo(-70, 0)
+    expect(f.gyro[2]).toBeCloseTo(50, 0)
+    expect(f.accel[2]).toBeCloseTo(1, 2)
+    // Rest reads zero: the drift is gone.
+    const still = readBack(cal, browser, [0, 0, 0])
+    for (const v of still.gyro) expect(Math.abs(v)).toBeLessThan(driftLimit)
+    // The TV's edges as this player aimed at them (20° right, 8° up, nose 10° up while turning).
+    expect(cal.pointer!.yaw).toBeGreaterThan(19)
+    expect(cal.pointer!.yaw).toBeLessThan(21)
+    expect(cal.pointer!.pitch).toBeGreaterThan(7)
+    expect(cal.pointer!.pitch).toBeLessThan(9)
   }
 
   test('rest: waits while held in the hand or not flat, says why', () => {
@@ -163,13 +193,13 @@ describe('guided calibration', () => {
     p.turnBody(X, -45, 200)
     p.hold(1000)
     expect(wiz.view().phase).toBe('hold')
-    expect(wiz.view().progress).toBeGreaterThan(0.4)
+    expect(wiz.view().progress).toBeGreaterThan(0.25)
   })
 
   test('pitch: lifting a side edge instead is caught and the step starts over', () => {
     const wiz = new CalibrationWizard()
     const p = new Phone(wiz, W3C)
-    p.hold(2200)
+    p.hold(3200)
     p.hold(500)
     p.turnBody(Y, 80)
     p.hold(1000)
@@ -184,7 +214,7 @@ describe('guided calibration', () => {
   test('pitch: stopping short says keep going, and the live angle is shown', () => {
     const wiz = new CalibrationWizard()
     const p = new Phone(wiz, W3C)
-    p.hold(2700)
+    p.hold(3700)
     p.turnBody(X, 40)
     p.hold(1000)
     expect(wiz.view()).toMatchObject({ step: 'pitch', problem: 'further', angle: 40, target: 60 })
@@ -196,7 +226,7 @@ describe('guided calibration', () => {
   test('aim-top: pointing down instead is refused', () => {
     const wiz = new CalibrationWizard()
     const p = new Phone(wiz, W3C)
-    p.hold(2700)
+    p.hold(3700)
     p.turnBody(X, 90)
     p.hold(1000)
     p.turnBody(X, -90)

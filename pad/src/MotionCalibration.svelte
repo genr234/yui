@@ -16,44 +16,45 @@
 
   const STEPS: Record<CalibStep, StepText> = {
     rest: {
-      title: 'Lay it on a table',
+      title: 'Hold it flat and still',
       how: [
-        'Put the phone on a flat table, screen facing up. Not your lap or a sofa.',
-        'Take your hand off it completely.',
-        "Don't touch or bump the table until the bar fills (2 seconds).",
+        'Stand where you will play.',
+        'Hold the phone flat on your open palm, screen facing up, level like a tray.',
+        'Tuck your elbow against your side and keep as still as you can until the bar fills (3 seconds).',
+        'A table works too, if one is in reach.',
       ],
-      settle: 'Waiting for the phone to lie flat and still…',
-      move: 'Waiting for the phone to lie flat and still…',
-      hold: 'Measuring. Keep everything still…',
+      settle: 'Waiting for the phone to be flat and still…',
+      move: 'Waiting for the phone to be flat and still…',
+      hold: 'Measuring. Keep still…',
     },
     pitch: {
-      title: 'Stand it up',
+      title: 'Tip the top up',
       how: [
-        'Start with the phone flat on the table, screen up.',
-        'Keep the bottom edge on the table and lift the top edge (the end with the front camera).',
-        'Keep lifting until the phone stands straight up, then hold it there without moving.',
-        "Don't twist it or let it tip sideways on the way up.",
+        'Start flat on your palm, screen up.',
+        'Tip the top edge (the end with the front camera) up toward the ceiling until the phone stands straight up, screen facing you.',
+        'Hold it there, still, until the bar fills.',
+        "Don't twist it or let it lean to either side on the way.",
       ],
-      settle: 'Lay it flat, screen up, to start…',
-      move: 'Lift the top edge…',
+      settle: 'Hold it flat, screen up, to start…',
+      move: 'Tip the top edge up…',
       hold: 'Hold it upright. Keep still…',
     },
     roll: {
-      title: 'Tip it onto its side',
+      title: 'Roll it onto its side',
       how: [
-        'Lay the phone flat on the table again, screen up.',
-        'Keep one long side edge on the table and lift the other long edge.',
-        'Keep lifting until it stands on that edge, then hold it there without moving.',
-        "Don't twist it, and keep the top and bottom level.",
+        'Hold it flat on your palm again, screen up.',
+        'Roll your wrist so one long side goes down toward the floor, until the phone stands on that edge, screen facing sideways.',
+        'Hold it there, still, until the bar fills.',
+        "Keep the top and bottom level, and don't twist it.",
       ],
-      settle: 'Lay it flat, screen up, to start…',
-      move: 'Lift one long side…',
-      hold: 'Hold it on its edge. Keep still…',
+      settle: 'Hold it flat, screen up, to start…',
+      move: 'Roll one long side down…',
+      hold: 'Hold it on its side. Keep still…',
     },
     'aim-center': {
       title: 'Aim at the middle of the TV',
       how: [
-        'Pick up the phone and stand or sit exactly where you will play.',
+        'Stay exactly where you will play.',
         'Hold it like a TV remote: screen facing up, front-camera end pointing at the TV.',
         'Aim at the exact middle of the TV screen and hold still.',
       ],
@@ -93,17 +94,17 @@
   }
 
   const PROBLEMS: Record<CalibProblem, (step: CalibStep) => string> = {
-    'not-flat': () => "It isn't lying flat. Use a level table, screen up.",
-    moving: () => "Something moved it. Let go and don't touch the table.",
+    'not-flat': () => 'Hold it level, screen up, like a tray.',
+    moving: () => 'Too much movement. Brace your elbow and hold still.',
     further: (s) => (s === 'pitch' ? 'Keep going: stand it all the way up.' : 'Keep going: stand it all the way on its edge.'),
     'wrong-edge': (s) =>
       s === 'pitch'
-        ? 'That tipped a side edge. Lay it flat and lift the top (camera end) instead.'
-        : 'That lifted the top or bottom. Lay it flat and lift a long side instead.',
+        ? 'That rolled it sideways. Hold it flat again and tip the top (camera end) up instead.'
+        : 'That tipped the top or bottom. Hold it flat again and roll a long side down instead.',
     wobble: (s) =>
       s === 'pitch'
-        ? 'It twisted on the way up. Lay it flat and lift it again, slowly and straight.'
-        : "That didn't match the first tilt. Lay it flat and tip it again, slowly, without twisting.",
+        ? 'It twisted on the way. Hold it flat again and tip it up slowly and straight.'
+        : "That didn't match the first tilt. Hold it flat again and roll it slowly, without twisting.",
     'not-remote': () => 'Hold it screen-up, like a TV remote, not standing up.',
     'wrong-way': () => 'That was down. Aim up, at the top edge.',
     'too-big': () => "That's past the TV's edge. Aim back at the edge itself.",
@@ -126,8 +127,8 @@
         : 'This game uses motion. Before you can play, calibrate this phone once. It takes about a minute.'}
     </p>
     <ul class="needs">
-      <li>A flat table within reach</li>
-      <li>The spot you'll play from, facing the TV</li>
+      <li>Stand where you'll play, facing the TV</li>
+      <li>No table needed</li>
     </ul>
     <button class="primary" on:click={() => dispatch('start')}>Start calibration</button>
     {#if view.calibrated}

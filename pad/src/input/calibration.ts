@@ -15,9 +15,11 @@ import {
  * The guided motion calibration. Nothing about the browser's sensors is
  * assumed: each step measures one thing against gravity or against the TV.
  *
- *  1. rest       on a table, screen up, untouched: accel sign and scale, gyro bias
+ *  1. rest       held flat in the palm, screen up, as still as the hand allows (or on a
+ *                 table): accel sign and scale, gyro bias. Tremor is zero-mean, so a
+ *                 3 s average cancels it; only a steady drift survives into the bias.
  *  2. pitch      tilt the top edge up to standing: which channel is pitch, its sign, deg/s scale
- *  3. roll       flat again, tip onto the right or left edge: roll channel, sign, scale (must agree)
+ *  3. roll       flat again, roll onto the right or left edge: roll channel, sign, scale (must agree)
  *                yaw is the channel left over
  *  4. aim-center hold it like a remote at the middle of the TV: the pointer's zero
  *  5. aim-right  turn to the TV's right edge: yaw's sign, and the yaw range for this distance
@@ -62,17 +64,17 @@ export interface CalibView {
   noGyro?: boolean
 }
 
-export const REST_MS = 2000
+export const REST_MS = 3000
 export const POSE_MS = 800
 export const AIM_MS = 1000
 /** Tilt steps must turn at least this far, so a few degrees of error are a few percent. */
 export const TILT_TARGET_DEG = 60
-const REST_FLAT_Z = 0.95 // ~18° from level
+const REST_FLAT_Z = 0.93 // ~22° from level: a palm, not a spirit level
 const SETTLE_FLAT_Z = 0.9
-const REST_DRIFT_DEG = 2
-const POSE_DRIFT_DEG = 2.5
-const REST_GYRO_STD = 0.8 // raw units; an untouched phone on a table is well under
-const REST_ACCEL_STD = 0.03 // of g
+const REST_DRIFT_DEG = 5 // a hand wanders a few degrees over 3 s
+const POSE_DRIFT_DEG = 4
+const REST_GYRO_STD = 5 // raw units; hand tremor is 1–3 deg/s, a moving hand far more
+const REST_ACCEL_STD = 0.06 // of g
 const RAW_MOVING = 15 // raw gyro magnitude that clearly is a hand, before units are known
 const AXIS_MIN = 0.8 // |cos| between the measured turn axis and the expected one
 const DOMINANCE = 2 // the turning channel must integrate at least this much more than the next
