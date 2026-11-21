@@ -1,0 +1,59 @@
+name: Deploy to Nest
+
+# Runs server/bin/deploy-nest from GitHub, so a deploy is one tap in the
+# GitHub app (Actions -> Deploy to Nest -> Run workflow). Manual only.
+#
+# Needs the repository secret NEST_SSH_KEY: a private key whose public half
+# is in ~/.ssh/authorized_keys on the Nest account. Optional repository
+# variable NEST_HOST (default genr234@hackclub.app).
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag or commit to deploy
+        default: main
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-nest
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy the server to Hack Club Nest
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install the deploy key
+        env:
+          NEST_SSH_KEY: ${{ secrets.NEST_SSH_KEY }}
+        run: |
+          if [ -z "$NEST_SSH_KEY" ]; then
+            echo "::error::Add the NEST_SSH_KEY repository secret first (Settings -> Secrets and variables -> Actions)."
+            exit 1
+          fi
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$NEST_SSH_KEY" > ~/.ssh/nest_ed25519
+          chmod 600 ~/.ssh/nest_ed25519
+          # First contact records Nest's host key; later steps reuse it.
+          printf 'Host hackclub.app\n  StrictHostKeyChecking accept-new\n' > ~/.ssh/config
+
+      - name: Deploy
+        env:
+          NEST_HOST: ${{ vars.NEST_HOST || 'genr234@hackclub.app' }}
+        working-directory: server
+        run: NEST_KEY="$HOME/.ssh/nest_ed25519" bin/deploy-nest
+
+      - name: Remove the deploy key
+        if: always()
+        run: rm -f ~/.ssh/nest_ed25519
