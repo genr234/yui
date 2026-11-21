@@ -73,6 +73,8 @@ Rails.application.routes.draw do
       end
     end
   end
+  # The installed pad (PWA) starts here: enter or scan a session code.
+  get "play", to: "play#home", as: :play_home
   scope "play/:code", controller: :play, constraints: { code: /[A-Za-z]{4}/ } do
     get "/", action: :show, as: :play
     get "info", action: :info, as: :play_info

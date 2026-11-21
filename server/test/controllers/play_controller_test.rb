@@ -49,6 +49,22 @@ class PlayControllerTest < ActionDispatch::IntegrationTest
     FileUtils.rm_rf(dir)
   end
 
+  test "GET /play with no code serves the pad, so the installed app has somewhere to open" do
+    dir = Rails.root.join("tmp", "pad-test-#{SecureRandom.hex(4)}")
+    FileUtils.mkdir_p(dir)
+    File.write(dir.join("index.html"), "<!doctype html><title>Pad</title><div id=app></div>")
+
+    with_pad_index(dir.join("index.html")) do
+      get "/play"
+    end
+
+    assert_response :success
+    assert_includes response.body, "<div id=app>"
+    assert_equal "no-cache", response.headers["Cache-Control"]
+  ensure
+    FileUtils.rm_rf(dir)
+  end
+
   test "GET /play/:code is 404 without an active session" do
     @play_session.end!
     get "/play/#{@play_session.code}"

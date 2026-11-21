@@ -4,8 +4,11 @@ import atlasUrl from '@yui/avatar/atlas.png'
 import App from './App.svelte'
 import { followDeviceGravity } from './platform/avatarMotion'
 import { installGestureGuards } from './platform/lockdown'
+import { watchInstall } from './platform/pwa'
 
 installGestureGuards()
+// Before the browser fires beforeinstallprompt, so the Install button can use it.
+watchInstall()
 configureAvatars({ atlasUrl })
 followDeviceGravity()
 

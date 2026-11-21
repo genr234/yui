@@ -29,7 +29,18 @@ class PlayController < ActionController::Base
   content_security_policy(only: :show, if: :sim_request?) do |policy|
     policy.frame_ancestors :self
   end
-  before_action :set_play_session
+  before_action :set_play_session, except: :home
+
+  # /play with no code: where the installed pad (PWA) opens. The same static
+  # pad, which shows its own "join a game" screen when the path has no code.
+  def home
+    response.headers["Cache-Control"] = "no-cache"
+    if pad_index.file?
+      send_file pad_index, type: "text/html", disposition: "inline"
+    else
+      render plain: "Yui Pad hasn't been built yet.", status: :ok
+    end
+  end
 
   def show
     response.headers["Cache-Control"] = "no-cache"

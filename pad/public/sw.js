@@ -1,7 +1,15 @@
 // Yui Pad service worker: caches the app shell; API, cable and sim traffic always hits the network.
 // Registered from /pad/sw.js with scope /play/ (Rails sends Service-Worker-Allowed: /play/).
-const CACHE = "yui-pad-shell-v2";
-const SHELL = ["/pad/", "/pad/manifest.webmanifest", "/pad/icon.svg"];
+const CACHE = "yui-pad-shell-v3";
+const SHELL = [
+	"/pad/",
+	"/pad/manifest.webmanifest",
+	"/pad/icon.svg",
+	"/pad/icon-192.png",
+	"/pad/icon-512.png",
+	"/pad/icon-maskable-512.png",
+	"/pad/apple-touch-icon.png",
+];
 
 // The built index.html names the hashed bundle files; cache those too so the
 // whole shell is available after the first visit.
@@ -52,8 +60,9 @@ self.addEventListener("fetch", (e) => {
     return;
   }
 
-  // Navigations to /play/<CODE>: network first (the session may be gone, and Rails
-  // sends the CSP), the cached shell only when offline.
+  // Navigations to /play/ (the installed app's start page) and /play/<CODE>:
+  // network first (the session may be gone, and Rails sends the CSP), the
+  // cached shell only when offline.
   if (req.mode === "navigate" && url.pathname.startsWith("/play/")) {
     e.respondWith(fetch(req).catch(() => caches.match("/pad/")));
   }

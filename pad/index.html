@@ -6,9 +6,14 @@
     <meta name="theme-color" content="#3d9de0" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Yui Pad" />
+    <!-- Installed on iOS: draw under the status bar (the pad pads itself with safe-area insets). -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <link rel="manifest" href="/pad/manifest.webmanifest" />
     <link rel="icon" href="/pad/icon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="/pad/icon.svg" />
+    <link rel="icon" href="/pad/icon-192.png" type="image/png" sizes="192x192" />
+    <!-- iOS ignores SVG here: it needs an opaque PNG. -->
+    <link rel="apple-touch-icon" href="/pad/apple-touch-icon.png" sizes="180x180" />
     <title>Yui Pad</title>
   </head>
   <body>

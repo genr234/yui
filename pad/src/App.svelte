@@ -7,12 +7,15 @@
   import Avatar from './Avatar.svelte'
   import CreatureBuilder from './CreatureBuilder.svelte'
   import CodeEntry from './CodeEntry.svelte'
+  import InstallHint from './InstallHint.svelte'
+  import PadHome from './PadHome.svelte'
+  import { rememberCode } from './platform/pwa'
   import Icon from './Icon.svelte'
   import { rememberAvatar, startingAvatar } from './avatar'
   import { demoGamepad, demoRemote, demoShell, demoSurface, demoTree } from './layout/demo'
   import { unlockAudio } from './platform/sound'
 
-  type Screen = 'loading' | 'not_found' | 'join' | 'joined' | 'error' | 'kicked' | 'ended' | 'closed'
+  type Screen = 'home' | 'loading' | 'not_found' | 'join' | 'joined' | 'error' | 'kicked' | 'ended' | 'closed'
 
   const demoName = import.meta.env.DEV ? new URLSearchParams(location.search).get('demo') : null
   const demos: Record<string, Node> = { layout: demoTree, gamepad: demoGamepad, remote: demoRemote, shell: demoShell, surface: demoSurface }
@@ -59,12 +62,14 @@
 
   async function load() {
     if (!code) {
-      screen = 'not_found'
+      // /play with no code: the installed app's start page.
+      screen = 'home'
       return
     }
     screen = 'loading'
     try {
       info = await getInfo(code)
+      if (!simSlot) rememberCode(code)
       player = info.player
       accountName = info.account_name ?? null
       screen = player ? 'joined' : 'join'
@@ -140,6 +145,8 @@
       <section class="center">
         <div class="spinner" aria-label="Loading"></div>
       </section>
+    {:else if screen === 'home'}
+      <PadHome go={(path) => location.assign(path)} />
     {:else if screen === 'not_found' || screen === 'ended'}
       <section class="center">
         <div class="glyph kit-panel" aria-hidden="true"><Icon name={screen === 'ended' ? 'checkmark' : 'search'} size={52} /></div>
@@ -149,6 +156,7 @@
             ? 'The kiosk ended this session.'
             : 'This session has ended or the link is wrong. Scan the QR code on the kiosk again.'}
         </p>
+        <button class="secondary" on:click={() => location.assign('/play/')}>Join another game</button>
       </section>
     {:else if screen === 'kicked'}
       <section class="center">
@@ -173,6 +181,7 @@
         <p class="eyebrow">Yui Pad</p>
         <h1>Join {info?.kiosk_name ?? 'the game'}</h1>
         <p class="muted">Pick a name and a colour, and make your creature.</p>
+        <InstallHint />
 
         <div class="card kit-panel">
         <label class="field">
