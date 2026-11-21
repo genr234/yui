@@ -50,18 +50,54 @@ export interface RawMotion {
   interval: number
 }
 
+export type GyroChannel = 'alpha' | 'beta' | 'gamma'
+
+/** Which raw rotationRate channel feeds one remote axis, and with which sign. */
+export interface AxisMap {
+  ch: GyroChannel
+  sign: 1 | -1
+}
+
+/** Calibrations older than this (the one-tap flat-only kind) must be redone. */
+export const CALIBRATION_VERSION = 2
+
 /**
  * Fixes per-device differences. `accelSign` is +1 when the browser reports
  * +1 g on z for a phone lying screen-up (the W3C convention, Android
  * Chrome) and −1 when it reports the opposite (older iOS Safari).
- * `gyroBias` is the rate measured at rest, subtracted from every sample.
+ * `gyroBias` is the raw rate measured at rest for the channel feeding each
+ * remote axis (pitch, yaw, roll), subtracted before mapping.
+ *
+ * Version 2 (the guided calibration in input/calibration.ts) also measures,
+ * instead of assuming: `accelScale` (true g over the reported g), `gyroMap`
+ * (which channel is pitch / yaw / roll and its sign: browsers disagree),
+ * `gyroScale` (raw units → deg/s, 57.3 for a browser reporting rad/s) and
+ * `pointer` (degrees from the middle of this player's TV to its right and
+ * top edges, from where they stand).
  */
 export interface Calibration {
   accelSign: 1 | -1
   gyroBias: Vec3
+  version?: number
+  accelScale?: number
+  gyroMap?: [AxisMap, AxisMap, AxisMap]
+  gyroScale?: number
+  pointer?: { yaw: number; pitch: number }
 }
 
+/** The W3C mapping: pitch = beta (about x), yaw = alpha (about z), roll = gamma (about y). */
+export const DEFAULT_GYRO_MAP: [AxisMap, AxisMap, AxisMap] = [
+  { ch: 'beta', sign: 1 },
+  { ch: 'alpha', sign: 1 },
+  { ch: 'gamma', sign: 1 },
+]
+
 export const DEFAULT_CALIBRATION: Calibration = { accelSign: 1, gyroBias: [0, 0, 0] }
+
+/** A calibration from the guided flow; anything else (missing, or the old one-tap kind) has to be redone. */
+export function isFullCalibration(c: Calibration | null | undefined): boolean {
+  return !!c && (c.version ?? 0) >= CALIBRATION_VERSION && !!c.gyroMap && !!c.pointer
+}
 
 export interface RemoteFrame {
   /** g, proper acceleration: a phone at rest screen-up reads (0, 0, +1). */
@@ -80,10 +116,16 @@ export interface RemoteFrame {
  * see `remoteFlip`).
  */
 export function toRemoteFrame(raw: RawMotion, cal: Calibration, flip = false): RemoteFrame {
-  const s = cal.accelSign / STANDARD_GRAVITY
+  const s = (cal.accelSign * (cal.accelScale ?? 1)) / STANDARD_GRAVITY
   let accel: Vec3 = [raw.ax * s, raw.ay * s, raw.az * s]
+  const map = cal.gyroMap ?? DEFAULT_GYRO_MAP
+  const k = cal.gyroScale ?? 1
   let gyro: Vec3 = raw.hasGyro
-    ? [raw.beta - cal.gyroBias[0], raw.alpha - cal.gyroBias[1], raw.gamma - cal.gyroBias[2]]
+    ? [
+        map[0].sign * k * (raw[map[0].ch] - cal.gyroBias[0]),
+        map[1].sign * k * (raw[map[1].ch] - cal.gyroBias[1]),
+        map[2].sign * k * (raw[map[2].ch] - cal.gyroBias[2]),
+      ]
     : [0, 0, 0]
   if (flip) {
     accel = [-accel[0], -accel[1], accel[2]]
@@ -98,7 +140,8 @@ export function toRemoteFrame(raw: RawMotion, cal: Calibration, flip = false): R
  * screen. The remote frame's units, signs and bias, then the device axes are
  * rotated about z by the screen angle (the phone is turned `angle` degrees
  * counter-clockwise from natural, so the displayed axes are the device axes
- * rotated by `angle`). z is unchanged.
+ * rotated by `angle`). z is unchanged. The gyro turns with the same
+ * rotation, so a sideways phone's yaw stays yaw.
  */
 export function toScreenFrame(raw: RawMotion, cal: Calibration, angle: number): RemoteFrame {
   const f = toRemoteFrame(raw, cal, false)
@@ -115,7 +158,10 @@ export function toScreenFrame(raw: RawMotion, cal: Calibration, angle: number): 
         return v
     }
   }
-  return { accel: rot(f.accel).map(clean) as Vec3, gyro: rot(f.gyro).map(clean) as Vec3 }
+  // gyro is ordered (about x, about z, about y): rotate it as the (x, y, z)
+  // vector it stands for, or yaw and pitch get swapped in landscape.
+  const g = rot([f.gyro[0], f.gyro[2], f.gyro[1]])
+  return { accel: rot(f.accel).map(clean) as Vec3, gyro: [g[0], g[2], g[1]].map(clean) as Vec3 }
 }
 
 const clean = (v: number) => (Number.isFinite(v) ? v + 0 : 0) // also turns -0 into 0
@@ -131,39 +177,43 @@ export function remoteFlip(angle: number): boolean {
   return a === 180 || a === 270
 }
 
-export type CalibrationResult = { ok: true; calibration: Calibration } | { ok: false; reason: 'flat' | 'still' | 'empty' }
-
-/**
- * One-tap calibration: the phone lies flat, screen up, and keeps still for
- * the sampling window. The sign of gravity on z gives `accelSign`; the mean
- * rotation rate is the gyro bias.
- */
-export function calibrate(samples: RawMotion[]): CalibrationResult {
-  if (!samples.length) return { ok: false, reason: 'empty' }
-  const mean = (f: (r: RawMotion) => number) => samples.reduce((a, r) => a + f(r), 0) / samples.length
-  const ax = mean((r) => r.ax)
-  const ay = mean((r) => r.ay)
-  const az = mean((r) => r.az)
-  // Mostly on z: lying flat (within ~35°).
-  if (Math.abs(az) < 0.8 * STANDARD_GRAVITY || Math.hypot(ax, ay) > 0.6 * STANDARD_GRAVITY) return { ok: false, reason: 'flat' }
-  const gyro = samples.filter((r) => r.hasGyro)
-  let bias: Vec3 = [0, 0, 0]
-  if (gyro.length) {
-    const m = (f: (r: RawMotion) => number) => gyro.reduce((a, r) => a + f(r), 0) / gyro.length
-    bias = [m((r) => r.beta), m((r) => r.alpha), m((r) => r.gamma)]
-    if (bias.some((b) => Math.abs(b) > 6)) return { ok: false, reason: 'still' }
-  }
-  return { ok: true, calibration: { accelSign: az >= 0 ? 1 : -1, gyroBias: bias } }
-}
-
 const CAL_KEY = 'yui_pad_motion_cal'
+
+const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+
+/** A stored calibration, checked field by field (null for missing or corrupt). */
+export function parseCalibration(c: unknown): Calibration | null {
+  if (!c || typeof c !== 'object') return null
+  const v = c as Record<string, unknown>
+  if (v.accelSign !== 1 && v.accelSign !== -1) return null
+  if (!Array.isArray(v.gyroBias) || v.gyroBias.length !== 3 || !v.gyroBias.every(isNum)) return null
+  const out: Calibration = { accelSign: v.accelSign, gyroBias: v.gyroBias as Vec3 }
+  if (v.version === undefined) return out
+  if (!isNum(v.version) || !isNum(v.accelScale) || !isNum(v.gyroScale) || v.accelScale <= 0 || v.gyroScale <= 0) return null
+  const map = v.gyroMap
+  if (!Array.isArray(map) || map.length !== 3) return null
+  const chans = new Set<string>()
+  for (const m of map) {
+    if (!m || (m.ch !== 'alpha' && m.ch !== 'beta' && m.ch !== 'gamma') || (m.sign !== 1 && m.sign !== -1)) return null
+    chans.add(m.ch)
+  }
+  if (chans.size !== 3) return null
+  const p = v.pointer as Record<string, unknown> | undefined
+  if (!p || !isNum(p.yaw) || !isNum(p.pitch) || p.yaw <= 0 || p.pitch <= 0) return null
+  return {
+    ...out,
+    version: v.version,
+    accelScale: v.accelScale,
+    gyroScale: v.gyroScale,
+    gyroMap: map.map((m) => ({ ch: m.ch, sign: m.sign })) as [AxisMap, AxisMap, AxisMap],
+    pointer: { yaw: p.yaw, pitch: p.pitch },
+  }
+}
 
 export function loadCalibration(): Calibration | null {
   try {
     const raw = localStorage.getItem(CAL_KEY)
-    if (!raw) return null
-    const c = JSON.parse(raw)
-    if ((c.accelSign === 1 || c.accelSign === -1) && Array.isArray(c.gyroBias) && c.gyroBias.length === 3) return c
+    return raw ? parseCalibration(JSON.parse(raw)) : null
   } catch {
     /* storage unavailable or corrupt */
   }
@@ -180,29 +230,43 @@ export function saveCalibration(c: Calibration) {
 
 // -------------------------------------------------------------- pointer
 
-/** Degrees of yaw / pitch from centre to the screen edge. */
+/** Default degrees of yaw / pitch from centre to the screen edge, until calibration measures this player's. */
 export const POINTER_YAW_RANGE = 25
 export const POINTER_PITCH_RANGE = 15
 
 /**
  * Integrates gyro yaw/pitch into a pointer: −1…1, +x right, +y down, 0 at the
- * direction the phone pointed at the last recenter. The angle is clamped at the
- * edges so swinging past them does not have to be undone.
+ * direction the phone pointed at the last recenter. `yawRange`/`pitchRange`
+ * are the degrees to the screen's edge (calibration measures them from
+ * where the player stands). The angle is clamped at the edges so swinging
+ * past them does not have to be undone.
  */
 export class PointerIntegrator {
   private yaw = 0
   private pitch = 0
 
+  constructor(
+    private yawRange = POINTER_YAW_RANGE,
+    private pitchRange = POINTER_PITCH_RANGE,
+  ) {}
+
+  setRanges(yaw: number, pitch: number) {
+    this.yawRange = yaw > 0 ? yaw : POINTER_YAW_RANGE
+    this.pitchRange = pitch > 0 ? pitch : POINTER_PITCH_RANGE
+    this.yaw = clamp(this.yaw, this.yawRange)
+    this.pitch = clamp(this.pitch, this.pitchRange)
+  }
+
   update(gyro: Vec3, dtMs: number): [number, number] {
     const dt = Math.max(0, Math.min(dtMs, 100)) / 1000
-    this.yaw = clamp(this.yaw + gyro[1] * dt, POINTER_YAW_RANGE)
-    this.pitch = clamp(this.pitch + gyro[0] * dt, POINTER_PITCH_RANGE)
+    this.yaw = clamp(this.yaw + gyro[1] * dt, this.yawRange)
+    this.pitch = clamp(this.pitch + gyro[0] * dt, this.pitchRange)
     return this.value()
   }
 
   value(): [number, number] {
     // Turning right is negative yaw (right-handed about +z) → pointer right.
-    return [clean(-this.yaw / POINTER_YAW_RANGE), clean(-this.pitch / POINTER_PITCH_RANGE)]
+    return [clean(-this.yaw / this.yawRange), clean(-this.pitch / this.pitchRange)]
   }
 
   recenter() {

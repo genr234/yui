@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte'
   import { capture, usePad } from './context'
   import Art from './Art.svelte'
 
@@ -11,9 +10,6 @@
 
   $: pointer = props.pointer === true
   let pressing = new Set<number>()
-  let note = ''
-  let noteTimer: ReturnType<typeof setTimeout> | undefined
-  let cancelled = false
 
   function down(e: PointerEvent) {
     capture(e)
@@ -30,43 +26,10 @@
     if (pressing.size === 0) pad.recenter(false)
   }
 
-  $: calib = $motion.calib
-  $: hint = calib ? (calib.phase === 'flat' ? 'Lay the phone flat, screen up' : calib.phase === 'still' ? 'Keep it still…' : 'Hold still…') : ''
-
-  // Calibrating once motion is on, and announcing the unprompted calibration.
-  let wasCalibrated = $motion.calibrated
-  $: if ($motion.calibrated !== wasCalibrated) {
-    if ($motion.calibrated && !calib) flash('Calibrated')
-    wasCalibrated = $motion.calibrated
-  }
-
-  function flash(text: string) {
-    note = text
-    clearTimeout(noteTimer)
-    noteTimer = setTimeout(() => (note = ''), 2500)
-  }
-
-  async function calibrate() {
-    if (calib) {
-      cancelled = true
-      return pad.cancelCalibration()
-    }
+  function calibrate() {
     pad.sink.feedback()
-    note = ''
-    cancelled = false
-    const r = await pad.calibrate()
-    if (cancelled) return
-    if (r.ok) {
-      pad.sink.feedback()
-      flash('Calibrated')
-    } else flash(r.reason === 'flat' ? "Couldn't see it lying flat" : r.reason === 'still' ? 'It kept moving' : 'No motion data')
+    pad.startCalibration()
   }
-
-  onDestroy(() => {
-    clearTimeout(noteTimer)
-    cancelled = true
-    pad.cancelCalibration()
-  })
 </script>
 
 <div class="chip" {style}>
@@ -80,25 +43,26 @@
         Motion blocked
       {:else if $motion.status === 'unsupported'}
         No motion sensor
+      {:else if $motion.status === 'skipped'}
+        Motion skipped
       {:else}
         Motion off
       {/if}
     </span>
   </span>
-  {#if hint}<span class="note live">{hint}</span>{:else if note}<span class="note">{note}</span>{/if}
-  {#if $motion.status === 'on'}
+  {#if $motion.status === 'on' || $motion.status === 'skipped'}
     <button
       type="button"
       class="mini cal"
-      class:quiet={$motion.calibrated && !calib}
-      class:running={!!calib}
-      style="--p: {calib ? calib.progress : 0}"
-      aria-label={calib ? 'Cancel calibration' : $motion.calibrated ? 'Recalibrate' : 'Calibrate'}
+      class:quiet={$motion.calibrated}
+      aria-label={$motion.calibrated ? 'Recalibrate' : 'Calibrate'}
       on:click={calibrate}
     >
       <span class="plate"><Art name="button_circle_wide" mode="cap" cx={32} glow={false} /></span>
-      <span class="txt">{calib ? 'Cancel' : $motion.calibrated ? 'Recalibrate' : 'Calibrate'}</span>
+      <span class="txt">{$motion.calibrated ? 'Recalibrate' : 'Calibrate'}</span>
     </button>
+  {/if}
+  {#if $motion.status === 'on' && $motion.calibrated}
     <button
       type="button"
       class="mini"
@@ -165,20 +129,9 @@
     background: var(--kit-green);
     box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.2);
   }
-  .note {
-    color: var(--muted);
-    font-size: 0.85rem;
-  }
   .mini {
     touch-action: none;
     transition: transform 50ms var(--yui-ease-out);
-  }
-  .mini:disabled {
-    opacity: 0.6;
-  }
-  .note.live {
-    color: var(--ink);
-    font-weight: 800;
   }
   .cal {
     position: relative;
@@ -186,17 +139,6 @@
   .cal .txt {
     position: relative;
     z-index: 2;
-  }
-  /* Fills left to right while the phone holds still. */
-  .cal.running::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    z-index: 1;
-    width: calc(var(--p) * 100%);
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--kit-green), transparent 45%);
-    transition: width 80ms linear;
   }
   .cal.quiet {
     color: var(--ink-muted);

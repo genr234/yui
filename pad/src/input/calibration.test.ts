@@ -1,0 +1,217 @@
+import { describe, expect, test } from 'bun:test'
+import type { Vec3 } from '@yui/protocol'
+import { CalibrationWizard } from './calibration'
+import { STANDARD_GRAVITY as G, toRemoteFrame, type Calibration, type RawMotion } from '../platform/motion'
+
+/**
+ * A simulated phone: a true orientation R (device → world), turned by the
+ * test, read through a "browser" that may permute, flip and rescale the
+ * rotation-rate channels, invert gravity, and add gyro bias.
+ */
+type Mat = [Vec3, Vec3, Vec3] // rows
+const I: Mat = [
+  [1, 0, 0],
+  [0, 1, 0],
+  [0, 0, 1],
+]
+const mul = (a: Mat, b: Mat): Mat =>
+  a.map((row) => [0, 1, 2].map((j) => row[0] * b[0][j] + row[1] * b[1][j] + row[2] * b[2][j])) as Mat
+const tr = (a: Mat): Mat => [0, 1, 2].map((i) => [a[0][i], a[1][i], a[2][i]]) as Mat
+const apply = (a: Mat, v: Vec3): Vec3 => a.map((row) => row[0] * v[0] + row[1] * v[1] + row[2] * v[2]) as Vec3
+/** Rotation by `deg` about unit axis `u` (Rodrigues). */
+function rot(u: Vec3, deg: number): Mat {
+  const t = (deg * Math.PI) / 180
+  const c = Math.cos(t)
+  const s = Math.sin(t)
+  const [x, y, z] = u
+  return [
+    [c + x * x * (1 - c), x * y * (1 - c) - z * s, x * z * (1 - c) + y * s],
+    [y * x * (1 - c) + z * s, c + y * y * (1 - c), y * z * (1 - c) - x * s],
+    [z * x * (1 - c) - y * s, z * y * (1 - c) + x * s, c + z * z * (1 - c)],
+  ]
+}
+
+interface Browser {
+  /** Device-frame rate (deg/s about x, y, z) → { alpha, beta, gamma } as this browser reports it. */
+  rates(w: Vec3): { alpha: number; beta: number; gamma: number }
+  accelSign: 1 | -1
+  accelGain: number
+}
+
+const W3C: Browser = { rates: (w) => ({ beta: w[0], gamma: w[1], alpha: w[2] }), accelSign: 1, accelGain: 1 }
+
+// Everything wrong at once: channels rotated, rad/s, yaw flipped, gravity inverted and 2% off, plus drift.
+const RAD = Math.PI / 180
+const QUIRKY: Browser = {
+  rates: (w) => ({ alpha: w[0] * RAD + 0.004, beta: w[1] * RAD - 0.002, gamma: -w[2] * RAD + 0.003 }),
+  accelSign: -1,
+  accelGain: 0.98,
+}
+
+class Phone {
+  R: Mat = I
+  t = 0
+  constructor(
+    private wiz: CalibrationWizard,
+    private browser: Browser,
+  ) {}
+
+  private emit(w: Vec3) {
+    const up = apply(tr(this.R), [0, 0, G]) // proper acceleration at rest, device frame
+    const k = this.browser.accelSign * this.browser.accelGain
+    const r = this.browser.rates(w)
+    const raw: RawMotion = { ax: up[0] * k, ay: up[1] * k, az: up[2] * k, ...r, hasGyro: true, interval: 20 }
+    this.wiz.feed(raw, this.t)
+    this.t += 20
+  }
+
+  hold(ms: number) {
+    for (let i = 0; i < ms; i += 20) this.emit([0, 0, 0])
+  }
+
+  /** Turns `deg` about a device axis over `ms`. */
+  turnBody(axis: Vec3, deg: number, ms = 1000) {
+    const n = ms / 20
+    const rate = deg / (ms / 1000)
+    for (let i = 0; i < n; i++) {
+      this.R = mul(this.R, rot(axis, deg / n))
+      this.emit([axis[0] * rate, axis[1] * rate, axis[2] * rate])
+    }
+  }
+
+  /** Turns `deg` about a world axis (a person turning to aim) over `ms`. */
+  turnWorld(axis: Vec3, deg: number, ms = 500) {
+    const n = ms / 20
+    const rate = deg / (ms / 1000)
+    for (let i = 0; i < n; i++) {
+      this.R = mul(rot(axis, deg / n), this.R)
+      const w = apply(tr(this.R), axis)
+      this.emit([w[0] * rate, w[1] * rate, w[2] * rate])
+    }
+  }
+}
+
+const X: Vec3 = [1, 0, 0]
+const Y: Vec3 = [0, 1, 0]
+const Z: Vec3 = [0, 0, 1]
+
+/** The whole guided run, done the way the screen asks. */
+function runAll(browser: Browser) {
+  const wiz = new CalibrationWizard()
+  const p = new Phone(wiz, browser)
+  p.hold(2200) // rest on the table
+  expect(wiz.step).toBe('pitch')
+  p.hold(500)
+  p.turnBody(X, 90) // top edge up to standing
+  p.hold(1000)
+  expect(wiz.step).toBe('roll')
+  p.turnBody(X, -90) // flat again
+  p.hold(600)
+  p.turnBody(Y, 90) // onto the side edge
+  p.hold(1000)
+  expect(wiz.view()).toMatchObject({ step: 'aim-center', phase: 'settle', problem: null })
+  p.turnBody(Y, -90)
+  p.turnBody(X, 10, 300) // held like a remote, a little nose-up, at the middle of the TV
+  p.hold(1200)
+  expect(wiz.step).toBe('aim-right')
+  p.turnWorld(Z, -20) // turn right to the TV's right edge
+  p.hold(1200)
+  expect(wiz.step).toBe('aim-top')
+  p.turnWorld(Z, 20) // back to the middle
+  p.turnBody(X, 8, 300) // and up to the top edge
+  p.hold(1200)
+  expect(wiz.step).toBe('verify')
+  return { wiz, cal: wiz.result()! }
+}
+
+/** What the calibrated frame says for a known device-frame rotation. */
+function readBack(cal: Calibration, browser: Browser, w: Vec3) {
+  const r = browser.rates(w)
+  return toRemoteFrame({ ax: 0, ay: 0, az: G * browser.accelSign * browser.accelGain, ...r, hasGyro: true, interval: 20 }, cal)
+}
+
+describe('guided calibration', () => {
+  for (const [name, browser] of [
+    ['W3C browser', W3C],
+    ['swapped channels, rad/s, flipped yaw, inverted gravity, drift', QUIRKY],
+  ] as const) {
+    test(`${name}: measures pitch, yaw and roll exactly`, () => {
+      const { cal } = runAll(browser)
+      expect(cal.version).toBe(2)
+      // pitch = about x, yaw = about z, roll = about y, in deg/s
+      const f = readBack(cal, browser, [30, 50, -70])
+      expect(f.gyro[0]).toBeCloseTo(30, 0)
+      expect(f.gyro[1]).toBeCloseTo(-70, 0)
+      expect(f.gyro[2]).toBeCloseTo(50, 0)
+      expect(f.accel[2]).toBeCloseTo(1, 2)
+      // Rest reads zero: the drift is gone.
+      const still = readBack(cal, browser, [0, 0, 0])
+      for (const v of still.gyro) expect(Math.abs(v)).toBeLessThan(0.05)
+      // The TV's edges as this player aimed at them (20° right, 8° up, nose 10° up while turning).
+      expect(cal.pointer!.yaw).toBeGreaterThan(19)
+      expect(cal.pointer!.yaw).toBeLessThan(21)
+      expect(cal.pointer!.pitch).toBeCloseTo(8, 0)
+    })
+  }
+
+  test('rest: waits while held in the hand or not flat, says why', () => {
+    const wiz = new CalibrationWizard()
+    const p = new Phone(wiz, W3C)
+    p.turnBody(X, 45, 200)
+    p.hold(3000)
+    expect(wiz.view()).toMatchObject({ step: 'rest', problem: 'not-flat' })
+    p.turnBody(X, -45, 200)
+    p.hold(1000)
+    expect(wiz.view().phase).toBe('hold')
+    expect(wiz.view().progress).toBeGreaterThan(0.4)
+  })
+
+  test('pitch: lifting a side edge instead is caught and the step starts over', () => {
+    const wiz = new CalibrationWizard()
+    const p = new Phone(wiz, W3C)
+    p.hold(2200)
+    p.hold(500)
+    p.turnBody(Y, 80)
+    p.hold(1000)
+    expect(wiz.view()).toMatchObject({ step: 'pitch', problem: 'wrong-edge', phase: 'settle' })
+    p.turnBody(Y, -80)
+    p.hold(600)
+    p.turnBody(X, 90)
+    p.hold(1000)
+    expect(wiz.step).toBe('roll')
+  })
+
+  test('pitch: stopping short says keep going, and the live angle is shown', () => {
+    const wiz = new CalibrationWizard()
+    const p = new Phone(wiz, W3C)
+    p.hold(2700)
+    p.turnBody(X, 40)
+    p.hold(1000)
+    expect(wiz.view()).toMatchObject({ step: 'pitch', problem: 'further', angle: 40, target: 60 })
+    p.turnBody(X, 50)
+    p.hold(1000)
+    expect(wiz.step).toBe('roll')
+  })
+
+  test('aim-top: pointing down instead is refused', () => {
+    const wiz = new CalibrationWizard()
+    const p = new Phone(wiz, W3C)
+    p.hold(2700)
+    p.turnBody(X, 90)
+    p.hold(1000)
+    p.turnBody(X, -90)
+    p.hold(600)
+    p.turnBody(Y, 90)
+    p.hold(1000)
+    p.turnBody(Y, -90)
+    p.turnBody(X, 10, 300)
+    p.hold(1200)
+    p.turnWorld(Z, -20)
+    p.hold(1200)
+    expect(wiz.step).toBe('aim-top')
+    p.turnWorld(Z, 20)
+    p.turnBody(X, -8, 300)
+    p.hold(1200)
+    expect(wiz.view()).toMatchObject({ step: 'aim-top', problem: 'wrong-way' })
+  })
+})

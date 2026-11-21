@@ -18,6 +18,7 @@
   import { enqueueAsk, type ProfileAsk } from './account'
   import Avatar from './Avatar.svelte'
   import SimGyro from './SimGyro.svelte'
+  import MotionCalibration from './MotionCalibration.svelte'
   import { colorHex } from './colors'
   import { rememberAvatar } from './avatar'
   import { cableUrl, forgetAccount, getIce, grantProfile, linkAccount, simSlotFromQuery, updateAvatar, useAccount } from './api'
@@ -31,7 +32,11 @@
   import { CableClient } from './net/cable'
   import { PadSession, type ConnState, type PeerLike } from './net/session'
   import {
+    CALIBRATION_VERSION,
+    DEFAULT_GYRO_MAP,
     DeviceMotionSource,
+    POINTER_PITCH_RANGE,
+    POINTER_YAW_RANGE,
     SimMotionSource,
     loadCalibration,
     motionNeedsPermission,
@@ -455,7 +460,18 @@
     supported: sim || motionSupported(),
     flip: () => remoteFlip(angle),
     angle: () => angle,
-    calibration: sim ? { accelSign: 1, gyroBias: [0, 0, 0] } : loadCalibration(),
+    // The simulator's mouse is exact: it starts out calibrated.
+    calibration: sim
+      ? {
+          version: CALIBRATION_VERSION,
+          accelSign: 1,
+          accelScale: 1,
+          gyroBias: [0, 0, 0],
+          gyroMap: DEFAULT_GYRO_MAP,
+          gyroScale: 1,
+          pointer: { yaw: POINTER_YAW_RANGE, pitch: POINTER_PITCH_RANGE },
+        }
+      : loadCalibration(),
     saveCalibration,
   })
   const motionView = motion.view
@@ -470,17 +486,26 @@
       } else model.release('recenter')
     },
     touch: (points) => touchSender.update(points),
-    calibrate: () => motion.calibrate(),
-    cancelCalibration: () => motion.cancelCalibration(),
+    startCalibration: () => motion.startCalibration(),
   })
 
-  $: motionReady = $motionView.status === 'on' && $motionView.gyro
+  // Motion only counts once calibrated: until then a layout uses its touch fallback.
+  $: motionReady = $motionView.status === 'on' && $motionView.gyro && $motionView.calibrated
   $: shown = tree ? expandTree(tree, { landscape, motionReady }) : null
   $: info = scanTree(shown)
   $: guide = guideEntries(shown)
   // Nothing to explain without buttons: no "?", and a stale sheet closes.
   $: if (!hasButtons(guide)) guideOpen = false
   $: needsGate = wantsMotion(tree) && $motionView.status === 'needs-permission'
+  // Calibration is required before motion reaches the game, and runs full screen.
+  $: needsCalib = !needsGate && ($motionView.calib !== null || (info.motion && $motionView.status === 'on' && !$motionView.calibrated))
+  // A buzz on each step reached, so the player knows without looking.
+  let calibStep = -1
+  $: {
+    const step = $motionView.calib?.index ?? -1
+    if (step > calibStep && calibStep >= 0) pressTick()
+    calibStep = step
+  }
   // Outside the reactive flush: setWanted updates motionView, which the
   // statements above read, and a store change mid-flush would not re-run them.
   $: wantMotion(info.motion, info.pointer, info.frame ?? 'remote')
@@ -650,6 +675,20 @@
         <button class="primary" on:click={allowMotion}>Allow motion</button>
         <button class="secondary" on:click={() => motion.setPermission(false)}>Play without motion</button>
       </section>
+    {:else if needsCalib}
+      <MotionCalibration
+        view={$motionView}
+        on:start={() => {
+          unlockAudio()
+          motion.startCalibration()
+        }}
+        on:skip={() => motion.skip()}
+        on:cancel={() => motion.cancelCalibration()}
+        on:done={() => {
+          pressTick()
+          motion.finishCalibration()
+        }}
+      />
     {:else if shown}
       <div class="layout">
         <LayoutView node={shown} />

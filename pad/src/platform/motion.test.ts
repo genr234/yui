@@ -1,12 +1,16 @@
 import { describe, expect, test } from 'bun:test'
 import { get } from 'svelte/store'
 import {
+  CALIBRATION_VERSION,
   DEFAULT_CALIBRATION,
+  DEFAULT_GYRO_MAP,
   POINTER_YAW_RANGE,
   PointerIntegrator,
   STANDARD_GRAVITY as G,
-  calibrate,
+  isFullCalibration,
+  parseCalibration,
   remoteFlip,
+  type Calibration,
   toRemoteFrame,
   toScreenFrame,
   type MotionListener,
@@ -70,25 +74,48 @@ describe('remote frame', () => {
   })
 })
 
-describe('calibration', () => {
-  test('iOS-style inverted gravity → accelSign -1, bias = mean rate', () => {
-    const r = calibrate([raw({ az: -G, beta: 0.4, alpha: -0.2 }), raw({ az: -G * 0.98, beta: 0.6, alpha: -0.4 })])
-    expect(r.ok).toBe(true)
-    if (!r.ok) return
-    expect(r.calibration.accelSign).toBe(-1)
-    expect(r.calibration.gyroBias[0]).toBeCloseTo(0.5)
-    expect(r.calibration.gyroBias[1]).toBeCloseTo(-0.3)
+const FULL: Calibration = {
+  version: CALIBRATION_VERSION,
+  accelSign: 1,
+  accelScale: 1,
+  gyroBias: [0, 0, 0],
+  gyroMap: DEFAULT_GYRO_MAP,
+  gyroScale: 1,
+  pointer: { yaw: POINTER_YAW_RANGE, pitch: 15 },
+}
+
+describe('calibration v2', () => {
+  test('a measured map, scale and accel scale are applied', () => {
+    const cal: Calibration = {
+      ...FULL,
+      accelSign: -1,
+      accelScale: 0.5,
+      gyroBias: [0.1, 0.2, 0.3],
+      gyroMap: [
+        { ch: 'alpha', sign: 1 },
+        { ch: 'gamma', sign: -1 },
+        { ch: 'beta', sign: 1 },
+      ],
+      gyroScale: 2,
+    }
+    const f = toRemoteFrame(raw({ az: -2 * G, alpha: 5.1, beta: 7.3, gamma: 6.2 }), cal)
+    expect(f.accel[2]).toBeCloseTo(1)
+    expect(f.gyro[0]).toBeCloseTo(10) // pitch from alpha
+    expect(f.gyro[1]).toBeCloseTo(-12) // yaw from gamma, flipped
+    expect(f.gyro[2]).toBeCloseTo(14) // roll from beta
   })
 
-  test('Android-style gravity → +1', () => {
-    const r = calibrate([raw()])
-    expect(r.ok && r.calibration.accelSign).toBe(1)
-  })
-
-  test('rejects a phone that is not flat or not still', () => {
-    expect(calibrate([raw({ ay: G, az: 0 })])).toEqual({ ok: false, reason: 'flat' })
-    expect(calibrate([raw({ alpha: 90 })])).toEqual({ ok: false, reason: 'still' })
-    expect(calibrate([])).toEqual({ ok: false, reason: 'empty' })
+  test('only a guided calibration counts; stored ones are checked field by field', () => {
+    expect(isFullCalibration(FULL)).toBe(true)
+    expect(isFullCalibration({ accelSign: 1, gyroBias: [0, 0, 0] })).toBe(false) // the old one-tap kind
+    expect(isFullCalibration(null)).toBe(false)
+    expect(parseCalibration(JSON.parse(JSON.stringify(FULL)))).toEqual(FULL)
+    expect(parseCalibration({ accelSign: 1, gyroBias: [0, 0, 0] })).toEqual({ accelSign: 1, gyroBias: [0, 0, 0] })
+    const dup = { ...FULL, gyroMap: [DEFAULT_GYRO_MAP[0], DEFAULT_GYRO_MAP[0], DEFAULT_GYRO_MAP[2]] }
+    expect(parseCalibration(dup)).toBeNull()
+    expect(parseCalibration({ ...FULL, gyroScale: -1 })).toBeNull()
+    expect(parseCalibration({ ...FULL, pointer: { yaw: 0, pitch: 10 } })).toBeNull()
+    expect(parseCalibration('junk')).toBeNull()
   })
 })
 
@@ -106,6 +133,15 @@ describe('pointer', () => {
     p.recenter()
     expect(p.value()).toEqual([0, 0])
   })
+
+  test("the calibrated ranges put the screen's edge where the player aimed at it", () => {
+    const p = new PointerIntegrator()
+    p.setRanges(12, 6)
+    for (let i = 0; i < 4; i++) p.update([0, -30, 0], 100) // 12° right
+    for (let i = 0; i < 2; i++) p.update([30, 0, 0], 100) // 6° up
+    expect(p.value()[0]).toBeCloseTo(1)
+    expect(p.value()[1]).toBeCloseTo(-1)
+  })
 })
 
 describe('toScreenFrame', () => {
@@ -117,15 +153,16 @@ describe('toScreenFrame', () => {
   })
   test('90: the displayed top is the device +x, the displayed right is the device -y', () => {
     expect(f(90).accel).toEqual([-2, 1, 3])
-    expect(f(90).gyro).toEqual([-20, 10, 30])
+    // gyro is (about x, about z, about y): about-x and about-y trade places, yaw stays yaw.
+    expect(f(90).gyro).toEqual([-30, 20, 10])
   })
   test('180: turned about z', () => {
     expect(f(180).accel).toEqual([-1, -2, 3])
-    expect(f(180).gyro).toEqual([-10, -20, 30])
+    expect(f(180).gyro).toEqual([-10, 20, -30])
   })
   test('270', () => {
     expect(f(270).accel).toEqual([2, -1, 3])
-    expect(f(270).gyro).toEqual([20, -10, 30])
+    expect(f(270).gyro).toEqual([30, 20, -10])
   })
   test('other angles snap to the nearest quarter; negative angles wrap', () => {
     expect(f(88).accel).toEqual(f(90).accel)
@@ -141,7 +178,14 @@ describe('MotionController frame', () => {
     const model = new InputModel()
     let listener: MotionListener | null = null
     const source = { start: (fn: MotionListener) => (listener = fn), stop: () => (listener = null) }
-    const c = new MotionController(model, source, { needsPermission: false, supported: true, flip: () => false, angle: () => 90, now: () => 0 })
+    const c = new MotionController(model, source, {
+      needsPermission: false,
+      supported: true,
+      flip: () => false,
+      angle: () => 90,
+      now: () => 0,
+      calibration: FULL,
+    })
     c.setWanted(true, false, 'screen')
     listener!(raw({ ax: G, ay: 2 * G }))
     expect(model.frame().accel.slice(0, 2)).toEqual([-2, 1])
@@ -152,13 +196,21 @@ describe('MotionController frame', () => {
 })
 
 describe('MotionController', () => {
-  function setup(needsPermission = false) {
+  function setup(needsPermission = false, calibration: Calibration | null = FULL) {
     const model = new InputModel()
     let listener: MotionListener | null = null
     let t = 0
     const source = { start: (fn: MotionListener) => (listener = fn), stop: () => (listener = null) }
-    const c = new MotionController(model, source, { needsPermission, supported: true, flip: () => false, now: () => t })
-    return { model, c, emit: (r: RawMotion) => listener?.(r), started: () => listener !== null, tick: (ms: number) => (t += ms) }
+    const saved: Calibration[] = []
+    const c = new MotionController(model, source, {
+      needsPermission,
+      supported: true,
+      flip: () => false,
+      now: () => t,
+      calibration,
+      saveCalibration: (cal) => saved.push(cal),
+    })
+    return { model, c, saved, emit: (r: RawMotion) => listener?.(r), started: () => listener !== null, tick: (ms: number) => (t += ms) }
   }
 
   test('streams only while a motion node is present', () => {
@@ -200,62 +252,47 @@ describe('MotionController', () => {
     expect(s.model.frame().px).toBe(0)
   })
 
-  /** Emits `ms` worth of one sample, 20 ms apart. */
-  const hold = (s: ReturnType<typeof setup>, r: RawMotion, ms: number) => {
-    for (let i = 0; i <= ms; i += 20) {
-      s.emit(r)
+  test('an uncalibrated phone sends no motion, and an old one-tap calibration does not count', () => {
+    for (const cal of [null, { accelSign: -1 as const, gyroBias: [0, 0, 0] as [number, number, number] }]) {
+      const s = setup(false, cal)
+      s.c.setWanted(true, true)
+      expect(s.started()).toBe(true)
+      expect(get(s.c.view)).toMatchObject({ status: 'on', calibrated: false })
+      s.emit(raw({ beta: 50, az: -G }))
+      expect(s.model.frame().gyro).toEqual([0, 0, 0])
+      expect(s.model.frame().accel).toEqual([0, 0, 0])
+    }
+  })
+
+  test('the guided calibration runs through the controller, is saved, and only then sends motion', () => {
+    const s = setup(false, null)
+    s.c.setWanted(true, true)
+    s.c.startCalibration()
+    expect(get(s.c.view).calib?.step).toBe('rest')
+    // A phone with no gyro only needs the rest step.
+    for (let i = 0; i <= 2100; i += 20) {
+      s.emit(raw({ hasGyro: false }))
       s.tick(20)
     }
-  }
-
-  test('one tap: waits for the phone to lie flat and still, then calibrates', async () => {
-    const s = setup()
-    s.c.setWanted(true, false)
-    const done = s.c.calibrate()
-    expect(get(s.c.view).calib?.phase).toBe('flat')
-    hold(s, raw({ az: 0, ay: -G }), 1000) // upright in the hand
-    expect(get(s.c.view).calib?.phase).toBe('flat')
-    hold(s, raw({ az: -G, beta: 40 }), 200) // put down, still turning
-    expect(get(s.c.view).calib?.phase).toBe('still')
-    hold(s, raw({ az: -G, beta: 1 }), 300)
-    expect(get(s.c.view).calib?.phase).toBe('hold')
-    expect(get(s.c.view).calib!.progress).toBeGreaterThan(0.3)
-    hold(s, raw({ az: -G, beta: 1 }), 400)
-    const r = await done
-    expect(r.ok).toBe(true)
+    expect(get(s.c.view).calib).toMatchObject({ step: 'verify', noGyro: true })
+    expect(s.model.frame().accel).toEqual([0, 0, 0]) // nothing sent while calibrating
+    expect(s.c.finishCalibration()).toBe(true)
+    expect(s.saved).toHaveLength(1)
     expect(get(s.c.view)).toMatchObject({ calibrated: true, calib: null })
-    s.emit(raw({ az: -G, beta: 1 }))
+    s.emit(raw({ hasGyro: false }))
     expect(s.model.frame().accel[2]).toBeCloseTo(1)
-    expect(s.model.frame().gyro[0]).toBeCloseTo(0)
   })
 
-  test('guided calibration times out with the last problem, and can be cancelled', async () => {
-    const s = setup()
-    s.c.setWanted(true, false)
-    const timedOut = s.c.calibrate(30)
-    hold(s, raw({ az: 0, ay: G }), 100)
-    expect(await timedOut).toEqual({ ok: false, reason: 'flat' })
-    const cancelled = s.c.calibrate()
+  test('skipping falls back to touch; cancelling keeps the old calibration', () => {
+    const s = setup(false, null)
+    s.c.setWanted(true, true)
+    s.c.skip()
+    expect(get(s.c.view).status).toBe('skipped')
+    s.c.startCalibration()
+    expect(get(s.c.view).status).toBe('on')
     s.c.cancelCalibration()
-    expect((await cancelled).ok).toBe(false)
-    expect(get(s.c.view).calib).toBeNull()
-    expect(get(s.c.view).calibrated).toBe(false)
-  })
-
-  test('calibrates unprompted when an uncalibrated phone rests on a table, not in a hand', () => {
-    const s = setup()
-    s.c.setWanted(true, false)
-    // Flat in a hand: tremor keeps it uncalibrated.
-    for (let i = 0; i < 150; i++) {
-      s.emit(raw({ az: -G, beta: i % 2 ? 3 : -3 }))
-      s.tick(20)
-    }
-    expect(get(s.c.view).calibrated).toBe(false)
-    // On a table: steady bias only.
-    hold(s, raw({ az: -G, alpha: 0.4 }), 1600)
-    expect(get(s.c.view).calibrated).toBe(true)
-    s.emit(raw({ az: -G, alpha: 0.4 }))
-    expect(s.model.frame().gyro[1]).toBeCloseTo(0)
+    expect(get(s.c.view)).toMatchObject({ calib: null, calibrated: false })
+    expect(s.c.finishCalibration()).toBe(false)
   })
 
   test('a phone without gyro is reported (touch-aim fallback)', () => {
