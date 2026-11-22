@@ -35,6 +35,8 @@
   let found: Pt[] | null = null
   let streak: Pt[][] = []
   let pausedUntil = 0
+  /** Just after a refused scan: its problem shows until the next try. */
+  let paused = false
   let boxW = 0
   let boxH = 0
 
@@ -91,7 +93,8 @@
     ctx.drawImage(video, 0, 0, w, h)
     const quad = detectScanMarkers(toGray(ctx.getImageData(0, 0, w, h).data, w, h, gray), w, h)
     found = quad
-    if (!quad || performance.now() < pausedUntil) {
+    paused = performance.now() < pausedUntil
+    if (!quad || paused) {
       streak = []
       return
     }
@@ -105,7 +108,10 @@
       streak.reduce((s, q) => s + q[i][1], 0) / streak.length,
     ]) as Pt[]
     streak = []
-    if (onScan(avg, { w, h })) pausedUntil = performance.now() + 1200
+    if (onScan(avg, { w, h })) {
+      pausedUntil = performance.now() + 1200
+      paused = true
+    }
   }
 
   function stop() {
@@ -123,10 +129,13 @@
   $: oy = (boxH - frame.h * cover) / 2
   $: shown = found && cover ? found.map(([x, y]) => [ox + x * cover, oy + y * cover]) : null
   $: progress = streak.length / STEADY
+  // A refused scan's problem shows while it waits to try again, or while nothing is found;
+  // once the squares are held steady again, the progress speaks instead.
+  $: shownProblem = problem && (paused || !found) ? problem : ''
   $: status = error
     ? error
-    : problem
-      ? problem
+    : shownProblem
+      ? shownProblem
       : starting
         ? 'Starting the camera…'
         : found
@@ -150,7 +159,7 @@
       <div class="corners" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
     {/if}
   </div>
-  <p class="status" class:bad={!!error || !!problem} aria-live="polite">{status}</p>
+  <p class="status" class:bad={!!error || !!shownProblem} aria-live="polite">{status}</p>
   <div class="meter" style="--p: {progress}"><span></span></div>
   <button class={error ? 'primary' : 'link'} type="button" on:click={onSkip}>
     {error ? 'Aim at the edges instead' : "Can't scan? Aim at the edges instead"}
@@ -167,10 +176,16 @@
   }
   .view {
     position: relative;
-    /* At most 38vh tall, at most the full width, in the frame's own shape. */
-    width: min(100%, calc(min(38vh, 360px) * var(--ar)));
+    /* At most 32vh tall, at most the full width, in the frame's own shape. */
+    width: min(100%, calc(min(32vh, 340px) * var(--ar)));
     aspect-ratio: var(--ar);
-    border-radius: var(--yui-radius-card);
+    /* A viewfinder in the kit's panel rim, sitting on its lip like the cards. */
+    border: 6px solid var(--kit-panel);
+    border-radius: var(--yui-radius-shell);
+    box-shadow:
+      0 0 0 2px var(--kit-panel-line),
+      0 calc(var(--yui-lip) + 2px) 0 var(--kit-panel-lip),
+      0 14px 30px rgba(10, 50, 90, 0.25);
     overflow: hidden;
     background: #000;
   }
