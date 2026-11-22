@@ -17,10 +17,12 @@ import (
 
 	"kiosk/controller/internal/config"
 	"kiosk/controller/internal/pad/cdp"
+	"kiosk/controller/internal/pad/inputstats"
 	"kiosk/controller/internal/pad/pads"
 	"kiosk/controller/internal/pad/protocol"
 	"kiosk/controller/internal/pad/router"
 	"kiosk/controller/internal/pad/session"
+	"kiosk/controller/internal/telemetry"
 	"kiosk/controller/internal/useractivity"
 )
 
@@ -96,6 +98,15 @@ func runHotspot(mgr *session.Manager, code, configDir string, done <-chan struct
 		stopHotspotLocked(configDir)
 	}
 }
+
+// padInputStats adds up the phones' touch-quality windows (input_stats) for
+// the whole controller run, split by layout and Touch assist, and reports
+// them in every telemetry snapshot as pad_input.
+var padInputStats = func() *inputstats.Totals {
+	t := inputstats.New()
+	telemetry.OnSnapshot(func(s map[string]any) { s["pad_input"] = t.Snapshot() })
+	return t
+}()
 
 // hotspotMu orders starts and stops across sessions; hotspotGen is the
 // newest session's start.
@@ -519,6 +530,7 @@ func (r *Registry) padHub() *router.Router {
 		ProfileReply: func(playerID string, reply protocol.ProfileReply) {
 			r.profileReplied(playerID, reply)
 		},
+		InputStats: func(_ string, stats protocol.InputStats) { padInputStats.Add(stats) },
 	})
 	if err != nil {
 		// Only nil providers or adapters fail here, and none are nil.

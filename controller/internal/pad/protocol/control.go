@@ -233,6 +233,25 @@ type SeatCancel struct {
 	T string `json:"t"`
 }
 
+// Input stats limits.
+const (
+	InputStatsMaxKeys = 32
+	InputStatsMaxDead = 64
+)
+
+// InputStats (pad → kiosk) counts how one window of play felt on the glass:
+// dead touches, touches between face buttons, d-pad flicker and the like.
+// Counts and rounded layout positions only. Layout is
+// "<preset or custom>:<orientation>"; Assist is the pad's Touch assist switch.
+type InputStats struct {
+	T        string             `json:"t"`
+	WindowMs float64            `json:"window_ms"`
+	Layout   string             `json:"layout"`
+	Assist   bool               `json:"assist"`
+	Counts   map[string]float64 `json:"counts"`
+	DeadAt   [][2]float64       `json:"dead_at,omitempty"`
+}
+
 // SeatResult (kiosk → pad) tells the giver and the recipient how an offer
 // went. Role is the receiving phone's own role. Result "pending" goes to the
 // giver only (the offer is out; ExpiresIn counts down); the rest are final.
@@ -279,6 +298,35 @@ func set(v ...string) map[string]bool {
 		m[s] = true
 	}
 	return m
+}
+
+func checkInputStats(m InputStats) error {
+	if m.WindowMs < 0 {
+		return errors.New("window_ms must be non-negative")
+	}
+	if m.Layout == "" || len(m.Layout) > 64 {
+		return errors.New("layout must be 1-64 characters")
+	}
+	if m.Counts == nil {
+		return errors.New("counts must be an object")
+	}
+	if len(m.Counts) > InputStatsMaxKeys {
+		return errors.New("too many counts")
+	}
+	for k, n := range m.Counts {
+		if k == "" || len(k) > 32 || n < 0 {
+			return errors.New("counts must be non-negative numbers")
+		}
+	}
+	if len(m.DeadAt) > InputStatsMaxDead {
+		return errors.New("dead_at must have at most 64 points")
+	}
+	for _, p := range m.DeadAt {
+		if p[0] < 0 || p[0] > 1 || p[1] < 0 || p[1] > 1 {
+			return errors.New("dead_at points must be in 0..1")
+		}
+	}
+	return nil
 }
 
 func decode(data []byte, v any) error {
@@ -613,6 +661,18 @@ func ParseControl(data []byte) (any, error) {
 		case "off":
 		default:
 			return nil, wrap(errors.New("bad state"))
+		}
+		return m, nil
+	case "input_stats":
+		if err := need("window_ms", "layout", "assist", "counts"); err != nil {
+			return nil, wrap(err)
+		}
+		var m InputStats
+		if err := decode(data, &m); err != nil {
+			return nil, wrap(err)
+		}
+		if err := checkInputStats(m); err != nil {
+			return nil, wrap(err)
 		}
 		return m, nil
 	case "ping", "pong":

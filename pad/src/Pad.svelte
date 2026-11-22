@@ -26,6 +26,7 @@
   import { InputLoop } from './input/loop'
   import { MotionController } from './input/motion'
   import { TouchSender } from './input/touch'
+  import { FLUSH_MS, InputStats, assistEnabled, layoutName, setAssistEnabled } from './input/stats'
   import { BIT, type ControlSink } from './controls/sink'
   import { providePad } from './controls/context'
   import { expandTree, scanTree, wantsMotion } from './layout/presets'
@@ -145,7 +146,33 @@
     session?.send(msg)
   }
 
+  // Touch assist and the touch-quality stats that tell whether it helps (input/stats.ts).
+  let assist = assistEnabled()
+  function changeAssist(on: boolean) {
+    assist = on
+    setAssistEnabled(on)
+  }
+  const stats = new InputStats()
+  function flushStats() {
+    if (conn !== 'online' && conn !== 'fallback') return // keep counting until there is a link
+    const msg = stats.take()
+    if (msg) send(msg)
+  }
+  const statsTimer = setInterval(flushStats, FLUSH_MS)
+  /** Every finger on the layout; one that lands on no control is a dead touch. */
+  function onLayoutTouch(e: PointerEvent) {
+    stats.count('touches')
+    const target = e.target as Element | null
+    if (!target || target.closest('.cluster')) return // the cluster counts its own gaps
+    if (target === e.currentTarget || target.matches('.lv, .lv-spacer, .lv-text')) {
+      const r = (e.currentTarget as Element).getBoundingClientRect()
+      stats.dead(r.width ? (e.clientX - r.left) / r.width : 0, r.height ? (e.clientY - r.top) / r.height : 0)
+    }
+  }
+
   const sink: ControlSink = {
+    assist: () => assist,
+    stat: (key) => stats.count(key),
     input: model,
     event: (control, kind, value) => send(value === undefined ? { t: 'event', control, kind } : { t: 'event', control, kind, value }),
     text: (op, text) => send(text === undefined ? { t: 'text', op } : { t: 'text', op, text }),
@@ -492,6 +519,11 @@
   $: motionReady = $motionView.status === 'on' && $motionView.gyro && $motionView.calibrated
   $: shown = tree ? expandTree(tree, { landscape, motionReady }) : null
   $: info = scanTree(shown)
+  // A new layout, orientation or assist setting starts a new stats window.
+  $: {
+    const done = stats.setContext(layoutName(tree, landscape), assist)
+    if (done) send(done)
+  }
   $: guide = guideEntries(shown)
   // Nothing to explain without buttons: no "?", and a stale sheet closes.
   $: if (!hasButtons(guide)) guideOpen = false
@@ -604,8 +636,10 @@
 
   // -------------------------------------------------------------- lifecycle
   function onVisibility() {
-    if (document.visibilityState === 'hidden') model.releaseAll()
-    else session?.wake()
+    if (document.visibilityState === 'hidden') {
+      model.releaseAll()
+      flushStats()
+    } else session?.wake()
   }
   const wake = () => session?.wake()
 
@@ -632,6 +666,8 @@
     window.removeEventListener('online', wake)
     if (idleTimer) clearTimeout(idleTimer)
     if (toastTimer) clearTimeout(toastTimer)
+    clearInterval(statsTimer)
+    flushStats()
     session?.stop()
     snapRx.cancel()
     if (snapToastTimer) clearTimeout(snapToastTimer)
@@ -710,7 +746,8 @@
         }}
       />
     {:else if shown}
-      <div class="layout">
+      <!-- svelte-ignore a11y-no-static-element-interactions -->
+      <div class="layout" on:pointerdown={onLayoutTouch}>
         <LayoutView node={shown} />
       </div>
       {#if sim && info.motion && simSource}
@@ -791,6 +828,8 @@
       }}
       vibration={hapticsSupported() ? vibration : null}
       onVibration={changeVibration}
+      {assist}
+      onAssist={changeAssist}
       onSpeaker={(channel) => send(channel ? { t: 'system', action: 'be_speaker', channel } : { t: 'system', action: 'be_speaker' })}
       onAvatar={changeAvatar}
       {accountName}

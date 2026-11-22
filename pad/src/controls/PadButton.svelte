@@ -5,9 +5,12 @@
   import { validBit } from './sink'
   import Art from './Art.svelte'
   import { glyphFor } from './art'
+  import type { ClusterHandle } from './cluster'
 
   export let props: Record<string, unknown>
   export let style = ''
+  /** The face-button cluster this button sits in: it takes the fingers, the button only shows what it holds. */
+  export let cluster: ClusterHandle | null = null
 
   const { sink } = usePad()
 
@@ -27,6 +30,25 @@
   let pressed = false
   $: rebuild(id, bit)
 
+  // In a cluster (bit buttons only): register where this button is, light it from the cluster.
+  let el: HTMLButtonElement
+  let unregister = () => {}
+  let unwatch = () => {}
+  let heldIds = new Set<string>()
+  $: inCluster = !!cluster && bit !== null
+  $: watch(inCluster ? cluster : null)
+  $: if (inCluster) pressed = heldIds.has(id)
+  $: join(inCluster ? cluster : null, el, id, bit)
+  function watch(c: ClusterHandle | null) {
+    unwatch()
+    heldIds = new Set()
+    unwatch = c ? c.held.subscribe((v) => (heldIds = v)) : () => {}
+  }
+  function join(c: ClusterHandle | null, node: HTMLButtonElement | undefined, id: string, bit: number | null) {
+    unregister()
+    unregister = c && node && bit !== null ? c.register(id, node, 1 << bit) : () => {}
+  }
+
   function rebuild(id: string, bit: number | null) {
     driver?.reset()
     driver = new ButtonDriver(sink, id, bit === null ? 0 : 1 << bit)
@@ -43,13 +65,19 @@
     pressed = driver.pressed
   }
 
-  onDestroy(() => driver?.reset())
+  onDestroy(() => {
+    unwatch()
+    unregister()
+    driver?.reset()
+  })
 </script>
 
 <button
+  bind:this={el}
   type="button"
   class="pb {shape} {size}"
   class:pressed
+  class:in-cluster={inCluster}
   data-variant={variant}
   {style}
   aria-label={label || id}
@@ -152,6 +180,10 @@
   /* In a column a button keeps its height; the trackpad or stick takes the room (a `flex` prop overrides). */
   :global(.column) > .pb {
     flex: 0 0 auto;
+  }
+  /* The cluster around it takes the fingers (see controls/cluster.ts). */
+  .pb.in-cluster {
+    pointer-events: none;
   }
   .pb.pressed .face {
     transform: translateY(var(--yui-lip));

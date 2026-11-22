@@ -11,7 +11,28 @@ export interface ControlSink {
   now(): number
   setTimeout(fn: () => void, ms: number): unknown
   clearTimeout(handle: unknown): void
+  /**
+   * Touch assist (the Home sheet switch): forgiving face buttons and a steadier
+   * d-pad. Absent means off, so a control behaves exactly as it always did.
+   */
+  assist?(): boolean
+  /** Count a touch-quality event for the input stats (see input/stats.ts). */
+  stat?(key: StatKey): void
 }
+
+/** What the input stats count; the kiosk adds them up per layout. */
+export type StatKey =
+  | 'touches' // every finger that landed on the layout
+  | 'dead' // landed on no control at all
+  | 'press' // a face/cluster button went down
+  | 'gap' // landed between face buttons and assist picked one
+  | 'gap_miss' // landed between face buttons and nothing was pressed
+  | 'chord' // assist pressed two neighbouring face buttons at once
+  | 'slide' // a held finger slid onto another face button
+  | 'correction' // a quick tap, then a different face button right after
+  | 'dpad_change' // the d-pad's direction set changed
+  | 'dpad_deadzone' // a finger landed in the d-pad's centre (no direction)
+  | 'dpad_flicker' // direction A, B, then back to A within FLICKER_MS
 
 /** Bit numbers (contracts §3). */
 export const BIT = {

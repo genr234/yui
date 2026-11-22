@@ -278,6 +278,28 @@ export interface SeatResult {
   reason?: string;
 }
 
+// ---- input stats
+
+/** Most counter keys an `input_stats` message may carry. */
+export const INPUT_STATS_MAX_KEYS = 32;
+/** Most dead-touch positions an `input_stats` message may carry. */
+export const INPUT_STATS_MAX_DEAD = 64;
+
+/**
+ * pad -> kiosk: touch-quality counters for one window of play (dead touches,
+ * touches between face buttons, d-pad flicker, ...). Counts and rounded
+ * layout positions only. `layout` is "<preset or custom>:<orientation>".
+ */
+export interface InputStats {
+  t: "input_stats";
+  window_ms: number;
+  layout: string;
+  assist: boolean;
+  counts: Record<string, number>;
+  /** Where dead touches landed, 0..1 of the layout area. */
+  dead_at?: [number, number][];
+}
+
 export type ControlMessage =
   | Hello
   | Welcome
@@ -305,7 +327,8 @@ export type ControlMessage =
   | SeatOffered
   | SeatAnswer
   | SeatCancel
-  | SeatResult;
+  | SeatResult
+  | InputStats;
 
 // ---------------------------------------------------------------- input codec
 
@@ -655,6 +678,27 @@ export function parseControl(json: string): ControlMessage {
       if (!isNum(m.slot)) fail("seat_result: slot must be a number");
       if (m.other !== undefined) checkSeatMate(m.other, "seat_result: other");
       break;
+    case "input_stats": {
+      if (!isNum(m.window_ms) || m.window_ms < 0) fail("input_stats: window_ms must be a non-negative number");
+      if (!isStr(m.layout) || m.layout === "" || m.layout.length > 64) fail("input_stats: layout must be 1-64 characters");
+      if (!isBool(m.assist)) fail("input_stats: assist must be a boolean");
+      const counts = m.counts;
+      if (!isObj(counts)) fail("input_stats: counts must be an object");
+      const keys = Object.keys(counts);
+      if (keys.length > INPUT_STATS_MAX_KEYS) fail("input_stats: too many counts");
+      for (const k of keys) {
+        const n = counts[k];
+        if (k === "" || k.length > 32 || !isNum(n) || n < 0) fail("input_stats: counts must be non-negative numbers");
+      }
+      if (m.dead_at !== undefined) {
+        const at = m.dead_at;
+        if (!Array.isArray(at) || at.length > INPUT_STATS_MAX_DEAD) fail("input_stats: dead_at must be an array of at most 64 points");
+        for (const p of at) {
+          if (!Array.isArray(p) || p.length !== 2 || !p.every((v) => isNum(v) && v >= 0 && v <= 1)) fail("input_stats: dead_at points must be [x, y] in 0..1");
+        }
+      }
+      break;
+    }
     case "ping":
     case "pong":
       if (!(isNum(m.id) || isStr(m.id))) fail(`${t}: id must be number or string`);

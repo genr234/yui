@@ -103,7 +103,9 @@ function face(o: Opts, size?: string): Node | null {
   if (!any) return null
   return {
     type: 'grid',
-    props: { columns: 3, gap: 6, square: true },
+    // `cluster`: the four buttons are one touch area, so touch assist can
+    // forgive a finger between them (controls/cluster.ts).
+    props: { id: `${o.base}.face`, columns: 3, gap: 6, square: true, cluster: true },
     children: [spacer(), cell('North'), spacer(), cell('West'), spacer(), cell('East'), spacer(), cell('South'), spacer()],
   }
 }

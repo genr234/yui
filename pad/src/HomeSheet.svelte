@@ -29,6 +29,9 @@
   /** Vibration on/off for this phone; null hides the switch (no haptics here). */
   export let vibration: boolean | null = null
   export let onVibration: (on: boolean) => void = () => {}
+  /** Touch assist on/off for this phone (forgiving face buttons, steadier d-pad). */
+  export let assist = true
+  export let onAssist: (on: boolean) => void = () => {}
   /** Saves a new avatar (null removes it). Rejects when the kiosk refused it. */
   /** Other players may poke this phone. */
   export let allowPokes = true
@@ -225,6 +228,11 @@
           </div>
         </div>
       {/if}
+
+      <label class="vibration">
+        <span>Touch assist<small class="hint">Easier face buttons, steadier d-pad</small></span>
+        <input type="checkbox" checked={assist} on:change={(e) => onAssist(e.currentTarget.checked)} />
+      </label>
 
       {#if player.slot || seat.outgoing || seat.result}
         <SeatGive {spectators} {seat} secondsLeft={seatSeconds} onOffer={onSeatOffer} onCancel={onSeatCancel} onDismissResult={onSeatDismiss} />
@@ -523,6 +531,12 @@
   }
   .vibration {
     grid-template-columns: 1fr auto;
+  }
+  .vibration .hint {
+    display: block;
+    color: var(--muted);
+    font-size: 0.8rem;
+    font-weight: 700;
   }
   .pct {
     min-width: 3.2em;

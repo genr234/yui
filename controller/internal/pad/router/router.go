@@ -85,6 +85,8 @@ type Config struct {
 	Pads    Pads
 	// ProfileReply receives a phone's profile_reply (plan 10).
 	ProfileReply func(playerID string, reply protocol.ProfileReply)
+	// InputStats receives a phone's input_stats window (touch quality counts).
+	InputStats func(playerID string, stats protocol.InputStats)
 	// Snap captures the game area as a JPEG for "snap" requests. nil turns
 	// the feature off (phones get an error).
 	Snap func(ctx context.Context) (SnapImage, error)
@@ -415,6 +417,11 @@ func (r *Router) onControl(playerID string, msg any) {
 		return
 	case protocol.React:
 		r.onReact(playerID, m)
+		return
+	case protocol.InputStats:
+		if r.cfg.InputStats != nil {
+			r.cfg.InputStats(playerID, m)
+		}
 		return
 	case protocol.Poke:
 		r.onPoke(playerID, m)

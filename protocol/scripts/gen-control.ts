@@ -29,6 +29,7 @@ const valid: Record<string, unknown> = {
   seat_answer: { t: "seat_answer", from: "7", accept: true },
   seat_cancel: { t: "seat_cancel" },
   seat_result: { t: "seat_result", result: "accepted", role: "giver", slot: 1, other: { id: "8", name: "Dee", color: "red" } },
+  input_stats: { t: "input_stats", window_ms: 30000, layout: "gamepad:portrait", assist: true, counts: { touches: 120, press: 96, gap: 7, chord: 2, dead: 3 }, dead_at: [[0.12, 0.88], [0.5, 0.5]] },
   ping: { t: "ping", id: 1, ts: 1700000000000 },
   pong: { t: "pong", id: 1, ts: 1700000000001 },
 };
@@ -57,6 +58,8 @@ const invalid: Record<string, string> = {
   seat_offered_bad_slot: '{"t":"seat_offered","from":{"id":"7","name":"Ana","color":"blue"},"slot":0,"expires_in":20}',
   seat_result_bad_result: '{"t":"seat_result","result":"maybe","role":"giver","slot":1}',
   ping_no_ts: '{"t":"ping","id":1}',
+  input_stats_bad_count: '{"t":"input_stats","window_ms":1000,"layout":"gamepad:portrait","assist":true,"counts":{"dead":-1}}',
+  input_stats_bad_point: '{"t":"input_stats","window_ms":1000,"layout":"gamepad:portrait","assist":false,"counts":{},"dead_at":[[2,0]]}',
   hello_bad_video: '{"t":"hello","v":1,"caps":{"motion":true,"haptics":false,"wakeLock":true,"video":"yes"},"screen":{"w":1,"h":1,"orientation":"portrait"}}',
   surface_no_id: '{"t":"surface","state":"off"}',
   surface_bad_state: '{"t":"surface","id":"second-screen","state":"maybe"}',

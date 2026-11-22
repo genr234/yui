@@ -9,9 +9,28 @@
   import List from '../controls/List.svelte'
   import Sketch from '../controls/Sketch.svelte'
   import Surface from '../controls/Surface.svelte'
+  import { onDestroy } from 'svelte'
+  import { usePad } from '../controls/context'
+  import { ClusterHandle } from '../controls/cluster'
 
   /** An expanded tree (presets already replaced, see presets.ts expandTree). */
   export let node: Node
+  /** Set by a parent `grid` with `cluster: true`: its buttons join it (see controls/cluster.ts). */
+  export let cluster: ClusterHandle | null = null
+
+  const pad = usePad()
+  // A grid with `cluster: true` (the face buttons) takes every finger itself.
+  let own: ClusterHandle | null = null
+  $: own = clusterFor(node.type === 'grid' && props.cluster === true)
+  function clusterFor(on: boolean): ClusterHandle | null {
+    if (on && pad) return own ?? new ClusterHandle(pad.sink, typeof props.id === 'string' ? props.id : 'face')
+    own?.reset()
+    return null
+  }
+  const clusterDown = (e: PointerEvent) => own?.down(e)
+  const clusterMove = (e: PointerEvent) => own?.move(e)
+  const clusterUp = (e: PointerEvent) => own?.up(e)
+  onDestroy(() => own?.reset())
 
   $: props = (node.props ?? {}) as Record<string, unknown>
   $: children = node.children ?? []
@@ -24,9 +43,21 @@
 </script>
 
 {#if node.type === 'row' || node.type === 'column' || node.type === 'grid'}
-  <div class="lv {node.type}" class:square={props.square === true} class:rigid={flex === undefined} style={boxStyle}>
+  <div
+    class="lv {node.type}"
+    class:square={props.square === true}
+    class:rigid={flex === undefined}
+    class:cluster={!!own}
+    style={boxStyle}
+    role={own ? 'group' : undefined}
+    on:pointerdown={clusterDown}
+    on:pointermove={clusterMove}
+    on:pointerup={clusterUp}
+    on:pointercancel={clusterUp}
+    on:lostpointercapture={clusterUp}
+  >
     {#each children as child}
-      <svelte:self node={child} />
+      <svelte:self node={child} cluster={own} />
     {/each}
   </div>
 {:else if node.type === 'spacer'}
@@ -36,7 +67,7 @@
     {String(props.text ?? props.label ?? '')}
   </p>
 {:else if node.type === 'button'}
-  <PadButton {props} style={flexStyle} />
+  <PadButton {props} style={flexStyle} {cluster} />
 {:else if node.type === 'dpad'}
   <Dpad {props} style={flexStyle} />
 {:else if node.type === 'stick'}
@@ -98,6 +129,11 @@
     height: 100%;
     max-width: 84px;
     max-height: 84px;
+  }
+  .lv.cluster {
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
   }
   .lv-spacer {
     min-height: 0;
