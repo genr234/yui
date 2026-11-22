@@ -4,9 +4,9 @@
    * target is drawn once, with the players on it listed beside it in their
    * colours, so any number of phones can calibrate at once without targets
    * piling up:
-   *  - scanning: the game goes black and one QR code fills its middle; the
-   *    phone's camera reads it, and how it looks from the player's spot tells
-   *    the phone their angle to the game;
+   *  - scanning: the game goes black, one QR code fills its middle and four
+   *    white squares mark its corners; the phone's camera reads them, and how
+   *    they look from the player's spot tells the phone their angle;
    *  - aiming at the middle: a pulsing ring (a small dot on the code's centre
    *    while someone is still scanning);
    *  - aiming at the edges (phones without a camera): a glowing bar on the
@@ -92,6 +92,9 @@
           <path d={modules.d} />
         </svg>
       </div>
+      {#each code.squares as q}
+        <span class="aim-square" style="left:{q.x}px;top:{q.y}px;width:{code.square}px;height:{code.square}px"></span>
+      {/each}
       <div class="aim-caption" style="left:{spots.first.x}px;top:{spots.first.y}px">
         <span class="aim-caption-text">Scan this code with your phone</span>
         <span class="aim-chips">

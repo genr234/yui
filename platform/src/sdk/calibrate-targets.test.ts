@@ -35,10 +35,11 @@ describe("calibration targets", () => {
 		expect(t.targetFor("aim-top", area)).toMatchObject({ kind: "edge", x: 0, y: 662, w: 1080 });
 	});
 
-	test("scan: one code in the middle of the game, as big as fits with its margin, its text where it is", () => {
+	test("scan: one code in the middle of the game and four squares near its corners, the text where they are", () => {
 		for (const area of [
 			{ x: 0, y: 656, w: 1080, h: 608 },
 			{ x: 0, y: 0, w: 1080, h: 1920 },
+			{ x: 0, y: 420, w: 1080, h: 1080 }, // squarish: the code shrinks to clear the squares
 		]) {
 			const code = t.targetFor("scan", area);
 			expect(code.kind).toBe("scan");
@@ -50,14 +51,26 @@ describe("calibration targets", () => {
 			expect(c.x + c.w + m).toBeLessThanOrEqual(area.x + area.w);
 			expect(c.y + c.h + m).toBeLessThanOrEqual(area.y + area.h);
 			expect(Math.abs(c.w - c.h)).toBeLessThan(1); // square, to within rounding
-			// The text is the truth: its corners, back in px, are where the code is drawn.
-			const [x0, y0, x1, y1] = c.text.slice(t.AIM_CODE_PREFIX.length).split(":").map(Number);
+			// The text is the truth: back in px, it is where the code and squares are drawn.
+			const [x1, y1, mx, my] = c.text.slice(t.AIM_CODE_PREFIX.length).split(":").map(Number);
 			const cx = area.x + area.w / 2;
 			const cy = area.y + area.h / 2;
-			expect(cx + (x0 * area.w) / 2).toBeCloseTo(c.x, 6);
-			expect(cy + (y0 * area.h) / 2).toBeCloseTo(c.y, 6);
+			expect(cx - (x1 * area.w) / 2).toBeCloseTo(c.x, 6);
+			expect(cy - (y1 * area.h) / 2).toBeCloseTo(c.y, 6);
 			expect(cx + (x1 * area.w) / 2).toBeCloseTo(c.x + c.w, 6);
 			expect(cy + (y1 * area.h) / 2).toBeCloseTo(c.y + c.h, 6);
+			expect(c.squares[0]).toEqual({ x: cx - (mx * area.w) / 2, y: cy - (my * area.h) / 2 });
+			expect(c.squares[2]).toEqual({ x: cx + (mx * area.w) / 2, y: cy + (my * area.h) / 2 });
+			// Squares inside the game, clear of the code's white margin.
+			for (const q of c.squares) {
+				expect(q.x - c.square / 2).toBeGreaterThanOrEqual(area.x);
+				expect(q.y - c.square / 2).toBeGreaterThanOrEqual(area.y);
+				expect(q.x + c.square / 2).toBeLessThanOrEqual(area.x + area.w);
+				expect(q.y + c.square / 2).toBeLessThanOrEqual(area.y + area.h);
+				const clearX = q.x + c.square / 2 < c.x - m || q.x - c.square / 2 > c.x + c.w + m;
+				const clearY = q.y + c.square / 2 < c.y - m || q.y - c.square / 2 > c.y + c.h + m;
+				expect(clearX || clearY).toBe(true);
+			}
 			// QR alphanumeric mode: digits, capitals and . - : only.
 			expect(c.text).toMatch(/^[0-9A-Z.:-]+$/);
 		}

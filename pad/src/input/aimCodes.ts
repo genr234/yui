@@ -1,32 +1,75 @@
 import jsQR from 'jsqr'
-import type { Pt } from '../platform/viewpoint'
+import { homography, type Pt } from '../platform/viewpoint'
 
 /**
- * Reads the QR code the kiosk shows on its game during the calibration's
- * scan step (platform sdk/calibrate-targets.ts draws it). The code says
- * where on the game it sits: `YUIAIM:<x0>:<y0>:<x1>:<y1>` is its top-left
- * and bottom-right corner in game coordinates (−1…1, +y down). So every
- * corner jsQR finds is a known point of the game, nothing else in the room
- * can pass for one, and the phone needs no idea of the game's shape.
+ * Reads what the kiosk shows on its game during the calibration's scan step
+ * (platform sdk/calibrate-targets.ts draws it): a QR code in the middle and
+ * four white squares near the game's corners. The code's text says where
+ * everything is, in game coordinates (−1…1, +y down):
+ *
+ *   `YUIAIM2:<cx>:<cy>:<mx>:<my>`  the code spans ±cx, ±cy; the squares'
+ *                                  centres are at ±mx, ±my
+ *   `YUIAIM:<x0>:<y0>:<x1>:<y1>`   (first version) the code's corners, no squares
+ *
+ * So every point found is a known point of the game, nothing else in the
+ * room can pass for one, and the phone needs no idea of the game's shape.
+ * The code alone is enough to work out the angle, but its corners are close
+ * together; the squares, looked for only where the code says they must be,
+ * spread the measurement across the whole game.
  */
 
-export const AIM_CODE_PREFIX = 'YUIAIM:'
+export const AIM_CODE_PREFIX = 'YUIAIM2:'
+const FIRST_PREFIX = 'YUIAIM:'
 
-/** A code's corners (TL, TR, BR, BL) on the game and in the frame. */
+/** A code's corners (TL, TR, BR, BL) on the game and in the frame, and where its squares are on the game. */
 export interface SeenCode {
   text: string
   plane: Pt[]
   image: Pt[]
+  squares: Pt[]
 }
 
-/** The game rectangle a code's text names, or null when it isn't one of ours. */
-export function parseAimCode(text: string): { x0: number; y0: number; x1: number; y1: number } | null {
-  if (!text.startsWith(AIM_CODE_PREFIX)) return null
-  const parts = text.slice(AIM_CODE_PREFIX.length).split(':').map(Number)
-  if (parts.length !== 4 || !parts.every((n) => Number.isFinite(n) && Math.abs(n) <= 1.5)) return null
-  const [x0, y0, x1, y1] = parts
-  if (!(x1 > x0 && y1 > y0)) return null
-  return { x0, y0, x1, y1 }
+export interface AimCodeText {
+  x0: number
+  y0: number
+  x1: number
+  y1: number
+  /** The corner squares' centres on the game (TL, TR, BR, BL); none for the first version. */
+  squares: Pt[]
+}
+
+/** What a code's text says, or null when it isn't one of ours. */
+export function parseAimCode(text: string): AimCodeText | null {
+  const nums = (rest: string, n: number) => {
+    const parts = rest.split(':').map((p) => (p.trim() === '' ? NaN : Number(p)))
+    return parts.length === n && parts.every((v) => Number.isFinite(v) && Math.abs(v) <= 1.5) ? parts : null
+  }
+  if (text.startsWith(AIM_CODE_PREFIX)) {
+    const p = nums(text.slice(AIM_CODE_PREFIX.length), 4)
+    if (!p) return null
+    const [cx, cy, mx, my] = p
+    if (!(cx > 0 && cy > 0 && mx > 0 && my > 0 && mx <= 1 && my <= 1)) return null
+    return {
+      x0: -cx,
+      y0: -cy,
+      x1: cx,
+      y1: cy,
+      squares: [
+        [-mx, -my],
+        [mx, -my],
+        [mx, my],
+        [-mx, my],
+      ],
+    }
+  }
+  if (text.startsWith(FIRST_PREFIX)) {
+    const p = nums(text.slice(FIRST_PREFIX.length), 4)
+    if (!p) return null
+    const [x0, y0, x1, y1] = p
+    if (!(x1 > x0 && y1 > y0)) return null
+    return { x0, y0, x1, y1, squares: [] }
+  }
+  return null
 }
 
 /**
@@ -52,6 +95,7 @@ export function findAimCodes(rgba: Uint8ClampedArray, w: number, h: number, max 
           [rect.x0, rect.y1],
         ],
         image,
+        squares: rect.squares,
       })
     }
     if (i + 1 < max) blank(rgba, w, h, image)
@@ -144,4 +188,104 @@ export function toFrame(code: SeenCode, r: Region): SeenCode {
   const kx = r.sw / r.dw
   const ky = r.sh / r.dh
   return { ...code, image: code.image.map(([x, y]) => [r.sx + x * kx, r.sy + y * ky] as Pt) }
+}
+
+// ------------------------------------------------------------- the squares
+
+/**
+ * Where to look for each of a code's squares (frame pixels): the code's
+ * corners say where its plane is, so each square's centre is predicted, and
+ * a window a few squares wide around it is read at full resolution. The
+ * window is a third of the gap to the next square, so it never reaches
+ * another square or the code.
+ */
+export function squareRegions(code: SeenCode, frame: { w: number; h: number }): (Region | null)[] {
+  if (!code.squares.length) return []
+  const H = homography(code.plane, code.image)
+  if (!H) return code.squares.map(() => null)
+  const at = ([x, y]: Pt): Pt => {
+    const w = H[6] * x + H[7] * y + H[8]
+    return [(H[0] * x + H[1] * y + H[2]) / w, (H[3] * x + H[4] * y + H[5]) / w]
+  }
+  const centres = code.squares.map(at)
+  return centres.map((c, i) => {
+    const next = centres[(i + 1) % 4]
+    const prev = centres[(i + 3) % 4]
+    const gap = Math.min(Math.hypot(next[0] - c[0], next[1] - c[1]), Math.hypot(prev[0] - c[0], prev[1] - c[1]))
+    const side = Math.max(16, gap / 3)
+    if (c[0] - side / 2 < 0 || c[1] - side / 2 < 0 || c[0] + side / 2 > frame.w || c[1] + side / 2 > frame.h) return null
+    const sw = Math.round(side)
+    const k = Math.min(1, 192 / sw)
+    const sx = Math.round(c[0] - sw / 2)
+    const sy = Math.round(c[1] - sw / 2)
+    return { sx, sy, sw, sh: sw, dw: Math.round(sw * k), dh: Math.round(sw * k) }
+  })
+}
+
+/**
+ * The centre of the white square in a small grey window, or null. The square
+ * is the brightest thing there, on black: threshold halfway between the
+ * window's dark and its brightest, then of the bright patches that are whole
+ * (not cut by the window's edge: the room behind the kiosk can reach into a
+ * window at the game's edge), solid, roughly square under perspective and
+ * near the middle, take the biggest.
+ */
+export function findSquare(gray: Uint8Array, w: number, h: number): Pt | null {
+  let hi = 0
+  const hist = new Uint32Array(256)
+  for (let i = 0; i < w * h; i++) {
+    hist[gray[i]]++
+    if (gray[i] > hi) hi = gray[i]
+  }
+  let lo = 0
+  for (let acc = 0, v = 0; v < 256; v++) {
+    acc += hist[v]
+    if (acc >= w * h * 0.2) {
+      lo = v
+      break
+    }
+  }
+  if (hi - lo < 60) return null // no contrast: nothing white here
+  const t = (lo + hi) / 2
+  const seen = new Uint8Array(w * h)
+  type Blob = { n: number; m: number; sx: number; sy: number; x0: number; y0: number; x1: number; y1: number; edge: boolean }
+  let best: Blob | null = null
+  const stack: number[] = []
+  for (let start = 0; start < w * h; start++) {
+    if (seen[start] || gray[start] <= t) continue
+    const blob: Blob = { n: 0, m: 0, sx: 0, sy: 0, x0: w, y0: h, x1: -1, y1: -1, edge: false }
+    stack.push(start)
+    seen[start] = 1
+    while (stack.length) {
+      const i = stack.pop()!
+      const x = i % w
+      const y = (i - x) / w
+      // Weighted by brightness above the threshold: the soft edges count for less.
+      const wt = gray[i] - t
+      blob.n++
+      blob.sx += (x + 0.5) * wt
+      blob.sy += (y + 0.5) * wt
+      blob.m += wt
+      if (x < blob.x0) blob.x0 = x
+      if (x > blob.x1) blob.x1 = x
+      if (y < blob.y0) blob.y0 = y
+      if (y > blob.y1) blob.y1 = y
+      if (x === 0 || y === 0 || x === w - 1 || y === h - 1) blob.edge = true
+      for (const j of [i - 1, i + 1, i - w, i + w]) {
+        if (j < 0 || j >= w * h || seen[j] || gray[j] <= t) continue
+        if ((j === i - 1 && x === 0) || (j === i + 1 && x === w - 1)) continue
+        seen[j] = 1
+        stack.push(j)
+      }
+    }
+    if (blob.edge || blob.n < 6) continue
+    const bw = blob.x1 - blob.x0 + 1
+    const bh = blob.y1 - blob.y0 + 1
+    if (blob.n / (bw * bh) < 0.5 || bw / bh > 4 || bh / bw > 4) continue
+    const cx = blob.sx / (blob.m || 1)
+    const cy = blob.sy / (blob.m || 1)
+    if (Math.hypot(cx - w / 2, cy - h / 2) > 0.3 * Math.max(w, h)) continue
+    if (!best || blob.n > best.n) best = blob
+  }
+  return best ? [best.sx / (best.m || 1), best.sy / (best.m || 1)] : null
 }

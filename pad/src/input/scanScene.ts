@@ -3,26 +3,38 @@
 import type { Vec3 } from '@yui/protocol'
 import qrcode from 'qrcode-generator'
 import type { Pt } from '../platform/viewpoint'
-import { findAimCodes, regionsToRead, toFrame, type SeenCode } from './aimCodes'
+import { findAimCodes, findSquare, regionsToRead, squareRegions, toFrame, type Region, type SeenCode } from './aimCodes'
 
 /** The kiosk: a 1080×1920 portrait screen, 0.6 m wide, its game in the 16:9 band in the middle. */
 export const KIOSK = { w: 1080, h: 1920, metres: 0.6 }
 export const AREA = { x: 0, y: (1920 - 607.5) / 2, w: 1080, h: 607.5 }
 const M_PER_PX = KIOSK.metres / KIOSK.w
 
-/** The kiosk's code, laid out as platform sdk/calibrate-targets.ts aimCode() does. */
+/** The kiosk's code and squares, laid out as platform sdk/calibrate-targets.ts aimCode() does. */
 export function kioskCodes(area = AREA) {
   const cx = area.x + area.w / 2
   const cy = area.y + area.h / 2
-  const size = (0.96 * Math.min(area.w, area.h)) / 1.28
+  const short = Math.min(area.w, area.h)
   const r3 = (v: number) => Math.round(v * 1000) / 1000
+  const mx = 0.9
+  const my = 0.85
+  const square = Math.min(0.1 * short, 1.6 * Math.min(((1 - mx) * area.w) / 2, ((1 - my) * area.h) / 2))
+  const along = area.w >= area.h ? mx * (area.w / 2) : my * (area.h / 2)
+  const size = Math.min((0.96 * short) / 1.28, (along - square / 2 - 12) / 0.64)
   const x1 = r3(size / 2 / (area.w / 2))
   const y1 = r3(size / 2 / (area.h / 2))
-  const text = `YUIAIM:${(-x1).toFixed(3)}:${(-y1).toFixed(3)}:${x1.toFixed(3)}:${y1.toFixed(3)}`
+  const fmt = (v: number) => v.toFixed(3).replace(/^0/, '')
+  const text = `YUIAIM2:${fmt(x1)}:${fmt(y1)}:${fmt(mx)}:${fmt(my)}`
   const qr = qrcode(0, 'H')
   qr.addData(text, 'Alphanumeric')
   qr.make()
   const n = qr.getModuleCount()
+  const squares: Pt[] = [
+    [-mx, -my],
+    [mx, -my],
+    [mx, my],
+    [-mx, my],
+  ]
   return [
     {
       text,
@@ -32,6 +44,8 @@ export function kioskCodes(area = AREA) {
         [x1, y1],
         [-x1, y1],
       ] as Pt[],
+      squares,
+      squarePx: square,
       x: cx - (x1 * area.w) / 2,
       y: cy - (y1 * area.h) / 2,
       w: x1 * area.w,
@@ -62,6 +76,11 @@ function kioskPixel(x: number, y: number): number {
     return block ? 70 : 38
   }
   for (const c of CODES) {
+    for (const [u, v] of c.squares) {
+      const sx = AREA.x + ((u + 1) / 2) * AREA.w
+      const sy = AREA.y + ((v + 1) / 2) * AREA.h
+      if (Math.abs(x - sx) < c.squarePx / 2 && Math.abs(y - sy) < c.squarePx / 2) return 245
+    }
     const m = 0.14 * c.w // the white margin
     if (x < c.x - m || x >= c.x + c.w + m || y < c.y - m || y >= c.y + c.h + m) continue
     const col = Math.floor(((x - c.x) / c.w) * c.n)
@@ -215,7 +234,11 @@ export function seeCodes(
   }
   const worldUp: Vec3 = [0, -1, 0]
   return {
-    truth: { plane: CODES.flatMap((c) => c.plane), image: CODES.flatMap((c) => c.plane.map((p) => project(planeToWorld(p)))) },
+    // The code's corners, then the squares' centres.
+    truth: {
+      plane: CODES.flatMap((c) => [...c.plane, ...c.squares]),
+      image: CODES.flatMap((c) => [...c.plane, ...c.squares].map((p) => project(planeToWorld(p)))),
+    },
     up: [dot(worldUp, r), dot(worldUp, d), dot(worldUp, f)],
   }
 }
@@ -227,36 +250,57 @@ export function standAt(metres: number, side: number, above = 0): Vec3 {
   return [metres * Math.cos(a) * Math.sin(s), -metres * Math.sin(a), -metres * Math.cos(a) * Math.cos(s)]
 }
 
-/** Reads a shot the way the scan screen reads the camera: region by region, until the code turns up. */
-export function readShot(shot: Shot, last: SeenCode['image'] | null = null, turn = 0): SeenCode | null {
+/** A region of a rendered shot, box-averaged as drawImage does when shrinking (RGBA). */
+function readRegion(shot: Shot, r: Region): Uint8ClampedArray {
+  const px = new Uint8ClampedArray(r.dw * r.dh * 4)
+  const kx = r.sw / r.dw
+  const ky = r.sh / r.dh
+  for (let y = 0; y < r.dh; y++)
+    for (let x = 0; x < r.dw; x++) {
+      const x0 = Math.floor(r.sx + x * kx)
+      const y0 = Math.floor(r.sy + y * ky)
+      const x1 = Math.max(x0 + 1, Math.floor(r.sx + (x + 1) * kx))
+      const y1 = Math.max(y0 + 1, Math.floor(r.sy + (y + 1) * ky))
+      let s = 0
+      let n = 0
+      for (let yy = y0; yy < y1; yy++)
+        for (let xx = x0; xx < x1; xx++) {
+          s += shot.rgba[(yy * shot.w + xx) * 4]
+          n++
+        }
+      const k = (y * r.dw + x) * 4
+      px[k] = px[k + 1] = px[k + 2] = s / n
+      px[k + 3] = 255
+    }
+  return px
+}
+
+/**
+ * Reads a shot the way the scan screen reads the camera: region by region
+ * until the code turns up, then each square where the code says it is.
+ * Returns the code and every point found (code corners first, then squares).
+ */
+export function readShot(shot: Shot, last: Pt[] | null = null, turn = 0): { code: SeenCode; plane: Pt[]; image: Pt[] } | null {
   for (const r of regionsToRead({ w: shot.w, h: shot.h }, last, turn)) {
-    const px = new Uint8ClampedArray(r.dw * r.dh * 4)
-    const kx = r.sw / r.dw
-    const ky = r.sh / r.dh
-    for (let y = 0; y < r.dh; y++)
-      for (let x = 0; x < r.dw; x++) {
-        // Box-average the source pixels this one covers, as drawImage does when shrinking.
-        const x0 = Math.floor(r.sx + x * kx)
-        const y0 = Math.floor(r.sy + y * ky)
-        const x1 = Math.max(x0 + 1, Math.floor(r.sx + (x + 1) * kx))
-        const y1 = Math.max(y0 + 1, Math.floor(r.sy + (y + 1) * ky))
-        let s = 0
-        let n = 0
-        for (let yy = y0; yy < y1; yy++)
-          for (let xx = x0; xx < x1; xx++) {
-            s += shot.rgba[(yy * shot.w + xx) * 4]
-            n++
-          }
-        const k = (y * r.dw + x) * 4
-        px[k] = px[k + 1] = px[k + 2] = s / n
-        px[k + 3] = 255
-      }
-    const found = findAimCodes(px, r.dw, r.dh)
-    if (found.length) return toFrame(found[0], r)
+    const found = findAimCodes(readRegion(shot, r), r.dw, r.dh)
+    if (!found.length) continue
+    const code = toFrame(found[0], r)
+    const plane = [...code.plane]
+    const image = [...code.image]
+    squareRegions(code, { w: shot.w, h: shot.h }).forEach((sr, i) => {
+      if (!sr) return
+      const px = readRegion(shot, sr)
+      const gray = new Uint8Array(sr.dw * sr.dh)
+      for (let k = 0; k < gray.length; k++) gray[k] = px[k * 4]
+      const c = findSquare(gray, sr.dw, sr.dh)
+      if (!c) return
+      plane.push(code.squares[i])
+      image.push([sr.sx + (c[0] * sr.sw) / sr.dw, sr.sy + (c[1] * sr.sh) / sr.dh])
+    })
+    return { code, plane, image }
   }
   return null
 }
-
 
 /** Where the code's corners are for a camera, without rendering a frame (for geometry tests). */
 export function see(o: ShotOptions): Pick<Shot, 'truth' | 'up' | 'at' | 'focal' | 'w' | 'h'> {

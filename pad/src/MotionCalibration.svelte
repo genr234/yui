@@ -57,7 +57,7 @@
       title: 'Scan the kiosk',
       how: [
         "Stand where you'll play. Off to one side is fine.",
-        'Hold the phone up like taking a photo and point the camera at the code on the kiosk.',
+        'Hold the phone up like taking a photo and point the camera at the kiosk, so its code and the four white squares around it are on screen.',
       ],
       settle: '',
       move: '',

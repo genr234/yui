@@ -57,6 +57,13 @@
 	fill: #000;
 }
 
+/* The corner squares: plain white on black, still and sharp, found where the code says. */
+.aim-square {
+	position: absolute;
+	transform: translate(-50%, -50%);
+	background: #fff;
+}
+
 /* Someone aiming at the middle while another scans: a still dot on the code's centre. */
 .aim-center-dot {
 	position: absolute;

@@ -109,8 +109,10 @@ describe('viewpoint', () => {
   test('from the code as read off a camera frame, and a camera 6% wider than assumed, still within a few percent', () => {
     const at = standAt(1.5, -45, 10)
     const shot = shoot({ at, focal: 0.665, w: 720, h: 1280 })
-    const code = readShot(shot)!
-    const vp = scan(shot, code.image, 0.71 * Math.max(shot.w, shot.h))
+    const read = readShot(shot)!
+    const fit = viewpointFromScan(read.plane, read.image, { w: shot.w, h: shot.h }, 0.71 * Math.max(shot.w, shot.h))
+    if (typeof fit === 'string') throw new Error(fit)
+    const vp = fit
     expect(Math.abs(describeViewpoint(vp).side - -45)).toBeLessThan(4)
     const p = new ViewPointer(vp)
     for (const t of TARGETS) {
@@ -119,6 +121,42 @@ describe('viewpoint', () => {
       expect(Math.abs(got[1] - t[1])).toBeLessThan(0.1)
     }
   }, 30_000)
+
+  test('the corner squares keep the aim right from further back, where the code alone drifts', () => {
+    // Reading noise: a QR reader's corners wander a couple of pixels; a square's centre far less.
+    let seed = 3
+    const gauss = () => {
+      let t = 0
+      for (let i = 0; i < 6; i++) {
+        seed = (seed * 1664525 + 1013904223) >>> 0
+        t += seed / 2 ** 32
+      }
+      return (t - 3) * Math.SQRT2
+    }
+    const worst = (at: Vec3, withSquares: boolean) => {
+      const shot = see({ at, w: 1080, h: 1920 })
+      const n = withSquares ? 8 : 4
+      let out = 0
+      for (let k = 0; k < 60; k++) {
+        const image = shot.truth.image.slice(0, n).map(([x, y], i) => {
+          const s = i < 4 ? 2.5 : 0.7
+          return [x + gauss() * s, y + gauss() * s] as Pt
+        })
+        const vp = viewpointFromScan(shot.truth.plane.slice(0, n), image, { w: 1080, h: 1920 })
+        if (typeof vp === 'string') return Infinity
+        const p = new ViewPointer(vp)
+        for (const t of TARGETS) {
+          const g = aim(p, at, t)
+          out = Math.max(out, Math.hypot(g[0] - t[0], g[1] - t[1]))
+        }
+      }
+      return out / 2 // as a share of the screen
+    }
+    const far = standAt(3, -30)
+    expect(worst(far, false)).toBeGreaterThan(0.12) // the code alone: more than an eighth of the screen off
+    expect(worst(far, true)).toBeLessThan(0.06)
+    expect(worst(standAt(1.5, 45), true)).toBeLessThan(0.04)
+  })
 
   test('seen from the side, the far edge is not where turn-angle aiming puts it', () => {
     // What the edge-aiming calibration measures from 50° to the left, and where its pointer lands.

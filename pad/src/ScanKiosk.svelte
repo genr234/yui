@@ -1,14 +1,15 @@
 <script lang="ts">
   /**
    * The calibration's scan step: the rear camera, reading the QR code the
-   * kiosk shows on its game while a phone is on this step
-   * (input/aimCodes.ts). Only the kiosk's own code counts: its text says
-   * where on the game it is. Once it holds steady for a few reads, its
-   * corners go to `onScan`, which works out where the player stands. Any
-   * browser with a camera works: no BarcodeDetector needed.
+   * kiosk shows on its game while a phone is on this step, then the four
+   * white squares near the game's corners, looked for only where the code
+   * says they are (input/aimCodes.ts). Only the kiosk's own code counts: its
+   * text says where everything is. Once it holds steady for a few reads,
+   * every point found goes to `onScan`, which works out where the player
+   * stands. Any browser with a camera works: no BarcodeDetector needed.
    */
   import { onDestroy, onMount } from 'svelte'
-  import { findAimCodes, regionsToRead, toFrame, type SeenCode } from './input/aimCodes'
+  import { findAimCodes, findSquare, regionsToRead, squareRegions, toFrame, type Region, type SeenCode } from './input/aimCodes'
   import type { Pt } from './platform/viewpoint'
 
   /** Returns why the scan can't be used, or null when it was taken. */
@@ -36,7 +37,10 @@
   let found: SeenCode | null = null
   let lastSeenAt = 0
   let turn = 0
-  let streak: Pt[][] = []
+  /** Each read: the code's corners, then each square's centre or null. */
+  let streak: (Pt | null)[][] = []
+  /** The squares found in the latest read, for the picture. */
+  let squaresSeen: Pt[] = []
   let pausedUntil = 0
   /** Just after a refused scan: its problem shows until the next try. */
   let paused = false
@@ -77,7 +81,8 @@
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
 
-  function read(r: ReturnType<typeof regionsToRead>[number]): SeenCode | null {
+  /** A region of the current video frame, as RGBA at the region's read size. */
+  function pixels(r: Region): Uint8ClampedArray | null {
     if (!canvas || canvas.width !== r.dw || canvas.height !== r.dh) {
       canvas ??= document.createElement('canvas')
       canvas.width = r.dw
@@ -86,8 +91,26 @@
     }
     if (!ctx) return null
     ctx.drawImage(video, r.sx, r.sy, r.sw, r.sh, 0, 0, r.dw, r.dh)
-    const codes = findAimCodes(ctx.getImageData(0, 0, r.dw, r.dh).data, r.dw, r.dh)
+    return ctx.getImageData(0, 0, r.dw, r.dh).data
+  }
+
+  function read(r: Region): SeenCode | null {
+    const px = pixels(r)
+    const codes = px ? findAimCodes(px, r.dw, r.dh) : []
     return codes.length ? toFrame(codes[0], r) : null
+  }
+
+  /** Each of the code's squares in this frame (frame pixels), or null where it wasn't found. */
+  function squares(code: SeenCode): (Pt | null)[] {
+    return squareRegions(code, frame).map((r) => {
+      if (!r) return null
+      const px = pixels(r)
+      if (!px) return null
+      const gray = new Uint8Array(r.dw * r.dh)
+      for (let i = 0; i < gray.length; i++) gray[i] = (px[i * 4] * 77 + px[i * 4 + 1] * 150 + px[i * 4 + 2] * 29) >> 8
+      const c = findSquare(gray, r.dw, r.dh)
+      return c ? [r.sx + (c[0] * r.sw) / r.dw, r.sy + (c[1] * r.sh) / r.dh] : null
+    })
   }
 
   function look() {
@@ -112,19 +135,33 @@
     paused = now < pausedUntil
     if (!code || paused) {
       streak = []
+      squaresSeen = []
       return
     }
+    const sq = squares(code)
+    squaresSeen = sq.filter((p): p is Pt => !!p)
     const last = streak[streak.length - 1]
     const tol = STEADY_MOVE * Math.max(vw, vh)
-    if (last && code.image.some((p, i) => Math.hypot(p[0] - last[i][0], p[1] - last[i][1]) > tol)) streak = []
-    streak = [...streak, code.image]
+    const moved = (p: Pt, i: number) => {
+      const q = last?.[i]
+      return !!q && Math.hypot(p[0] - q[0], p[1] - q[1]) > tol
+    }
+    if (last && code.image.some(moved)) streak = []
+    streak = [...streak, [...code.image, ...sq]]
     if (streak.length < STEADY) return
-    const avg = code.image.map((_, i) => [
-      streak.reduce((s, q) => s + q[i][0], 0) / streak.length,
-      streak.reduce((s, q) => s + q[i][1], 0) / streak.length,
-    ]) as Pt[]
+    // Every point seen in most of the reads, averaged over them: the code's
+    // corners always, a square when it was found at least twice.
+    const plane: Pt[] = []
+    const image: Pt[] = []
+    const where = [...code.plane, ...code.squares]
+    for (let i = 0; i < where.length; i++) {
+      const seen = streak.map((r) => r[i]).filter((p): p is Pt => !!p)
+      if (seen.length < Math.min(2, streak.length)) continue
+      plane.push(where[i])
+      image.push([seen.reduce((s, p) => s + p[0], 0) / seen.length, seen.reduce((s, p) => s + p[1], 0) / seen.length])
+    }
     streak = []
-    if (onScan(code.plane, avg, frame)) {
+    if (onScan(plane, image, frame)) {
       pausedUntil = performance.now() + 1200
       paused = true
     }
@@ -144,6 +181,7 @@
   $: ox = (boxW - frame.w * cover) / 2
   $: oy = (boxH - frame.h * cover) / 2
   $: shown = found && cover ? found.image.map(([x, y]) => [ox + x * cover, oy + y * cover]) : null
+  $: dots = cover ? squaresSeen.map(([x, y]) => [ox + x * cover, oy + y * cover]) : []
   $: progress = streak.length / STEADY
   // A refused scan's problem shows while it waits to try again, or while nothing is found;
   // once the code is held steady again, the progress speaks instead.
@@ -155,7 +193,9 @@
       : starting
         ? 'Starting the camera…'
         : found
-          ? 'Got it. Hold still…'
+          ? found.squares.length && squaresSeen.length < found.squares.length
+            ? 'Got the code. Hold still, with the four white squares on screen too.'
+            : 'Got it. Hold still…'
           : 'Point the camera at the code on the kiosk.'
 </script>
 
@@ -167,6 +207,7 @@
     {#if shown}
       <svg class="marks" viewBox="0 0 {boxW} {boxH}" aria-hidden="true">
         <polygon points={shown.map((p) => p.join(',')).join(' ')} />
+        {#each dots as [x, y]}<circle cx={x} cy={y} r="7" />{/each}
       </svg>
     {:else if !error}
       <div class="corners" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
@@ -214,6 +255,11 @@
     inset: 0;
     width: 100%;
     height: 100%;
+  }
+  .marks circle {
+    fill: none;
+    stroke: var(--kit-yellow, #ffc627);
+    stroke-width: 3;
   }
   .marks polygon {
     fill: rgba(255, 198, 39, 0.18);
