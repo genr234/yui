@@ -1,10 +1,13 @@
-/* CalibrationTargets: where a calibrating phone should point. */
+/* CalibrationTargets: what calibrating phones should point at. One of each target, players listed beside it. */
 
 .aim-layer {
+	--aim-target: #ffc627; /* the kit's yellow: the ring and edges, whoever is aiming */
 	position: fixed;
 	inset: 0;
 	z-index: 2147483647; /* the shell's; DOM order puts it over the shell, under PadCursor */
 	pointer-events: none;
+	font: 800 22px/1.2 var(--yui-font, system-ui, sans-serif);
+	color: #fff;
 }
 
 /* The game's area, outlined so "the middle" and "the edge" are unambiguous on a tall kiosk. */
@@ -14,6 +17,90 @@
 	border: 2px dashed rgba(255, 255, 255, 0.55);
 	border-radius: 6px;
 	box-shadow: 0 0 0 100vmax rgba(5, 12, 24, 0.35);
+}
+
+/* Scanning: the game goes black around the code, the rest of the screen nearly so. */
+.aim-area.scanning {
+	background: #000;
+	border-color: transparent;
+	box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.75);
+}
+
+/*
+ * The code: black modules on a white card with a 4-module margin. Kept
+ * still and sharp (no glow, pulse or rounding inside the margin): the
+ * phone's QR reader needs clean edges.
+ */
+.aim-code {
+	position: absolute;
+	box-sizing: content-box;
+	background: #fff;
+	box-shadow: 0 0 0 var(--margin) #fff;
+	border-radius: 1px;
+}
+
+.aim-code::before {
+	content: "";
+	position: absolute;
+	inset: calc(-1 * var(--margin));
+	border-radius: 18px;
+	box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.18);
+}
+
+.aim-code svg {
+	display: block;
+	width: 100%;
+	height: 100%;
+}
+
+.aim-code path {
+	fill: #000;
+}
+
+/* Someone aiming at the middle while another scans: a still dot on the code's centre. */
+.aim-center-dot {
+	position: absolute;
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	transform: translate(-50%, -50%);
+	background: var(--aim-target);
+	box-shadow: 0 0 0 3px #000;
+}
+
+/* A caption: what to do, and the players doing it. */
+.aim-caption {
+	position: absolute;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 10px;
+	min-width: 180px;
+	max-width: 240px;
+	transform: translate(-50%, -50%);
+	text-align: center;
+	text-shadow: 0 2px 0 rgba(0, 0, 0, 0.45);
+}
+
+.aim-caption-text {
+	text-wrap: balance;
+}
+
+.aim-chips {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+	gap: 8px;
+}
+
+.aim-chip {
+	min-width: 48px;
+	padding: 6px 12px;
+	border-radius: 999px;
+	background: var(--aim);
+	border: 3px solid #fff;
+	text-shadow: none;
+	box-shadow: 0 4px 0 rgba(0, 0, 0, 0.3);
 }
 
 .aim-point {
@@ -34,8 +121,8 @@
 .aim-ring {
 	width: 120px;
 	height: 120px;
-	border: 6px solid var(--aim);
-	box-shadow: 0 0 24px var(--aim);
+	border: 6px solid var(--aim-target);
+	box-shadow: 0 0 24px var(--aim-target);
 	animation: aim-pulse 1.6s ease-out infinite;
 }
 
@@ -47,80 +134,41 @@
 	width: 22px;
 	height: 22px;
 	background: #fff;
-	box-shadow: 0 0 0 6px var(--aim), 0 0 30px var(--aim);
+	box-shadow: 0 0 0 6px var(--aim-target), 0 0 30px var(--aim-target);
+}
+
+.aim-caption.under {
+	top: 120px;
+	left: 0;
+	transform: translateX(-50%);
+	width: 240px;
 }
 
 .aim-edge {
 	position: absolute;
 	border-radius: 6px;
-	background: var(--aim);
-	box-shadow: 0 0 28px 6px var(--aim);
+	background: var(--aim-target);
+	box-shadow: 0 0 28px 6px var(--aim-target);
 	animation: aim-glow 1.1s ease-in-out infinite alternate;
 }
 
 .aim-edge.vertical {
-	width: 12px !important;
+	width: 12px;
 	margin-left: -6px;
 }
 
 .aim-edge:not(.vertical) {
-	height: 12px !important;
+	height: 12px;
 	margin-top: -6px;
 }
 
-.aim-label {
-	position: absolute;
-	white-space: nowrap;
-	padding: 8px 14px;
-	border-radius: 999px;
-	color: #fff;
-	background: var(--aim, #2f76dc);
-	font: 800 22px/1 var(--yui-font, system-ui, sans-serif);
-	box-shadow: 0 4px 0 rgba(0, 0, 0, 0.25), 0 10px 30px rgba(0, 0, 0, 0.35);
+/* An edge's caption sits inside the game, next to the bar. */
+.aim-caption.edge-right {
+	transform: translate(calc(-100% - 28px), -50%);
 }
 
-.aim-point .aim-label {
-	left: 0;
-	top: 84px;
-	transform: translateX(-50%);
-}
-
-/* An edge's label sits inside the game, next to the bar. */
-.edge-label {
-	transform: translate(-50%, 22px);
-}
-
-.edge-label.right {
-	transform: translate(calc(-100% - 22px), -50%);
-}
-
-/*
- * Scanning: the game goes black and four marker squares (white, with a black
- * hole half their size) mark it for the phone's camera. Kept still and sharp:
- * the phone finds them by their shape, so no glow, pulse or rounding.
- */
-.aim-area.scanning {
-	background: #000;
-	border-color: transparent;
-	box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.7);
-}
-
-.scan-marker {
-	position: absolute;
-	box-sizing: border-box;
-	transform: translate(-50%, -50%);
-	background: #fff;
-}
-
-.scan-marker::after {
-	content: "";
-	position: absolute;
-	inset: 25%;
-	background: #000;
-}
-
-.scan-label {
-	transform: translate(-50%, -50%);
+.aim-caption.edge-top {
+	transform: translate(-50%, 28px);
 }
 
 @keyframes aim-pulse {

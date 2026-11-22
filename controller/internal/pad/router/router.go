@@ -94,6 +94,11 @@ type Config struct {
 	// moves the pointer (motion sensors and packet counters alone do not
 	// count). The kiosk uses it to tell the OS someone is there.
 	Activity func()
+	// Calibrating is told when the first phone starts a motion-calibration
+	// step that points at the kiosk (scanning its code, aiming at its
+	// targets) and when the last one leaves those steps or the session. The
+	// kiosk lifts its page above a native game meanwhile. Must not block.
+	Calibrating func(active bool)
 }
 
 // Router owns the focus stack and the session binding.
@@ -122,12 +127,18 @@ type Router struct {
 	keyboard bool
 
 	soc *social
+
+	// Players on a kiosk-facing calibration step (calibMu, which also
+	// orders the Calibrating calls).
+	calibMu     sync.Mutex
+	calibrating map[string]bool
+	calibOn     bool
 }
 
 // New builds the stack with the shell provider at the bottom and registers
 // the adapters.
 func New(cfg Config) (*Router, error) {
-	r := &Router{cfg: cfg, players: map[string]protocol.Player{}, sent: map[string][]byte{}, lastInput: map[string]protocol.InputState{}, soc: newSocial(), snapLast: map[string]time.Time{}, snapBusy: map[string]bool{}}
+	r := &Router{cfg: cfg, players: map[string]protocol.Player{}, sent: map[string][]byte{}, lastInput: map[string]protocol.InputState{}, soc: newSocial(), calibrating: map[string]bool{}, snapLast: map[string]time.Time{}, snapBusy: map[string]bool{}}
 	deps := shell.Deps{
 		IsHost:   r.IsHost,
 		HostName: r.hostName,
@@ -369,6 +380,7 @@ func (r *Router) forget(id string) {
 	delete(r.snapLast, id)
 	r.mu.Unlock()
 	r.soc.forget(id)
+	r.setCalibrating(id, false)
 	// Lift any fingers the player still had down on a virtual pad.
 	if err := r.stack.Touch(id, protocol.TouchState{}); err != nil {
 		log.Printf("pad hub: touch release %s: %v", id, err)

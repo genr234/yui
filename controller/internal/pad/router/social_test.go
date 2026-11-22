@@ -190,3 +190,35 @@ func TestCalibrateStepsReachTheOverlayAndNothingElse(t *testing.T) {
 		}
 	}
 }
+
+func TestTheKioskIsLiftedWhileAnyoneCalibratesAgainstIt(t *testing.T) {
+	h, _ := socialHarness(t)
+	var mu sync.Mutex
+	var calls []bool
+	h.router.cfg.Calibrating = func(on bool) {
+		mu.Lock()
+		calls = append(calls, on)
+		mu.Unlock()
+	}
+	cal := func(id string, v any) {
+		h.sess.fireControl(id, protocol.System{T: "system", Action: "calibrate", Value: v})
+	}
+	cal("1", "scan")       // on
+	cal("2", "aim-center") // still on
+	cal("1", "aim-center")
+	cal("1", "")                                                 // player 2 is still at it
+	cal("2", "")                                                 // off
+	cal("3", "aim-right")                                        // on
+	h.sess.firePlayer(session.PlayerLeft, player("3", 3, false)) // left mid-step: off
+	mu.Lock()
+	defer mu.Unlock()
+	want := []bool{true, false, true, false}
+	if len(calls) != len(want) {
+		t.Fatalf("Calibrating calls %v, want %v", calls, want)
+	}
+	for i := range want {
+		if calls[i] != want[i] {
+			t.Fatalf("Calibrating calls %v, want %v", calls, want)
+		}
+	}
+}

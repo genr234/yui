@@ -133,9 +133,9 @@ export class MotionController {
     return !!this.opts.camera
   }
 
-  /** The scan step found the kiosk's markers (TL, TR, BR, BL, frame pixels). Returns why it can't be used, or null. */
-  scanned(corners: readonly Pt[], frame: { w: number; h: number }): ViewProblem | null {
-    const problem = this.wizard?.scanned(corners, frame, this.opts.angle?.() ?? 0) ?? null
+  /** The scan step read the kiosk's code: game points and where they were seen (frame pixels). Returns why it can't be used, or null. */
+  scanned(plane: readonly Pt[], image: readonly Pt[], frame: { w: number; h: number }): ViewProblem | null {
+    const problem = this.wizard?.scanned(plane, image, frame) ?? null
     this.publish()
     return problem
   }

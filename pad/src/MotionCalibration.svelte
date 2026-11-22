@@ -15,7 +15,7 @@
   /** The phone can scan the kiosk with its camera, so players can stand anywhere around it. */
   export let camera = false
   /** The scan step's markers were found: returns the problem, or null when the scan was taken. */
-  export let scan: (corners: Pt[], frame: { w: number; h: number }) => string | null = () => null
+  export let scan: (plane: Pt[], image: Pt[], frame: { w: number; h: number }) => string | null = () => null
   export let skipScan: () => void = () => {}
 
   const dispatch = createEventDispatcher<{ start: void; skip: void; cancel: void; done: void }>()
@@ -57,21 +57,21 @@
       title: 'Scan the kiosk',
       how: [
         "Stand where you'll play. Off to one side is fine.",
-        'Hold the phone up like taking a photo and point the camera at the kiosk, so the four white squares on its game are on screen.',
+        'Hold the phone up like taking a photo and point the camera at the code on the kiosk.',
       ],
       settle: '',
       move: '',
       hold: '',
     },
     'aim-center': {
-      title: 'Aim at the ring on the kiosk',
+      title: 'Aim at the middle of the game',
       how: [
         'Stand where you will play, facing the kiosk.',
-        'Hold the phone like a TV remote, camera end toward the kiosk, and point at the glowing ring in the middle of the game.',
+        'Hold the phone like a TV remote, camera end toward the kiosk, and point at the middle of the game: the glowing ring, or the dot on the code.',
       ],
-      settle: 'Point at the ring on the kiosk…',
-      move: 'Point at the ring on the kiosk…',
-      hold: 'Hold still on the ring…',
+      settle: 'Point at the middle of the game…',
+      move: 'Point at the middle of the game…',
+      hold: 'Hold still on the middle…',
     },
     'aim-right': {
       title: 'Aim at the right edge',
@@ -115,8 +115,7 @@
     'wrong-way': () => 'That was down. Aim up, at the top edge.',
     'too-big': () => "That's past the game's edge. Point at the glowing bar itself.",
     'scan-angle': () => "That's almost side-on to the kiosk. Take a step towards its front and scan again.",
-    'scan-tilted': () => "Hold the phone upright, the way you'd take a photo.",
-    'scan-odd': () => "That didn't look right. Hold still with all four squares on screen.",
+    'scan-odd': () => "That didn't look right. Hold still with the whole code on screen.",
   }
 
   /** After a scan: where the player is, in words. */

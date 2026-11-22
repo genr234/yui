@@ -3,7 +3,7 @@ import type { Vec3 } from '@yui/protocol'
 import { CalibrationWizard } from './calibration'
 import { STANDARD_GRAVITY as G, toRemoteFrame, type Calibration, type RawMotion } from '../platform/motion'
 import { FOCAL_PER_LONG_SIDE, ViewPointer, describeViewpoint } from '../platform/viewpoint'
-import { seeMarkers, standAt } from './scanScene'
+import { seeCodes, standAt } from './scanScene'
 
 /**
  * A simulated phone: a true orientation R (device → world), turned by the
@@ -275,7 +275,8 @@ function cameraView(p: Phone, at: Vec3) {
   // The rear camera: +x the device's x, +y its −y, looking out of its back (−z).
   const axes: [Vec3, Vec3, Vec3] = [scene(apply(p.R, X)), scene(apply(p.R, [0, -1, 0])), scene(apply(p.R, [0, 0, -1]))]
   const frame = { w: 360, h: 480 }
-  return { corners: seeMarkers(at, axes, frame.w, frame.h, FOCAL_PER_LONG_SIDE * 480).truth, frame }
+  const { plane, image } = seeCodes(at, axes, frame.w, frame.h, FOCAL_PER_LONG_SIDE * 480).truth
+  return { plane, image, frame }
 }
 
 /** rest, pitch, roll: the phone ends on its long side, top towards the kiosk. */
@@ -307,8 +308,8 @@ describe('guided calibration: scanning the kiosk', () => {
       p.turnBody(Z, 90)
       p.turnBody(Y, -90)
       p.hold(400)
-      const { corners, frame } = cameraView(p, at)
-      expect(wiz.scanned(corners, frame)).toBeNull()
+      const { plane, image, frame } = cameraView(p, at)
+      expect(wiz.scanned(plane, image, frame)).toBeNull()
       expect(wiz.view()).toMatchObject({ step: 'aim-center', standing: { side: -40, above: 0 } })
       p.turnBody(X, -80) // down into the remote hold, a little nose-up
       p.hold(1200)
@@ -330,8 +331,8 @@ describe('guided calibration: scanning the kiosk', () => {
     p.turnBody(Y, -90) // flat
     p.turnBody(X, 90) // upright, camera at the kiosk
     p.hold(400)
-    const { corners, frame } = cameraView(p, at)
-    expect(wiz.scanned(corners, frame)).toBeNull()
+    const { plane, image, frame } = cameraView(p, at)
+    expect(wiz.scanned(plane, image, frame)).toBeNull()
     p.turnBody(X, -80)
     p.hold(1200)
     expect(wiz.view()).toMatchObject({ step: 'aim-right', index: 5, total: 7 })
@@ -349,11 +350,11 @@ describe('guided calibration: scanning the kiosk', () => {
     p.turnBody(Y, -90)
     p.turnBody(X, 90)
     p.hold(400)
-    const { corners, frame } = cameraView(p, at)
-    const upsideDown = [corners[2], corners[3], corners[0], corners[1]]
-    expect(wiz.scanned(upsideDown, frame)).toBe('scan-tilted')
-    expect(wiz.view()).toMatchObject({ step: 'scan', problem: 'scan-tilted' })
-    expect(wiz.scanned(corners, frame)).toBeNull()
+    const { plane, image, frame } = cameraView(p, at)
+    const mixed = [image[1], image[0], image[2], image[3]]
+    expect(wiz.scanned(plane, mixed, frame)).toBe('scan-odd')
+    expect(wiz.view()).toMatchObject({ step: 'scan', problem: 'scan-odd' })
+    expect(wiz.scanned(plane, image, frame)).toBeNull()
   })
 
   test('no scan after all: aiming at the edges takes over', () => {
@@ -390,8 +391,8 @@ describe('yaw from gravity', () => {
       p.turnBody(Z, 90, 1500)
       p.turnBody(Y, -90, 1500)
       p.hold(600)
-      const { corners, frame } = cameraView(p, standAt(1.5, 30))
-      expect(wiz.scanned(corners, frame)).toBeNull()
+      const { plane, image, frame } = cameraView(p, standAt(1.5, 30))
+      expect(wiz.scanned(plane, image, frame)).toBeNull()
       p.turnBody(X, -80)
       p.jolts = 0
       p.hold(1200)
@@ -410,8 +411,8 @@ describe('yaw from gravity', () => {
     q.t = p.t
     q.jolts = 0.05 * G
     q.hold(2000)
-    const { corners, frame } = cameraView(q, standAt(1.5, 0))
-    expect(wiz.scanned(corners, frame)).toBeNull()
+    const { plane, image, frame } = cameraView(q, standAt(1.5, 0))
+    expect(wiz.scanned(plane, image, frame)).toBeNull()
     q.turnBody(X, -80)
     q.hold(1200)
     expect(wiz.step).toBe('aim-right')

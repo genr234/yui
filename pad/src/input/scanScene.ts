@@ -1,15 +1,47 @@
 // Test helper (bun test only): a phone camera looking at a kiosk showing the
-// calibration's scan markers, rendered from any spot in the room.
+// calibration's scan codes, rendered from any spot in the room.
 import type { Vec3 } from '@yui/protocol'
-import { SCAN_MARKERS, type Pt } from '../platform/viewpoint'
+import qrcode from 'qrcode-generator'
+import type { Pt } from '../platform/viewpoint'
+import { findAimCodes, regionsToRead, toFrame, type SeenCode } from './aimCodes'
 
 /** The kiosk: a 1080×1920 portrait screen, 0.6 m wide, its game in the 16:9 band in the middle. */
 export const KIOSK = { w: 1080, h: 1920, metres: 0.6 }
 export const AREA = { x: 0, y: (1920 - 607.5) / 2, w: 1080, h: 607.5 }
 const M_PER_PX = KIOSK.metres / KIOSK.w
 
-/** Marker side and hole, kiosk px (platform sdk/calibrate-targets.ts: 1.6 × the smaller inset). */
-const MARKER = 1.6 * Math.min(AREA.w * 0.1, AREA.h * 0.15)
+/** The kiosk's code, laid out as platform sdk/calibrate-targets.ts aimCode() does. */
+export function kioskCodes(area = AREA) {
+  const cx = area.x + area.w / 2
+  const cy = area.y + area.h / 2
+  const size = (0.96 * Math.min(area.w, area.h)) / 1.28
+  const r3 = (v: number) => Math.round(v * 1000) / 1000
+  const x1 = r3(size / 2 / (area.w / 2))
+  const y1 = r3(size / 2 / (area.h / 2))
+  const text = `YUIAIM:${(-x1).toFixed(3)}:${(-y1).toFixed(3)}:${x1.toFixed(3)}:${y1.toFixed(3)}`
+  const qr = qrcode(0, 'H')
+  qr.addData(text, 'Alphanumeric')
+  qr.make()
+  const n = qr.getModuleCount()
+  return [
+    {
+      text,
+      plane: [
+        [-x1, -y1],
+        [x1, -y1],
+        [x1, y1],
+        [-x1, y1],
+      ] as Pt[],
+      x: cx - (x1 * area.w) / 2,
+      y: cy - (y1 * area.h) / 2,
+      w: x1 * area.w,
+      h: y1 * area.h,
+      n,
+      dark: (r: number, c: number) => qr.isDark(r, c),
+    },
+  ]
+}
+const CODES = kioskCodes()
 
 /** World: metres, origin at the game's centre, +x right, +y down, +z into the screen. */
 export function planeToWorld([u, v]: Pt): Vec3 {
@@ -25,26 +57,25 @@ function kioskPixel(x: number, y: number): number {
   if (x < 0 || y < 0 || x >= KIOSK.w || y >= KIOSK.h) return -1
   const inArea = y >= AREA.y && y < AREA.y + AREA.h
   if (!inArea) {
-    // The dimmed shell: some faint UI blocks and text-like stripes.
+    // The dimmed shell: some faint UI blocks.
     const block = (Math.floor(x / 160) + Math.floor(y / 120)) % 3 === 0
     return block ? 70 : 38
   }
-  for (const [u, v] of SCAN_MARKERS) {
-    const mx = AREA.x + ((u + 1) / 2) * AREA.w
-    const my = AREA.y + ((v + 1) / 2) * AREA.h
-    const dx = Math.abs(x - mx)
-    const dy = Math.abs(y - my)
-    if (dx < MARKER / 2 && dy < MARKER / 2) return dx < MARKER / 4 && dy < MARKER / 4 ? 12 : 250
+  for (const c of CODES) {
+    const m = 0.14 * c.w // the white margin
+    if (x < c.x - m || x >= c.x + c.w + m || y < c.y - m || y >= c.y + c.h + m) continue
+    const col = Math.floor(((x - c.x) / c.w) * c.n)
+    const row = Math.floor(((y - c.y) / c.h) * c.n)
+    const inside = col >= 0 && row >= 0 && col < c.n && row < c.n
+    // A player aiming at the middle meanwhile: a small dot on the code's centre.
+    if (Math.hypot(x - (c.x + c.w / 2), y - (c.y + c.h / 2)) < 9) return 120
+    return inside && c.dark(row, col) ? 20 : 245
   }
-  // The player's label pill in the middle: a bright pill with dark letters (one with a hole).
-  const lx = x - (AREA.x + AREA.w / 2)
+  // Player labels beside the code.
+  const lx = x - (AREA.x + 90)
   const ly = y - (AREA.y + AREA.h / 2)
-  if (Math.abs(lx) < 150 && Math.abs(ly) < 22) {
-    const ring = Math.hypot(lx + 100, ly) // an "o"
-    if (ring > 7 && ring < 12) return 30
-    return Math.abs(lx) % 24 < 5 ? 30 : 200
-  }
-  return 12
+  if (Math.abs(lx) < 70 && Math.abs(ly) < 18) return Math.abs(lx) % 20 < 5 ? 30 : 200
+  return 10
 }
 
 /** The room behind and around the kiosk: a wall, a bright ceiling light, a window. */
@@ -57,11 +88,11 @@ function roomPixel(dir: Vec3): number {
 }
 
 export interface Shot {
-  gray: Uint8Array
+  rgba: Uint8ClampedArray
   w: number
   h: number
-  /** Where the markers' centres really are in the frame, TL TR BR BL. */
-  truth: Pt[]
+  /** Every code corner: where it is on the game, and where it really is in the frame. */
+  truth: { plane: Pt[]; image: Pt[] }
   /** Up, in the camera frame. */
   up: Vec3
   /** Camera position in metres (world above). */
@@ -107,9 +138,9 @@ export function cameraAxes(at: Vec3, look: Pt = [0, 0], rollDeg = 0): [Vec3, Vec
 
 /** Renders the frame the phone would see (2×2 supersampled, a little blur and sensor noise). */
 export function shoot(o: ShotOptions): Shot {
-  const w = o.w ?? 360
-  const h = o.h ?? 480
-  const F = (o.focal ?? 0.75) * Math.max(w, h)
+  const w = o.w ?? 540
+  const h = o.h ?? 960
+  const F = (o.focal ?? 0.71) * Math.max(w, h)
   const [r, d, f] = cameraAxes(o.at, o.look, o.roll)
   const cx = w / 2
   const cy = h / 2
@@ -139,7 +170,7 @@ export function shoot(o: ShotOptions): Shot {
     }
   }
   // A slight blur (the lens, and the screen's own glow), then noise.
-  const gray = new Uint8Array(w * h)
+  const rgba = new Uint8ClampedArray(w * h * 4)
   let seed = o.seed ?? 1
   const rand = () => {
     seed = (seed * 1664525 + 1013904223) >>> 0
@@ -160,14 +191,23 @@ export function shoot(o: ShotOptions): Shot {
           n += k
         }
       const v = s / n + (rand() + rand() + rand() - 1.5) * noise
-      gray[y * w + x] = Math.max(0, Math.min(255, Math.round(v)))
+      const g = Math.max(0, Math.min(255, Math.round(v)))
+      const k = (y * w + x) * 4
+      rgba[k] = rgba[k + 1] = rgba[k + 2] = g
+      rgba[k + 3] = 255
     }
   }
-  return { gray, w, h, ...seeMarkers(o.at, [r, d, f], w, h, F), at: o.at, focal: F }
+  return { rgba, w, h, ...seeCodes(o.at, [r, d, f], w, h, F), at: o.at, focal: F }
 }
 
-/** Where a camera at `at` with axes (right, down, forward) sees the markers' centres, and which way is up for it. */
-export function seeMarkers(at: Vec3, [r, d, f]: [Vec3, Vec3, Vec3], w: number, h: number, F: number): { truth: Pt[]; up: Vec3 } {
+/** Where a camera at `at` with axes (right, down, forward) sees every code corner, and which way is up for it. */
+export function seeCodes(
+  at: Vec3,
+  [r, d, f]: [Vec3, Vec3, Vec3],
+  w: number,
+  h: number,
+  F: number,
+): { truth: { plane: Pt[]; image: Pt[] }; up: Vec3 } {
   const project = (p: Vec3): Pt => {
     const q: Vec3 = [p[0] - at[0], p[1] - at[1], p[2] - at[2]]
     const z = dot(q, f)
@@ -175,7 +215,7 @@ export function seeMarkers(at: Vec3, [r, d, f]: [Vec3, Vec3, Vec3], w: number, h
   }
   const worldUp: Vec3 = [0, -1, 0]
   return {
-    truth: SCAN_MARKERS.map((m) => project(planeToWorld(m))),
+    truth: { plane: CODES.flatMap((c) => c.plane), image: CODES.flatMap((c) => c.plane.map((p) => project(planeToWorld(p)))) },
     up: [dot(worldUp, r), dot(worldUp, d), dot(worldUp, f)],
   }
 }
@@ -185,4 +225,43 @@ export function standAt(metres: number, side: number, above = 0): Vec3 {
   const s = (side * Math.PI) / 180
   const a = (above * Math.PI) / 180
   return [metres * Math.cos(a) * Math.sin(s), -metres * Math.sin(a), -metres * Math.cos(a) * Math.cos(s)]
+}
+
+/** Reads a shot the way the scan screen reads the camera: region by region, until the code turns up. */
+export function readShot(shot: Shot, last: SeenCode['image'] | null = null, turn = 0): SeenCode | null {
+  for (const r of regionsToRead({ w: shot.w, h: shot.h }, last, turn)) {
+    const px = new Uint8ClampedArray(r.dw * r.dh * 4)
+    const kx = r.sw / r.dw
+    const ky = r.sh / r.dh
+    for (let y = 0; y < r.dh; y++)
+      for (let x = 0; x < r.dw; x++) {
+        // Box-average the source pixels this one covers, as drawImage does when shrinking.
+        const x0 = Math.floor(r.sx + x * kx)
+        const y0 = Math.floor(r.sy + y * ky)
+        const x1 = Math.max(x0 + 1, Math.floor(r.sx + (x + 1) * kx))
+        const y1 = Math.max(y0 + 1, Math.floor(r.sy + (y + 1) * ky))
+        let s = 0
+        let n = 0
+        for (let yy = y0; yy < y1; yy++)
+          for (let xx = x0; xx < x1; xx++) {
+            s += shot.rgba[(yy * shot.w + xx) * 4]
+            n++
+          }
+        const k = (y * r.dw + x) * 4
+        px[k] = px[k + 1] = px[k + 2] = s / n
+        px[k + 3] = 255
+      }
+    const found = findAimCodes(px, r.dw, r.dh)
+    if (found.length) return toFrame(found[0], r)
+  }
+  return null
+}
+
+
+/** Where the code's corners are for a camera, without rendering a frame (for geometry tests). */
+export function see(o: ShotOptions): Pick<Shot, 'truth' | 'up' | 'at' | 'focal' | 'w' | 'h'> {
+  const w = o.w ?? 540
+  const h = o.h ?? 960
+  const F = (o.focal ?? 0.71) * Math.max(w, h)
+  return { w, h, ...seeCodes(o.at, cameraAxes(o.at, o.look, o.roll), w, h, F), at: o.at, focal: F }
 }

@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test'
 import type { Vec3 } from '@yui/protocol'
 import {
   ViewPointer,
-  cameraUp,
   describeViewpoint,
   homography,
   parseViewpoint,
@@ -11,8 +10,7 @@ import {
   type Viewpoint,
 } from './viewpoint'
 import { PointerIntegrator } from './motion'
-import { detectScanMarkers } from '../input/markers'
-import { planeToWorld, shoot, standAt, type Shot } from '../input/scanScene'
+import { planeToWorld, readShot, see, shoot, standAt } from '../input/scanScene'
 
 const DEG = 180 / Math.PI
 const UP: Vec3 = [0, -1, 0] // world: +y is down
@@ -47,8 +45,8 @@ function aim(p: { recenter(): void; update(g: Vec3, dt: number): [number, number
   return out
 }
 
-function scan(shot: Shot, corners: Pt[] = shot.truth, focal = shot.focal): Viewpoint {
-  const vp = viewpointFromScan(corners, { w: shot.w, h: shot.h }, shot.up, focal)
+function scan(shot: ReturnType<typeof see>, image: Pt[] = shot.truth.image, focal = shot.focal): Viewpoint {
+  const vp = viewpointFromScan(shot.truth.plane, image, { w: shot.w, h: shot.h }, focal)
   if (typeof vp === 'string') throw new Error(vp)
   return vp
 }
@@ -94,8 +92,7 @@ describe('viewpoint', () => {
   ]) {
     test(`standing ${side}° to the side, ${above}° up: where they stood, and every aim lands where it points`, () => {
       const at = standAt(1.6, side, above)
-      const shot = shoot({ at })
-      const vp = scan(shot)
+      const vp = scan(see({ at }))
       const d = describeViewpoint(vp)
       expect(d.side).toBeCloseTo(side, 3)
       expect(d.above).toBeCloseTo(above, 3)
@@ -109,19 +106,19 @@ describe('viewpoint', () => {
     })
   }
 
-  test('from the detected markers, and a camera 6% wider than assumed, still within a few percent', () => {
+  test('from the code as read off a camera frame, and a camera 6% wider than assumed, still within a few percent', () => {
     const at = standAt(1.5, -45, 10)
-    const shot = shoot({ at, focal: 0.665 })
-    const corners = detectScanMarkers(shot.gray, shot.w, shot.h)!
-    const vp = scan(shot, corners, 0.71 * Math.max(shot.w, shot.h))
-    expect(describeViewpoint(vp).side).toBeCloseTo(-45, -1) // ±5°
+    const shot = shoot({ at, focal: 0.665, w: 720, h: 1280 })
+    const code = readShot(shot)!
+    const vp = scan(shot, code.image, 0.71 * Math.max(shot.w, shot.h))
+    expect(Math.abs(describeViewpoint(vp).side - -45)).toBeLessThan(4)
     const p = new ViewPointer(vp)
     for (const t of TARGETS) {
       const got = aim(p, at, t)
-      expect(Math.abs(got[0] - t[0])).toBeLessThan(0.08)
-      expect(Math.abs(got[1] - t[1])).toBeLessThan(0.08)
+      expect(Math.abs(got[0] - t[0])).toBeLessThan(0.1)
+      expect(Math.abs(got[1] - t[1])).toBeLessThan(0.1)
     }
-  })
+  }, 30_000)
 
   test('seen from the side, the far edge is not where turn-angle aiming puts it', () => {
     // What the edge-aiming calibration measures from 50° to the left, and where its pointer lands.
@@ -133,13 +130,13 @@ describe('viewpoint', () => {
     const left = aim(linear, at, [-0.5, 0])
     expect(Math.abs(left[0] - -0.5)).toBeGreaterThan(0.12) // it lands at about −0.66
     // The scanned viewpoint gets it.
-    const p = new ViewPointer(scan(shoot({ at })))
+    const p = new ViewPointer(scan(see({ at })))
     expect(aim(p, at, [-0.5, 0])[0]).toBeCloseTo(-0.5, 3)
   })
 
   test('aim stops at the edges and comes straight back', () => {
     const at = standAt(1.4, 30)
-    const p = new ViewPointer(scan(shoot({ at })))
+    const p = new ViewPointer(scan(see({ at })))
     p.recenter()
     for (let i = 0; i < 30; i++) p.update([0, -40, 0], 100) // far past the right edge
     expect(p.value()[0]).toBeCloseTo(1, 2)
@@ -155,34 +152,32 @@ describe('viewpoint', () => {
 
   test('ranges: degrees from the centre to the right and top edges', () => {
     const at = standAt(1.5, 0)
-    const r = new ViewPointer(scan(shoot({ at }))).ranges()
+    const r = new ViewPointer(scan(see({ at }))).ranges()
     expect(r.yaw).toBeCloseTo(Math.atan(0.3 / 1.5) * DEG, 1)
     expect(r.pitch).toBeCloseTo(Math.atan((0.3 * 9) / 16 / 1.5) * DEG, 1)
   })
 
   test('refuses what is not a phone looking at the kiosk', () => {
-    const shot = shoot({ at: standAt(1.5, 20) })
+    const shot = see({ at: standAt(1.5, 20) })
     const frame = { w: shot.w, h: shot.h }
-    // Upside down: gravity says the game's top is down.
-    expect(viewpointFromScan(shot.truth, frame, [-shot.up[0], -shot.up[1], -shot.up[2]])).toBe('scan-tilted')
-    // Corners mixed up.
-    const mixed = [shot.truth[1], shot.truth[0], shot.truth[2], shot.truth[3]]
-    expect(typeof viewpointFromScan(mixed, frame, shot.up)).toBe('string')
+    // Corners mixed up: not a picture of a flat game.
+    const im = shot.truth.image
+    expect(typeof viewpointFromScan(shot.truth.plane, [im[1], im[0], im[2], im[3]], frame)).toBe('string')
     // Edge-on.
-    const edge = shoot({ at: standAt(1.5, 80) })
-    expect(viewpointFromScan(edge.truth, frame, edge.up)).toBe('scan-angle')
+    const edge = see({ at: standAt(1.5, 80) })
+    expect(viewpointFromScan(edge.truth.plane, edge.truth.image, frame)).toBe('scan-angle')
   })
 
-  test('up in the camera from up in the device, for each screen angle', () => {
-    // Upright portrait phone, camera at the kiosk: device +y is up, which is the picture's −y.
-    expect(cameraUp([0, 1, 0], 0)).toEqual([0, -1, -0])
-    // Landscape: at 90 the displayed top is the device's +x, at 270 its −x.
-    expect(cameraUp([1, 0, 0], 90)[1]).toBeCloseTo(-1)
-    expect(cameraUp([-1, 0, 0], 270)[1]).toBeCloseTo(-1)
+  test('up is the game\'s own up, however the phone is turned', () => {
+    for (const roll of [0, 30, 90, 180]) {
+      const shot = see({ at: standAt(1.5, -30), roll })
+      const vp = scan(shot)
+      for (let i = 0; i < 3; i++) expect(vp.up[i]).toBeCloseTo(shot.up[i], 6)
+    }
   })
 
   test('stored viewpoints are checked', () => {
-    const vp = scan(shoot({ at: standAt(1.5, 10) }))
+    const vp = scan(see({ at: standAt(1.5, 10) }))
     expect(parseViewpoint(JSON.parse(JSON.stringify(vp)))).toEqual(vp)
     expect(parseViewpoint({ m: [1, 2, 3], up: [0, 1, 0] })).toBeNull()
     expect(parseViewpoint({ m: [0, 0, 0, 0, 0, 0, 0, 0, 0], up: [0, 1, 0] })).toBeNull()

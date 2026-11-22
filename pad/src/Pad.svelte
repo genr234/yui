@@ -701,7 +701,7 @@
       <MotionCalibration
         view={$motionView}
         camera={motion.hasCamera}
-        scan={(corners, frame) => motion.scanned(corners, frame)}
+        scan={(plane, image, frame) => motion.scanned(plane, image, frame)}
         skipScan={() => motion.skipScan()}
         on:start={() => {
           unlockAudio()

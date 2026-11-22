@@ -178,6 +178,11 @@ type Manager struct {
 	saveMu    sync.Mutex
 	saveWG    sync.WaitGroup
 	lastSaves *saveTarget
+
+	// overlay: the kiosk's page should be above the program (overlay.go);
+	// focusMu keeps those focus moves in order.
+	overlay bool
+	focusMu sync.Mutex
 }
 
 type session struct {
@@ -405,7 +410,13 @@ func (m *Manager) Launch(spec Spec) (Status, error) {
 		o.SessionStarted(info)
 	}
 	m.publish()
-	go m.cfg.Focus.Give(info.PID, s.skip, s.focusStop)
+	go func() {
+		m.cfg.Focus.Give(info.PID, s.skip, s.focusStop)
+		// Someone is calibrating against the page: lift it over the new game.
+		if m.overlayWanted() {
+			m.applyOverlay(s)
+		}
+	}()
 	if spec.Window != nil {
 		go m.cfg.Placer.Place(info.PID, *spec.Window, s.focusStop, func(r Rect, screen Screen) {
 			s.windowMu.Lock()

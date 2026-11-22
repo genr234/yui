@@ -155,6 +155,28 @@ func (r *Router) onCalibrate(playerID string, value any) {
 		return
 	}
 	r.emit(CalibrateEvent, CalibrateNote{PlayerID: playerID, Step: step})
+	r.setCalibrating(playerID, step != "")
+}
+
+// setCalibrating notes whether a player is on a kiosk-facing calibration
+// step and tells Config.Calibrating when that turns any player on or the
+// last one off.
+func (r *Router) setCalibrating(playerID string, on bool) {
+	r.calibMu.Lock()
+	defer r.calibMu.Unlock()
+	if on {
+		r.calibrating[playerID] = true
+	} else {
+		delete(r.calibrating, playerID)
+	}
+	any := len(r.calibrating) > 0
+	if any == r.calibOn {
+		return
+	}
+	r.calibOn = any
+	if r.cfg.Calibrating != nil {
+		r.cfg.Calibrating(any)
+	}
 }
 
 func (r *Router) onPoke(from string, m protocol.Poke) {

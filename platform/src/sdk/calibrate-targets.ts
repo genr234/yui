@@ -13,31 +13,45 @@ export type AimStep = "scan" | "aim-center" | "aim-right" | "aim-top";
 export const AIM_STEPS: readonly AimStep[] = ["scan", "aim-center", "aim-right", "aim-top"];
 
 /**
- * The scan step's markers. The phone finds them with its camera
- * (pad input/markers.ts) and works out its angle to the game from where
- * they appear, so their centres must be exactly where it expects them: at
- * ±U, ±V of the game's half-width and half-height from its middle (pad
- * platform/viewpoint.ts, SCAN_MARKER_U/V). Each is a white square with a
- * black square hole half its size, on black.
+ * The scan step's code: one QR code in the middle of the game. Its text is
+ * where it sits on the game: `YUIAIM:<x0>:<y0>:<x1>:<y1>`, its top-left and
+ * bottom-right corners in game coordinates (−1…1, +y down, 3 decimals),
+ * and it is drawn exactly where the rounded text says. The phone (pad
+ * input/aimCodes.ts) reads it with its camera; how its corners look from
+ * where the player stands tells it their angle. One code, as big as fits:
+ * a QR reader can't untangle two side by side, and bigger modules read
+ * from further away and at steeper angles. Its middle is the game's middle,
+ * so a player aiming there while another scans aims at the code's centre;
+ * error correction H shrugs off the small dot drawn there.
  */
-export const SCAN_MARKER_U = 0.8;
-export const SCAN_MARKER_V = 0.7;
+export const AIM_CODE_PREFIX = "YUIAIM:";
 
-export type ScanMarker = { x: number; y: number; size: number };
+export type AimCode = {
+	text: string;
+	/** The code's symbol (its modules, no margin), viewport px: square to within rounding. */
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+};
 
-/** The four markers' centres (TL, TR, BR, BL) and side, in viewport px: as big as fits between each centre and the game's edges. */
-export function scanMarkers(area: Rect): ScanMarker[] {
-	const insetX = ((1 - SCAN_MARKER_U) * area.w) / 2;
-	const insetY = ((1 - SCAN_MARKER_V) * area.h) / 2;
-	const size = 1.6 * Math.min(insetX, insetY);
+/** The code for a game area. */
+export function aimCode(area: Rect): AimCode {
 	const cx = area.x + area.w / 2;
 	const cy = area.y + area.h / 2;
-	return [
-		[-1, -1],
-		[1, -1],
-		[1, 1],
-		[-1, 1],
-	].map(([sx, sy]) => ({ x: cx + (sx * SCAN_MARKER_U * area.w) / 2, y: cy + (sy * SCAN_MARKER_V * area.h) / 2, size }));
+	// The symbol plus its white margin (0.14 of it each side, 4 modules) fills 96% of the game's short side.
+	const size = (0.96 * Math.min(area.w, area.h)) / 1.28;
+	const r3 = (v: number) => Math.round(v * 1000) / 1000;
+	const x1 = r3(size / 2 / (area.w / 2));
+	const y1 = r3(size / 2 / (area.h / 2));
+	const fmt = (v: number) => v.toFixed(3);
+	return {
+		text: `${AIM_CODE_PREFIX}${fmt(-x1)}:${fmt(-y1)}:${fmt(x1)}:${fmt(y1)}`,
+		x: cx - (x1 * area.w) / 2,
+		y: cy - (y1 * area.h) / 2,
+		w: x1 * area.w,
+		h: y1 * area.h,
+	};
 }
 
 /** A player who stops sending (phone locked, left) stops showing after this. */
@@ -85,8 +99,60 @@ export function aimArea(game: Rect | null, viewport: { w: number; h: number }): 
 export function targetFor(step: AimStep, area: Rect, inset = 6) {
 	const cx = area.x + area.w / 2;
 	const cy = area.y + area.h / 2;
-	if (step === "scan") return { kind: "scan" as const, x: cx, y: cy, markers: scanMarkers(area) };
+	if (step === "scan") return { kind: "scan" as const, x: cx, y: cy, code: aimCode(area) };
 	if (step === "aim-center") return { kind: "point" as const, x: cx, y: cy };
 	if (step === "aim-right") return { kind: "edge" as const, x: area.x + area.w - inset, y: area.y, w: 0, h: area.h, labelX: area.x + area.w - inset, labelY: cy };
 	return { kind: "edge" as const, x: area.x, y: area.y + inset, w: area.w, h: 0, labelX: cx, labelY: area.y + inset };
+}
+
+/** A player on the board: a chip in their colour. */
+export type BoardPlayer = { id: string; label: string; color: string };
+
+/**
+ * Who is on which target. Several phones calibrate at once, so the kiosk
+ * draws each target once and lists the players on it, in slot order, rather
+ * than one overlapping target per player.
+ */
+export type Board = {
+	scan: BoardPlayer[];
+	center: BoardPlayer[];
+	right: BoardPlayer[];
+	top: BoardPlayer[];
+};
+
+type RosterPlayer = { id: string; slot: number | null; name: string; color: string };
+
+export function boardFor(aiming: Map<string, Aiming>, roster: readonly RosterPlayer[], swatch: Record<string, string>): Board {
+	const board: Board = { scan: [], center: [], right: [], top: [] };
+	const order = (id: string) => {
+		const p = roster.find((r) => r.id === id);
+		return p?.slot ?? 99;
+	};
+	const ids = [...aiming.keys()].sort((a, b) => order(a) - order(b) || a.localeCompare(b));
+	for (const id of ids) {
+		const step = aiming.get(id)!.step;
+		const p = roster.find((r) => r.id === id);
+		const chip = { id, label: p?.slot ? `P${p.slot}` : p?.name || "Player", color: (p && swatch[p.color]) || "#2f76dc" };
+		const list = step === "scan" ? board.scan : step === "aim-center" ? board.center : step === "aim-right" ? board.right : board.top;
+		list.push(chip);
+	}
+	return board;
+}
+
+/** Where the board's captions go: beside the code on a wide game, above and below it on a tall one. */
+export function captionSpots(area: Rect, code: AimCode): { first: { x: number; y: number }; second: { x: number; y: number } } {
+	const cx = area.x + area.w / 2;
+	const cy = area.y + area.h / 2;
+	const margin = 0.14 * code.w;
+	const card = { left: code.x - margin, right: code.x + code.w + margin, top: code.y - margin, bottom: code.y + code.h + margin };
+	if (area.w >= area.h) {
+		return {
+			first: { x: (area.x + card.left) / 2, y: cy },
+			second: { x: (card.right + area.x + area.w) / 2, y: cy },
+		};
+	}
+	return {
+		first: { x: cx, y: (area.y + card.top) / 2 },
+		second: { x: cx, y: (card.bottom + area.y + area.h) / 2 },
+	};
 }

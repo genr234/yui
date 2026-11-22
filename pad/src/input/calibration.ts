@@ -1,5 +1,5 @@
 import type { Vec3 } from '@yui/protocol'
-import { ViewPointer, cameraUp, describeViewpoint, viewpointFromScan, type Pt, type ViewProblem, type Viewpoint } from '../platform/viewpoint'
+import { ViewPointer, describeViewpoint, viewpointFromScan, type Pt, type ViewProblem, type Viewpoint } from '../platform/viewpoint'
 import {
   CALIBRATION_VERSION,
   DEFAULT_GYRO_MAP,
@@ -23,8 +23,8 @@ import {
  *  3. roll       flat again, roll onto the right or left edge: roll channel, sign, scale (must agree)
  *                yaw is the channel left over
  *  4. scan       hold the phone up and point its camera at the kiosk from where you'll
- *                 play: the kiosk shows four markers on its game, and how they look
- *                 from here says where the player stands (platform/viewpoint.ts)
+ *                 play: the kiosk shows a QR code on its game, and how it looks from
+ *                 here says where the player stands (platform/viewpoint.ts)
  *  5. aim-center hold it like a remote at the middle of the TV: the pointer's zero
  *  6. verify     the dot follows the phone; the player accepts or starts over
  *
@@ -66,7 +66,7 @@ export type CalibProblem =
   | 'not-remote' // aim: not held screen-up like a remote
   | 'wrong-way' // aim: went the opposite way
   | 'too-big' // aim: an edge further away than any TV is
-  | ViewProblem // scan: the markers were found, but not as a phone in front of the kiosk would see them
+  | ViewProblem // scan: the code was read, but not as a phone in front of the kiosk would see it
 
 export interface CalibView {
   step: CalibStep
@@ -109,8 +109,6 @@ const YAW_MIN = 4
 const YAW_MAX = 70
 const PITCH_MIN = 2.5
 const PITCH_MAX = 50
-/** Gravity in the last this-many samples sets which way is up for the scan. */
-const SCAN_UP_SAMPLES = 12
 
 const CHANNELS: GyroChannel[] = ['alpha', 'beta', 'gamma']
 type PerChannel = Record<GyroChannel, number>
@@ -253,7 +251,6 @@ export class CalibrationWizard {
   private pitchRange = 0
 
   // scan
-  private recentUp: Vec3[] = []
   private viewpoint: Viewpoint | null = null
   private witness: YawWitness | null = null
   private yawKnown = false
@@ -309,8 +306,6 @@ export class CalibrationWizard {
       case 'roll':
         return this.tilt(raw, t, 1)
       case 'scan':
-        this.recentUp.push(this.gravity(raw))
-        if (this.recentUp.length > SCAN_UP_SAMPLES) this.recentUp.shift()
         return
       case 'aim-center':
       case 'aim-right':
@@ -322,15 +317,14 @@ export class CalibrationWizard {
   }
 
   /**
-   * The scan step's camera found the kiosk's markers: their centres (TL,
-   * TR, BR, BL) in a frame of `frame` pixels, shown at screen angle `angle`.
-   * Returns the problem when it can't be a phone in front of the kiosk.
+   * The scan step's camera read the kiosk's code: points of the game
+   * (`plane`, from the code's text) and where each was seen (`image`, in a
+   * frame of `frame` pixels). Returns the problem when that can't be a
+   * phone in front of the kiosk.
    */
-  scanned(corners: readonly Pt[], frame: { w: number; h: number }, angle = 0): ViewProblem | null {
+  scanned(plane: readonly Pt[], image: readonly Pt[], frame: { w: number; h: number }): ViewProblem | null {
     if (this.step !== 'scan') return null
-    if (!this.recentUp.length) return 'scan-odd'
-    const up = cameraUp(norm(mean3(this.recentUp)), angle)
-    const vp = viewpointFromScan(corners, frame, up)
+    const vp = viewpointFromScan(plane, image, frame)
     if (typeof vp === 'string') {
       this.problem = vp
       return vp

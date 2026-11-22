@@ -2,8 +2,9 @@ import type { Vec3 } from '@yui/protocol'
 
 /**
  * Where a player sees the kiosk's game from, measured by scanning it with
- * the phone's camera (input/markers.ts finds the four markers the kiosk
- * draws), and the pointer that follows from it.
+ * the phone's camera (input/aimCodes.ts reads the QR codes the kiosk draws
+ * on the game; each one says where on the game it sits), and the pointer
+ * that follows from it.
  *
  * The kiosk is small and players stand around it, often well to one side.
  * Seen at an angle the game is a trapezoid: its near edge is a bigger turn
@@ -17,16 +18,6 @@ import type { Vec3 } from '@yui/protocol'
  * Plane coordinates are the game's area normalised to −1…1, +x right, +y
  * down: exactly the pointer's coordinates.
  */
-
-/** Where the four scan markers' centres are, in plane coordinates: TL, TR, BR, BL. The kiosk draws them here (platform sdk/calibrate-targets.ts). */
-export const SCAN_MARKER_U = 0.8
-export const SCAN_MARKER_V = 0.7
-export const SCAN_MARKERS: readonly Pt[] = [
-  [-SCAN_MARKER_U, -SCAN_MARKER_V],
-  [SCAN_MARKER_U, -SCAN_MARKER_V],
-  [SCAN_MARKER_U, SCAN_MARKER_V],
-  [-SCAN_MARKER_U, SCAN_MARKER_V],
-]
 
 /**
  * The camera's focal length as a fraction of the frame's long side. Phones
@@ -46,7 +37,7 @@ export type Mat3 = number[]
  * scan's camera (camera frame: +x right, +y down, +z out of the lens),
  * scaled so its first column (the game's half-width) has length 1: the third
  * column is then the camera-to-centre vector in half-widths. `up` is the way
- * up, in the same camera frame, from gravity at the scan.
+ * up, in the same camera frame: the game's own up, since the kiosk stands upright.
  */
 export interface Viewpoint {
   m: Mat3
@@ -90,18 +81,54 @@ export function invert3(m: Mat3): Mat3 | null {
   ]
 }
 
-/** The homography taking each `src` point to its `dst` point (four pairs), or null when they are degenerate. */
+/**
+ * The homography taking each `src` point to its `dst` point: exact for four
+ * pairs, least squares for more. Both sets are normalised first (centred,
+ * mean distance √2) so pixels and plane units weigh alike. Null when the
+ * points are degenerate.
+ */
 export function homography(src: readonly Pt[], dst: readonly Pt[]): Mat3 | null {
-  // h33 = 1; two equations per pair.
-  const A: number[][] = []
-  for (let k = 0; k < 4; k++) {
-    const [x, y] = src[k]
-    const [u, v] = dst[k]
-    A.push([x, y, 1, 0, 0, 0, -u * x, -u * y, u])
-    A.push([0, 0, 0, x, y, 1, -v * x, -v * y, v])
+  if (src.length < 4 || src.length !== dst.length) return null
+  const ns = normaliser(src)
+  const nd = normaliser(dst)
+  // h33 = 1; two equations per pair, accumulated as normal equations.
+  const AtA = Array.from({ length: 8 }, () => new Array<number>(9).fill(0))
+  const row = (r: number[]) => {
+    for (let i = 0; i < 8; i++) {
+      for (let j = 0; j < 8; j++) AtA[i][j] += r[i] * r[j]
+      AtA[i][8] += r[i] * r[8]
+    }
   }
-  const h = solve8(A)
-  return h ? [...h, 1] : null
+  for (let k = 0; k < src.length; k++) {
+    const [x, y] = ns.apply(src[k])
+    const [u, v] = nd.apply(dst[k])
+    row([x, y, 1, 0, 0, 0, -u * x, -u * y, u])
+    row([0, 0, 0, x, y, 1, -v * x, -v * y, v])
+  }
+  const h = solve8(AtA)
+  if (!h) return null
+  // Undo the normalisation: H = Nd⁻¹ · Hn · Ns.
+  const Hn: Mat3 = [...h, 1]
+  const Ndi = invert3(nd.m)
+  if (!Ndi) return null
+  const H = mul3(mul3(Ndi, Hn), ns.m)
+  const k = H[8] || 1
+  return H.map((v) => v / k)
+}
+
+function normaliser(pts: readonly Pt[]): { m: Mat3; apply(p: Pt): Pt } {
+  const n = pts.length
+  const cx = pts.reduce((a, p) => a + p[0], 0) / n
+  const cy = pts.reduce((a, p) => a + p[1], 0) / n
+  const d = pts.reduce((a, p) => a + Math.hypot(p[0] - cx, p[1] - cy), 0) / n || 1
+  const k = Math.SQRT2 / d
+  return { m: [k, 0, -k * cx, 0, k, -k * cy, 0, 0, 1], apply: (p) => [(p[0] - cx) * k, (p[1] - cy) * k] }
+}
+
+function mul3(a: Mat3, b: Mat3): Mat3 {
+  const out: number[] = []
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) out.push(a[i * 3] * b[j] + a[i * 3 + 1] * b[3 + j] + a[i * 3 + 2] * b[6 + j])
+  return out
 }
 
 /** Gaussian elimination with partial pivoting on an 8×9 augmented matrix. */
@@ -128,47 +155,24 @@ function solve8(A: number[][]): number[] | null {
 
 // ------------------------------------------------------------ the viewpoint
 
-/** A device-frame vector in the displayed frame for screen.orientation.angle (as toScreenFrame turns it). */
-export function deviceToDisplay(v: Vec3, angle: number): Vec3 {
-  const a = (((Math.round(angle / 90) * 90) % 360) + 360) % 360
-  switch (a) {
-    case 90:
-      return [-v[1], v[0], v[2]]
-    case 180:
-      return [-v[0], -v[1], v[2]]
-    case 270:
-      return [v[1], -v[0], v[2]]
-    default:
-      return v
-  }
-}
+export type ViewProblem = 'scan-angle' | 'scan-odd'
 
 /**
- * Up in the rear camera's frame, from up in the device frame (what the
- * accelerometer reads at rest). The camera's picture is shown upright on the
- * displayed screen, so its +x is the displayed right, +y the displayed down,
- * and it looks out of the back.
- */
-export function cameraUp(deviceUp: Vec3, angle: number): Vec3 {
-  const d = deviceToDisplay(deviceUp, angle)
-  return unit([d[0], -d[1], -d[2]])
-}
-
-export type ViewProblem = 'scan-angle' | 'scan-tilted' | 'scan-odd'
-
-/**
- * The viewpoint from the four markers' centres in a camera frame (TL, TR,
- * BR, BL, in frame pixels), the frame's size, and up in the camera frame.
- * Refuses what can't be a phone looking at the kiosk: the game seen from
- * behind or nearly edge-on, upside down, or impossibly near or far.
+ * The viewpoint from points of the game seen in a camera frame: `plane`
+ * points (game coordinates, from the codes' own contents) and where each was
+ * seen (`image`, frame pixels), at least four, and the frame's size. Up is
+ * the game's own up: the kiosk's screen stands upright, so this holds
+ * however the phone or its camera picture is turned. Refuses what can't be
+ * a phone looking at the kiosk: the game seen nearly edge-on, a camera
+ * model that doesn't fit, or impossibly near or far.
  */
 export function viewpointFromScan(
-  corners: readonly Pt[],
+  plane: readonly Pt[],
+  image: readonly Pt[],
   frame: { w: number; h: number },
-  up: Vec3,
   focal = FOCAL_PER_LONG_SIDE * Math.max(frame.w, frame.h),
 ): Viewpoint | ViewProblem {
-  const H = homography(SCAN_MARKERS, corners)
+  const H = homography(plane, image)
   if (!H) return 'scan-odd'
   const cx = frame.w / 2
   const cy = frame.h / 2
@@ -189,13 +193,10 @@ export function viewpointFromScan(
   const k = 1 / (len(col(m, 0)) || 1)
   m = m.map((v) => v * k + 0)
   if (!m.every(Number.isFinite)) return 'scan-odd'
-  const u = unit(up)
-  const vp: Viewpoint = { m, up: u }
+  const vp: Viewpoint = { m, up: scale(unit(col(m, 1)), -1) }
   const g = geometry(vp)
   // Seen from more than 75° off square, the scan is too squashed to trust.
   if (g.facing < Math.cos(75 / DEG)) return 'scan-angle'
-  // The game's down is the world's down (a phone held sideways is fine: the frame turns with it).
-  if (dot(g.down, u) > -0.6) return 'scan-tilted'
   // The game's axes come out square when the camera model fits; a bad match does not.
   if (Math.abs(dot(g.right, g.down)) > 0.35 || g.distance < 0.3 || g.distance > 60) return 'scan-odd'
   return vp
@@ -333,7 +334,7 @@ export class ViewPointer implements Pointer {
   value(): [number, number] {
     const p = this.project(this.az, this.el)
     if (p) {
-      const c = (v: number) => Math.max(-1, Math.min(1, v)) + 0
+      const c = (v: number) => (Math.abs(v) < 1e-9 ? 0 : Math.max(-1, Math.min(1, v)))
       this.last = [c(p[0]), c(p[1])]
     }
     return this.last

@@ -1,28 +1,29 @@
 <script lang="ts">
   /**
-   * The calibration's scan step: the rear camera, looking for the four
-   * markers the kiosk draws on its game while a phone is on this step
-   * (input/markers.ts). Once all four hold steady for half a second, their
-   * average goes to `onScan`, which works out where the player stands. Any
+   * The calibration's scan step: the rear camera, reading the QR code the
+   * kiosk shows on its game while a phone is on this step
+   * (input/aimCodes.ts). Only the kiosk's own code counts: its text says
+   * where on the game it is. Once it holds steady for a few reads, its
+   * corners go to `onScan`, which works out where the player stands. Any
    * browser with a camera works: no BarcodeDetector needed.
    */
   import { onDestroy, onMount } from 'svelte'
-  import { detectScanMarkers, toGray } from './input/markers'
+  import { findAimCodes, regionsToRead, toFrame, type SeenCode } from './input/aimCodes'
   import type { Pt } from './platform/viewpoint'
 
   /** Returns why the scan can't be used, or null when it was taken. */
-  export let onScan: (corners: Pt[], frame: { w: number; h: number }) => string | null
+  export let onScan: (plane: Pt[], image: Pt[], frame: { w: number; h: number }) => string | null
   export let onSkip: () => void
   /** The latest problem's words, to show under the picture. */
   export let problem = ''
 
-  /** Frames are shrunk to this long side before searching: plenty for markers, a few ms each. */
-  const LONG_SIDE = 480
-  const EVERY_MS = 90
-  /** Consecutive frames the markers must hold still for. */
-  const STEADY = 5
-  /** How far a corner may move between those frames, as a share of the long side. */
-  const STEADY_MOVE = 0.025
+  /** Reads the code must hold still for. */
+  const STEADY = 3
+  /** How far a corner may move between those reads, as a share of the frame's long side. */
+  const STEADY_MOVE = 0.03
+  /** Regions read per frame at most (each ~30–80 ms on a phone). */
+  const READS_PER_FRAME = 2
+  const MIN_GAP_MS = 60
 
   let video: HTMLVideoElement
   let stream: MediaStream | null = null
@@ -32,7 +33,9 @@
   let starting = true
 
   let frame = { w: 0, h: 0 }
-  let found: Pt[] | null = null
+  let found: SeenCode | null = null
+  let lastSeenAt = 0
+  let turn = 0
   let streak: Pt[][] = []
   let pausedUntil = 0
   /** Just after a refused scan: its problem shows until the next try. */
@@ -42,10 +45,11 @@
 
   onMount(async () => {
     try {
-      // The camera's own picture, uncropped and unscaled: the angle maths assumes
-      // the frame's long side spans the lens's full view (viewpoint.ts).
+      // The camera's own picture, uncropped and unscaled: the angle maths assumes the
+      // frame's long side spans the lens's full view (viewpoint.ts), and the code is
+      // read at full resolution, so ask for a big one.
       stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' }, resizeMode: { ideal: 'none' }, width: { ideal: 1280 } } as MediaTrackConstraints,
+        video: { facingMode: { ideal: 'environment' }, resizeMode: { ideal: 'none' }, width: { ideal: 1920 } } as MediaTrackConstraints,
         audio: false,
       })
       if (stopped) return stop()
@@ -61,54 +65,66 @@
 
   function loop() {
     if (stopped) return
+    const t0 = performance.now()
     try {
       look()
     } catch {
       /* a frame that could not be read */
     }
-    timer = setTimeout(loop, EVERY_MS)
+    timer = setTimeout(loop, Math.max(MIN_GAP_MS, performance.now() - t0))
   }
 
   let canvas: HTMLCanvasElement | null = null
   let ctx: CanvasRenderingContext2D | null = null
-  let gray: Uint8Array | null = null
+
+  function read(r: ReturnType<typeof regionsToRead>[number]): SeenCode | null {
+    if (!canvas || canvas.width !== r.dw || canvas.height !== r.dh) {
+      canvas ??= document.createElement('canvas')
+      canvas.width = r.dw
+      canvas.height = r.dh
+      ctx = canvas.getContext('2d', { willReadFrequently: true })
+    }
+    if (!ctx) return null
+    ctx.drawImage(video, r.sx, r.sy, r.sw, r.sh, 0, 0, r.dw, r.dh)
+    const codes = findAimCodes(ctx.getImageData(0, 0, r.dw, r.dh).data, r.dw, r.dh)
+    return codes.length ? toFrame(codes[0], r) : null
+  }
 
   function look() {
     const vw = video.videoWidth
     const vh = video.videoHeight
     if (video.readyState < 2 || !vw || !vh) return
-    const k = Math.min(1, LONG_SIDE / Math.max(vw, vh))
-    const w = Math.round(vw * k)
-    const h = Math.round(vh * k)
-    if (!canvas || canvas.width !== w || canvas.height !== h) {
-      canvas = document.createElement('canvas')
-      canvas.width = w
-      canvas.height = h
-      ctx = canvas.getContext('2d', { willReadFrequently: true })
-      gray = new Uint8Array(w * h)
+    if (vw !== frame.w || vh !== frame.h) {
+      frame = { w: vw, h: vh }
       streak = []
     }
-    if (!ctx || !gray) return
-    frame = { w, h }
-    ctx.drawImage(video, 0, 0, w, h)
-    const quad = detectScanMarkers(toGray(ctx.getImageData(0, 0, w, h).data, w, h, gray), w, h)
-    found = quad
-    paused = performance.now() < pausedUntil
-    if (!quad || paused) {
+    const now = performance.now()
+    const recent = found && now - lastSeenAt < 1000 ? found.image : null
+    let code: SeenCode | null = null
+    for (const r of regionsToRead(frame, recent, turn++).slice(0, READS_PER_FRAME)) {
+      code = read(r)
+      if (code) break
+    }
+    if (code) {
+      found = code
+      lastSeenAt = now
+    } else if (now - lastSeenAt > 600) found = null
+    paused = now < pausedUntil
+    if (!code || paused) {
       streak = []
       return
     }
     const last = streak[streak.length - 1]
-    const tol = STEADY_MOVE * Math.max(w, h)
-    if (last && quad.some((p, i) => Math.hypot(p[0] - last[i][0], p[1] - last[i][1]) > tol)) streak = []
-    streak = [...streak, quad]
+    const tol = STEADY_MOVE * Math.max(vw, vh)
+    if (last && code.image.some((p, i) => Math.hypot(p[0] - last[i][0], p[1] - last[i][1]) > tol)) streak = []
+    streak = [...streak, code.image]
     if (streak.length < STEADY) return
-    const avg = [0, 1, 2, 3].map((i) => [
+    const avg = code.image.map((_, i) => [
       streak.reduce((s, q) => s + q[i][0], 0) / streak.length,
       streak.reduce((s, q) => s + q[i][1], 0) / streak.length,
     ]) as Pt[]
     streak = []
-    if (onScan(avg, { w, h })) {
+    if (onScan(code.plane, avg, frame)) {
       pausedUntil = performance.now() + 1200
       paused = true
     }
@@ -127,10 +143,10 @@
   $: cover = frame.w && boxW ? Math.max(boxW / frame.w, boxH / frame.h) : 0
   $: ox = (boxW - frame.w * cover) / 2
   $: oy = (boxH - frame.h * cover) / 2
-  $: shown = found && cover ? found.map(([x, y]) => [ox + x * cover, oy + y * cover]) : null
+  $: shown = found && cover ? found.image.map(([x, y]) => [ox + x * cover, oy + y * cover]) : null
   $: progress = streak.length / STEADY
   // A refused scan's problem shows while it waits to try again, or while nothing is found;
-  // once the squares are held steady again, the progress speaks instead.
+  // once the code is held steady again, the progress speaks instead.
   $: shownProblem = problem && (paused || !found) ? problem : ''
   $: status = error
     ? error
@@ -140,20 +156,17 @@
         ? 'Starting the camera…'
         : found
           ? 'Got it. Hold still…'
-          : 'Point the camera at the kiosk until all four white squares are on screen.'
+          : 'Point the camera at the code on the kiosk.'
 </script>
 
 <div class="scan">
-  <!-- The whole frame is shown (its own shape), so every marker found is on screen. -->
+  <!-- The whole frame is shown (its own shape), so the code is outlined wherever it is found. -->
   <div class="view" style="--ar: {frame.w && frame.h ? frame.w / frame.h : 0.75}" bind:clientWidth={boxW} bind:clientHeight={boxH}>
     <!-- svelte-ignore a11y-media-has-caption -->
     <video bind:this={video} playsinline muted autoplay></video>
     {#if shown}
       <svg class="marks" viewBox="0 0 {boxW} {boxH}" aria-hidden="true">
         <polygon points={shown.map((p) => p.join(',')).join(' ')} />
-        {#each shown as [x, y]}
-          <circle cx={x} cy={y} r="6" />
-        {/each}
       </svg>
     {:else if !error}
       <div class="corners" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
@@ -208,15 +221,10 @@
     stroke-width: 3;
     stroke-linejoin: round;
   }
-  .marks circle {
-    fill: none;
-    stroke: var(--kit-yellow, #ffc627);
-    stroke-width: 3;
-  }
-  /* Where the squares should go, until they're found. */
+  /* The middle of the picture, read sharpest: where to put the code until it's found. */
   .corners {
     position: absolute;
-    inset: 16% 12%;
+    inset: 22.5%;
   }
   .corners span {
     position: absolute;
