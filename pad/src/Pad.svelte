@@ -473,6 +473,8 @@
         }
       : loadCalibration(),
     saveCalibration,
+    // Scan the kiosk from where the player stands; the simulator's mouse has no angle to find.
+    camera: !sim && typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia,
   })
   const motionView = motion.view
 
@@ -505,12 +507,12 @@
     if (step > calibStep && calibStep >= 0) pressTick()
     calibStep = step
   }
-  // The kiosk draws where to point during the aim steps (a ring, then the
-  // game's right and top edges): tell it which one, or "" when not aiming.
+  // The kiosk draws what to point at: the scan markers on its game, a ring
+  // in the middle, the game's right and top edges. Tell it which, or "".
   let aimSent = ''
   $: {
     const step = $motionView.calib?.step ?? ''
-    const aim = step === 'aim-center' || step === 'aim-right' || step === 'aim-top' ? step : ''
+    const aim = step === 'scan' || step === 'aim-center' || step === 'aim-right' || step === 'aim-top' ? step : ''
     if (aim !== aimSent) {
       aimSent = aim
       send({ t: 'system', action: 'calibrate', value: aim })
@@ -698,6 +700,9 @@
     {:else if needsCalib}
       <MotionCalibration
         view={$motionView}
+        camera={motion.hasCamera}
+        scan={(corners, frame) => motion.scanned(corners, frame)}
+        skipScan={() => motion.skipScan()}
         on:start={() => {
           unlockAudio()
           motion.startCalibration()

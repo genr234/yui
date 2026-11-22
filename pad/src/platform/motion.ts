@@ -1,4 +1,5 @@
 import type { Vec3 } from '@yui/protocol'
+import { ViewPointer, parseViewpoint, type Pointer, type Viewpoint } from './viewpoint'
 
 export type MotionPermission = 'granted' | 'denied' | 'unsupported'
 
@@ -74,6 +75,11 @@ export const CALIBRATION_VERSION = 2
  * `gyroScale` (raw units → deg/s, 57.3 for a browser reporting rad/s) and
  * `pointer` (degrees from the middle of this player's TV to its right and
  * top edges, from where they stand).
+ *
+ * `viewpoint`, when the player scanned the kiosk with the camera instead of
+ * aiming at its edges: where they see the game from (platform/viewpoint.ts).
+ * The pointer then follows the game's real shape from that angle; `pointer`
+ * is still filled in, from the viewpoint.
  */
 export interface Calibration {
   accelSign: 1 | -1
@@ -83,6 +89,7 @@ export interface Calibration {
   gyroMap?: [AxisMap, AxisMap, AxisMap]
   gyroScale?: number
   pointer?: { yaw: number; pitch: number }
+  viewpoint?: Viewpoint
 }
 
 /** The W3C mapping: pitch = beta (about x), yaw = alpha (about z), roll = gamma (about y). */
@@ -200,7 +207,7 @@ export function parseCalibration(c: unknown): Calibration | null {
   if (chans.size !== 3) return null
   const p = v.pointer as Record<string, unknown> | undefined
   if (!p || !isNum(p.yaw) || !isNum(p.pitch) || p.yaw <= 0 || p.pitch <= 0) return null
-  return {
+  const full: Calibration = {
     ...out,
     version: v.version,
     accelScale: v.accelScale,
@@ -208,6 +215,12 @@ export function parseCalibration(c: unknown): Calibration | null {
     gyroMap: map.map((m) => ({ ch: m.ch, sign: m.sign })) as [AxisMap, AxisMap, AxisMap],
     pointer: { yaw: p.yaw, pitch: p.pitch },
   }
+  if (v.viewpoint !== undefined) {
+    const vp = parseViewpoint(v.viewpoint)
+    if (!vp) return null
+    full.viewpoint = vp
+  }
+  return full
 }
 
 export function loadCalibration(): Calibration | null {
@@ -241,7 +254,7 @@ export const POINTER_PITCH_RANGE = 15
  * where the player stands). The angle is clamped at the edges so swinging
  * past them does not have to be undone.
  */
-export class PointerIntegrator {
+export class PointerIntegrator implements Pointer {
   private yaw = 0
   private pitch = 0
 
@@ -276,6 +289,14 @@ export class PointerIntegrator {
 }
 
 const clamp = (v: number, r: number) => Math.max(-r, Math.min(r, v))
+
+/** The pointer a calibration calls for: cast from the scanned viewpoint, or turn angles over the measured ranges. */
+export function pointerFor(cal: Calibration): Pointer {
+  if (cal.viewpoint) return new ViewPointer(cal.viewpoint)
+  const p = new PointerIntegrator()
+  if (cal.pointer) p.setRanges(cal.pointer.yaw, cal.pointer.pitch)
+  return p
+}
 
 // --------------------------------------------------------------- sources
 

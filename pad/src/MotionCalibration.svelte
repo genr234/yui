@@ -7,9 +7,16 @@
   import { createEventDispatcher } from 'svelte'
   import type { MotionView } from './input/motion'
   import type { CalibProblem, CalibStep, CalibView } from './input/calibration'
+  import type { Pt } from './platform/viewpoint'
   import CalibIllustration from './CalibIllustration.svelte'
+  import ScanKiosk from './ScanKiosk.svelte'
 
   export let view: MotionView
+  /** The phone can scan the kiosk with its camera, so players can stand anywhere around it. */
+  export let camera = false
+  /** The scan step's markers were found: returns the problem, or null when the scan was taken. */
+  export let scan: (corners: Pt[], frame: { w: number; h: number }) => string | null = () => null
+  export let skipScan: () => void = () => {}
 
   const dispatch = createEventDispatcher<{ start: void; skip: void; cancel: void; done: void }>()
 
@@ -45,6 +52,16 @@
       settle: 'Hold it flat, screen up, to start…',
       move: 'Roll one long side down…',
       hold: 'Hold it on its side. Keep still…',
+    },
+    scan: {
+      title: 'Scan the kiosk',
+      how: [
+        "Stand where you'll play. Off to one side is fine.",
+        'Hold the phone up like taking a photo and point the camera at the kiosk, so the four white squares on its game are on screen.',
+      ],
+      settle: '',
+      move: '',
+      hold: '',
     },
     'aim-center': {
       title: 'Aim at the ring on the kiosk',
@@ -97,6 +114,15 @@
     'not-remote': () => 'Hold it screen-up, like a TV remote, camera end toward the kiosk.',
     'wrong-way': () => 'That was down. Aim up, at the top edge.',
     'too-big': () => "That's past the game's edge. Point at the glowing bar itself.",
+    'scan-angle': () => "That's almost side-on to the kiosk. Take a step towards its front and scan again.",
+    'scan-tilted': () => "Hold the phone upright, the way you'd take a photo.",
+    'scan-odd': () => "That didn't look right. Hold still with all four squares on screen.",
+  }
+
+  /** After a scan: where the player is, in words. */
+  function standingText(side: number): string {
+    if (Math.abs(side) < 10) return "You're in front of the game."
+    return `You're about ${Math.abs(side)}° to the ${side < 0 ? 'left' : 'right'} of the game. Aiming is adjusted for that.`
   }
 
   $: c = view.calib as CalibView | null
@@ -105,6 +131,8 @@
   $: problem = c?.problem ? PROBLEMS[c.problem](c.step) : ''
   $: tilt = c?.angle !== undefined && c.target ? Math.min(1, c.angle / c.target) : null
   $: dot = view.preview ?? [0, 0]
+  // After a scan the player is already where they'll play, maybe off to one side.
+  $: how = c && text ? (c.standing && c.step === 'aim-center' ? ['Stay where you scanned from.', ...text.how.slice(1)] : text.how) : []
 </script>
 
 <section class="calib" aria-live="polite">
@@ -116,7 +144,12 @@
         : 'This game uses motion. Before you can play, calibrate this phone once. It takes about a minute.'}
     </p>
     <ul class="needs">
-      <li>Stand where you'll play, facing the kiosk</li>
+      {#if camera}
+        <li>Stand where you'll play, even off to one side</li>
+        <li>You'll point the camera at the kiosk once, so it knows your angle</li>
+      {:else}
+        <li>Stand where you'll play, facing the kiosk</li>
+      {/if}
       <li>No table needed</li>
     </ul>
     <button class="primary" on:click={() => dispatch('start')}>Start calibration</button>
@@ -138,11 +171,20 @@
 
     <h1>{c.noGyro ? 'No gyroscope' : text.title}</h1>
 
-    {#if c.step !== 'verify'}
+    {#if c.standing && c.step !== 'verify'}
+      <p class="lead">{standingText(c.standing.side)}</p>
+    {/if}
+
+    {#if c.step !== 'verify' && c.step !== 'scan'}
       <CalibIllustration step={c.step} phase={c.phase} angle={c.angle} />
     {/if}
 
-    {#if c.step === 'verify'}
+    {#if c.step === 'scan'}
+      <ol class="how">
+        {#each text.how as line}<li>{line}</li>{/each}
+      </ol>
+      <ScanKiosk onScan={scan} onSkip={skipScan} {problem} />
+    {:else if c.step === 'verify'}
       {#if c.noGyro}
         <p class="lead">This phone has no gyroscope, so you aim by touch. Tilting and shaking are calibrated and work.</p>
       {:else}
@@ -158,7 +200,7 @@
       <button class="secondary" on:click={() => dispatch('start')}>Start over</button>
     {:else}
       <ol class="how">
-        {#each text.how as line}<li>{line}</li>{/each}
+        {#each how as line}<li>{line}</li>{/each}
       </ol>
       <div class="status" class:bad={!!problem}>
         <p>{problem || live}</p>

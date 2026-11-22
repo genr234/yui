@@ -172,6 +172,7 @@ func TestCalibrateStepsReachTheOverlayAndNothingElse(t *testing.T) {
 	cal := func(id string, v any) {
 		h.sess.fireControl(id, protocol.System{T: "system", Action: "calibrate", Value: v})
 	}
+	cal("1", "scan")
 	cal("1", "aim-center")
 	cal("2", "aim-right")
 	cal("1", "")
@@ -179,7 +180,7 @@ func TestCalibrateStepsReachTheOverlayAndNothingElse(t *testing.T) {
 	cal("1", 3.0)       // not a string: dropped
 	cal("9", "aim-top") // not a player: dropped
 	got := h.eventsNamed(CalibrateEvent)
-	want := []CalibrateNote{{"1", "aim-center"}, {"2", "aim-right"}, {"1", ""}}
+	want := []CalibrateNote{{"1", "scan"}, {"1", "aim-center"}, {"2", "aim-right"}, {"1", ""}}
 	if len(got) != len(want) {
 		t.Fatalf("calibrate events %v, want %v", got, want)
 	}

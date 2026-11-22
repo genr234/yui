@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import type { Vec3 } from '@yui/protocol'
 import { CalibrationWizard } from './calibration'
 import { STANDARD_GRAVITY as G, toRemoteFrame, type Calibration, type RawMotion } from '../platform/motion'
+import { FOCAL_PER_LONG_SIDE, ViewPointer, describeViewpoint } from '../platform/viewpoint'
+import { seeMarkers, standAt } from './scanScene'
 
 /**
  * A simulated phone: a true orientation R (device → world), turned by the
@@ -55,14 +57,24 @@ class Phone {
    * `tremor`: deg/s of hand shake while "holding still" (standing, no table).
    * Three incommensurate sines per axis: zero-mean, and it really turns the phone.
    */
+  /** m/s² of jolts from the hand moving the phone around, on top of gravity. */
+  jolts = 0
+  private seed = 7
+
   constructor(
     private wiz: CalibrationWizard,
     private browser: Browser,
     private tremor = 0,
   ) {}
 
+  private jolt() {
+    this.seed = (this.seed * 1664525 + 1013904223) >>> 0
+    return (this.seed / 2 ** 32 - 0.5) * 2 * this.jolts
+  }
+
   private emit(w: Vec3) {
     const up = apply(tr(this.R), [0, 0, G]) // proper acceleration at rest, device frame
+    if (this.jolts) for (let i = 0; i < 3; i++) up[i] += this.jolt()
     const k = this.browser.accelSign * this.browser.accelGain
     const r = this.browser.rates(w)
     const raw: RawMotion = { ax: up[0] * k, ay: up[1] * k, az: up[2] * k, ...r, hasGyro: true, interval: 20 }
@@ -117,7 +129,7 @@ const Z: Vec3 = [0, 0, 1]
 
 /** The whole guided run, done the way the screen asks. */
 function runAll(browser: Browser, tremor = 0) {
-  const wiz = new CalibrationWizard()
+  const wiz = new CalibrationWizard({ scan: false })
   const p = new Phone(wiz, browser, tremor)
   p.hold(3200) // flat in the palm (or on a table)
   expect(wiz.step).toBe('pitch')
@@ -185,7 +197,7 @@ describe('guided calibration', () => {
   }
 
   test('rest: waits while held in the hand or not flat, says why', () => {
-    const wiz = new CalibrationWizard()
+    const wiz = new CalibrationWizard({ scan: false })
     const p = new Phone(wiz, W3C)
     p.turnBody(X, 45, 200)
     p.hold(3000)
@@ -197,7 +209,7 @@ describe('guided calibration', () => {
   })
 
   test('pitch: lifting a side edge instead is caught and the step starts over', () => {
-    const wiz = new CalibrationWizard()
+    const wiz = new CalibrationWizard({ scan: false })
     const p = new Phone(wiz, W3C)
     p.hold(3200)
     p.hold(500)
@@ -212,7 +224,7 @@ describe('guided calibration', () => {
   })
 
   test('pitch: stopping short says keep going, and the live angle is shown', () => {
-    const wiz = new CalibrationWizard()
+    const wiz = new CalibrationWizard({ scan: false })
     const p = new Phone(wiz, W3C)
     p.hold(3700)
     p.turnBody(X, 40)
@@ -224,7 +236,7 @@ describe('guided calibration', () => {
   })
 
   test('aim-top: pointing down instead is refused', () => {
-    const wiz = new CalibrationWizard()
+    const wiz = new CalibrationWizard({ scan: false })
     const p = new Phone(wiz, W3C)
     p.hold(3700)
     p.turnBody(X, 90)
@@ -243,5 +255,165 @@ describe('guided calibration', () => {
     p.turnBody(X, -8, 300)
     p.hold(1200)
     expect(wiz.view()).toMatchObject({ step: 'aim-top', problem: 'wrong-way' })
+  })
+})
+
+/**
+ * The scan path. The phone's world here is x right, y towards the kiosk, z
+ * up; the kiosk scene's (scanScene) is x right, y down, z into the screen,
+ * seen from `at`, so the phone's "towards the kiosk" is the line to the
+ * game's centre.
+ */
+function cameraView(p: Phone, at: Vec3) {
+  const fwd = (() => {
+    const h = Math.hypot(at[0], at[2])
+    return [-at[0] / h, 0, -at[2] / h] as Vec3
+  })()
+  const up: Vec3 = [0, -1, 0]
+  const right: Vec3 = [fwd[1] * up[2] - fwd[2] * up[1], fwd[2] * up[0] - fwd[0] * up[2], fwd[0] * up[1] - fwd[1] * up[0]]
+  const scene = (v: Vec3): Vec3 => [0, 1, 2].map((i) => v[0] * right[i] + v[1] * fwd[i] + v[2] * up[i]) as Vec3
+  // The rear camera: +x the device's x, +y its −y, looking out of its back (−z).
+  const axes: [Vec3, Vec3, Vec3] = [scene(apply(p.R, X)), scene(apply(p.R, [0, -1, 0])), scene(apply(p.R, [0, 0, -1]))]
+  const frame = { w: 360, h: 480 }
+  return { corners: seeMarkers(at, axes, frame.w, frame.h, FOCAL_PER_LONG_SIDE * 480).truth, frame }
+}
+
+/** rest, pitch, roll: the phone ends on its long side, top towards the kiosk. */
+function tilts(wiz: CalibrationWizard, browser: Browser, tremor = 0) {
+  const p = new Phone(wiz, browser, tremor)
+  p.hold(3200)
+  p.hold(500)
+  p.turnBody(X, 90)
+  p.hold(1000)
+  p.turnBody(X, -90)
+  p.hold(600)
+  p.turnBody(Y, 90)
+  p.hold(1000)
+  expect(wiz.view()).toMatchObject({ step: 'scan', index: 3, total: 6, phase: 'settle' })
+  return p
+}
+
+describe('guided calibration: scanning the kiosk', () => {
+  const at = standAt(1.5, -40) // well to the left of the kiosk
+
+  for (const [name, browser] of [
+    ['W3C browser', W3C],
+    ['swapped channels, rad/s, flipped yaw, inverted gravity, drift', QUIRKY],
+  ] as const) {
+    test(`${name}: on its side to upright, scan, aim at the middle: done, and which way is left is known`, () => {
+      const wiz = new CalibrationWizard()
+      const p = tilts(wiz, browser)
+      // From on its side straight up, like a steering wheel, then turn the screen to face you.
+      p.turnBody(Z, 90)
+      p.turnBody(Y, -90)
+      p.hold(400)
+      const { corners, frame } = cameraView(p, at)
+      expect(wiz.scanned(corners, frame)).toBeNull()
+      expect(wiz.view()).toMatchObject({ step: 'aim-center', standing: { side: -40, above: 0 } })
+      p.turnBody(X, -80) // down into the remote hold, a little nose-up
+      p.hold(1200)
+      expect(wiz.step).toBe('verify')
+      const cal = wiz.result()!
+      expect(describeViewpoint(cal.viewpoint!).side).toBeCloseTo(-40, 3)
+      // Yaw's sign came from gravity: a turn to the right reads as one.
+      const f = readBack(cal, browser, [0, 0, -30])
+      expect(f.gyro[1]).toBeCloseTo(-30, 0)
+      // `pointer` is filled in from the viewpoint, for anything that reads the old field.
+      const r = new ViewPointer(cal.viewpoint!).ranges()
+      expect(cal.pointer).toEqual({ yaw: r.yaw, pitch: r.pitch })
+    })
+  }
+
+  test('tipped straight up from flat (no turn that shows yaw): one turn to the right edge is added', () => {
+    const wiz = new CalibrationWizard()
+    const p = tilts(wiz, QUIRKY)
+    p.turnBody(Y, -90) // flat
+    p.turnBody(X, 90) // upright, camera at the kiosk
+    p.hold(400)
+    const { corners, frame } = cameraView(p, at)
+    expect(wiz.scanned(corners, frame)).toBeNull()
+    p.turnBody(X, -80)
+    p.hold(1200)
+    expect(wiz.view()).toMatchObject({ step: 'aim-right', index: 5, total: 7 })
+    p.turnWorld(Z, -15)
+    p.hold(1200)
+    expect(wiz.step).toBe('verify')
+    const cal = wiz.result()!
+    expect(readBack(cal, QUIRKY, [0, 0, -30]).gyro[1]).toBeCloseTo(-30, 0)
+    expect(cal.viewpoint).toBeDefined()
+  })
+
+  test('a scan that cannot be from in front of the kiosk is refused and the step goes on', () => {
+    const wiz = new CalibrationWizard()
+    const p = tilts(wiz, W3C)
+    p.turnBody(Y, -90)
+    p.turnBody(X, 90)
+    p.hold(400)
+    const { corners, frame } = cameraView(p, at)
+    const upsideDown = [corners[2], corners[3], corners[0], corners[1]]
+    expect(wiz.scanned(upsideDown, frame)).toBe('scan-tilted')
+    expect(wiz.view()).toMatchObject({ step: 'scan', problem: 'scan-tilted' })
+    expect(wiz.scanned(corners, frame)).toBeNull()
+  })
+
+  test('no scan after all: aiming at the edges takes over', () => {
+    const wiz = new CalibrationWizard()
+    const p = tilts(wiz, QUIRKY)
+    wiz.skipScan()
+    expect(wiz.view()).toMatchObject({ step: 'aim-center', index: 3, total: 7, phase: 'settle' })
+    p.turnBody(Y, -90)
+    p.turnBody(X, 10, 300)
+    p.hold(1200)
+    expect(wiz.step).toBe('aim-right')
+    p.turnWorld(Z, -20)
+    p.hold(1200)
+    p.turnWorld(Z, 20)
+    p.turnBody(X, 8, 300)
+    p.hold(1200)
+    expect(wiz.step).toBe('verify')
+    expect(wiz.result()!.viewpoint).toBeUndefined()
+    expect(wiz.result()!.pointer!.yaw).toBeCloseTo(20, 0)
+  })
+})
+
+describe('yaw from gravity', () => {
+  test('a shaky hand and a jolting accelerometer never give the wrong sign', () => {
+    for (const [browser, seed] of [
+      [W3C, 1],
+      [QUIRKY, 2],
+      [QUIRKY, 3],
+    ] as const) {
+      const wiz = new CalibrationWizard()
+      const p = tilts(wiz, browser, 2.5)
+      ;(p as unknown as { seed: number }).seed = seed
+      p.jolts = 0.15 * G // hand-held, moving: a lot of jolt
+      p.turnBody(Z, 90, 1500)
+      p.turnBody(Y, -90, 1500)
+      p.hold(600)
+      const { corners, frame } = cameraView(p, standAt(1.5, 30))
+      expect(wiz.scanned(corners, frame)).toBeNull()
+      p.turnBody(X, -80)
+      p.jolts = 0
+      p.hold(1200)
+      expect(wiz.step).toBe('verify')
+      expect(readBack(wiz.result()!, browser, [0, 0, -30]).gyro[1]).toBeCloseTo(-30, 0)
+    }
+  })
+
+  test('held upright and only trembling: no verdict from tremor alone', () => {
+    const wiz = new CalibrationWizard()
+    const p = tilts(wiz, W3C)
+    p.turnBody(Y, -90)
+    p.turnBody(X, 90)
+    const q = new Phone(wiz, W3C, 2.5)
+    q.R = p.R
+    q.t = p.t
+    q.jolts = 0.05 * G
+    q.hold(2000)
+    const { corners, frame } = cameraView(q, standAt(1.5, 0))
+    expect(wiz.scanned(corners, frame)).toBeNull()
+    q.turnBody(X, -80)
+    q.hold(1200)
+    expect(wiz.step).toBe('aim-right')
   })
 })

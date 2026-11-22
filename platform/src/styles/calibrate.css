@@ -94,6 +94,35 @@
 	transform: translate(calc(-100% - 22px), -50%);
 }
 
+/*
+ * Scanning: the game goes black and four marker squares (white, with a black
+ * hole half their size) mark it for the phone's camera. Kept still and sharp:
+ * the phone finds them by their shape, so no glow, pulse or rounding.
+ */
+.aim-area.scanning {
+	background: #000;
+	border-color: transparent;
+	box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.7);
+}
+
+.scan-marker {
+	position: absolute;
+	box-sizing: border-box;
+	transform: translate(-50%, -50%);
+	background: #fff;
+}
+
+.scan-marker::after {
+	content: "";
+	position: absolute;
+	inset: 25%;
+	background: #000;
+}
+
+.scan-label {
+	transform: translate(-50%, -50%);
+}
+
 @keyframes aim-pulse {
 	from {
 		opacity: 1;

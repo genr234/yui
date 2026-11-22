@@ -1,10 +1,11 @@
 import { writable, type Readable } from 'svelte/store'
 import type { InputModel } from './model'
 import { CalibrationWizard, type CalibView } from './calibration'
+import type { Pointer, Pt, ViewProblem } from '../platform/viewpoint'
 import {
   DEFAULT_CALIBRATION,
-  PointerIntegrator,
   isFullCalibration,
+  pointerFor,
   toRemoteFrame,
   toScreenFrame,
   type Calibration,
@@ -35,6 +36,8 @@ export interface MotionOptions {
   angle?(): number
   calibration?: Calibration | null
   saveCalibration?(c: Calibration): void
+  /** The phone has a camera to scan the kiosk with; without one, calibration aims at the game's edges. */
+  camera?: boolean
   now?(): number
 }
 
@@ -63,13 +66,13 @@ export class MotionController {
   private running = false
   private cal: Calibration
   private calibrated: boolean
-  private integrator = new PointerIntegrator()
+  private integrator: Pointer
   private lastAt: number | null = null
   private wizard: CalibrationWizard | null = null
   private wizardKey = ''
   private preview: [number, number] | null = null
   private previewAt = -Infinity
-  private previewIntegrator = new PointerIntegrator()
+  private previewIntegrator: Pointer | null = null
   private gyroSeen = true
   private now: () => number
 
@@ -82,7 +85,7 @@ export class MotionController {
     const cal = opts.calibration ?? null
     this.calibrated = isFullCalibration(cal)
     this.cal = this.calibrated ? cal! : DEFAULT_CALIBRATION
-    if (this.cal.pointer) this.integrator.setRanges(this.cal.pointer.yaw, this.cal.pointer.pitch)
+    this.integrator = pointerFor(this.cal)
     this.now = opts.now ?? (() => performance.now())
   }
 
@@ -111,18 +114,36 @@ export class MotionController {
 
   recenter() {
     this.integrator.recenter()
-    this.previewIntegrator.recenter()
+    this.previewIntegrator?.recenter()
   }
 
   /** Starts (or restarts) the guided calibration. Motion stops reaching the game until it is finished or cancelled. */
   startCalibration() {
     this.skipped = false
-    this.wizard = new CalibrationWizard()
+    this.wizard = new CalibrationWizard({ scan: !!this.opts.camera })
     this.wizardKey = ''
     this.preview = null
-    this.previewIntegrator = new PointerIntegrator()
+    this.previewIntegrator = null
     this.model.clearMotion()
     this.sync()
+  }
+
+  /** Calibration scans the kiosk with the camera (else it aims at the game's edges). */
+  get hasCamera(): boolean {
+    return !!this.opts.camera
+  }
+
+  /** The scan step found the kiosk's markers (TL, TR, BR, BL, frame pixels). Returns why it can't be used, or null. */
+  scanned(corners: readonly Pt[], frame: { w: number; h: number }): ViewProblem | null {
+    const problem = this.wizard?.scanned(corners, frame, this.opts.angle?.() ?? 0) ?? null
+    this.publish()
+    return problem
+  }
+
+  /** No camera, or no luck with it: aim at the game's edges instead. */
+  skipScan() {
+    this.wizard?.skipScan()
+    this.publish()
   }
 
   cancelCalibration() {
@@ -141,7 +162,7 @@ export class MotionController {
     this.cal = c
     this.calibrated = true
     this.opts.saveCalibration?.(c)
-    if (c.pointer) this.integrator.setRanges(c.pointer.yaw, c.pointer.pitch)
+    this.integrator = pointerFor(c)
     this.integrator.recenter()
     this.publish()
     return true
@@ -181,7 +202,7 @@ export class MotionController {
 
   private updatePreview(raw: RawMotion, cal: Calibration, dt: number, t: number) {
     if (!raw.hasGyro) return
-    if (cal.pointer) this.previewIntegrator.setRanges(cal.pointer.yaw, cal.pointer.pitch)
+    this.previewIntegrator ??= pointerFor(cal)
     // The preview is the remote pointer whatever the layout's frame: it checks the aim.
     const p = this.previewIntegrator.update(toRemoteFrame(raw, cal, this.opts.flip()).gyro, dt)
     if (t - this.previewAt < PREVIEW_MS) return

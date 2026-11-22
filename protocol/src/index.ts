@@ -61,8 +61,8 @@ export type TextOp = "insert" | "backspace" | "enter";
 // "playing" is kiosk→pad only: value true while an app or native game owns the phones, so the Home sheet offers Quit.
 // "pokes" is pad→kiosk only: value false opts this player out of being poked (default on).
 // "sensitive" is kiosk→pad only: value true while the kiosk shows a sensitive surface (D9).
-// "calibrate" is pad→kiosk only: value is the motion-calibration aim step ("aim-center" | "aim-right" | "aim-top"), or "" when
-// the player is not aiming, so the kiosk draws where to point.
+// "calibrate" is pad→kiosk only: value is the motion-calibration step that needs the kiosk ("scan" | "aim-center" |
+// "aim-right" | "aim-top"), or "" when the player is on none, so the kiosk draws the scan markers or where to point.
 export type SystemAction = "home" | "resume" | "quit" | "save_state" | "load_state" | "be_speaker" | "volume" | "sensitive" | "playing" | "pokes" | "calibrate";
 
 export interface Hello {

@@ -18,19 +18,21 @@ const (
 	// InputEvent: the buttons of players whose buttons changed, at most about
 	// 10 Hz. Data is InputNote.
 	InputEvent = "pad.input"
-	// CalibrateEvent: a player's motion calibration is on an aim step (or
-	// left it), so the kiosk can draw where to point. Data is CalibrateNote.
+	// CalibrateEvent: a player's motion calibration is on a step that needs
+	// the kiosk (scanning it, or aiming at it), or left it, so the kiosk can
+	// draw what to point at. Data is CalibrateNote.
 	CalibrateEvent = "pad.calibrate"
 )
 
-// CalibrateNote is the pad.calibrate payload. Step is "aim-center",
-// "aim-right", "aim-top", or "" when the player is not aiming.
+// CalibrateNote is the pad.calibrate payload. Step is "scan" (the kiosk
+// shows markers for the phone's camera), "aim-center", "aim-right",
+// "aim-top", or "" when the player is not on one of those.
 type CalibrateNote struct {
 	PlayerID string `json:"player_id"`
 	Step     string `json:"step"`
 }
 
-var calibrateSteps = map[string]bool{"": true, "aim-center": true, "aim-right": true, "aim-top": true}
+var calibrateSteps = map[string]bool{"": true, "scan": true, "aim-center": true, "aim-right": true, "aim-top": true}
 
 // Limits. Anything over them is dropped silently.
 const (
