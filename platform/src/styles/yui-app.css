@@ -283,6 +283,21 @@
   border-radius: 0;
 }
 
+/* An aspect embed inside the app's own rows and columns: every box on the
+ * way down to the stage takes the host's height too, or the stage collapses
+ * to the iframe's default 150 px and the frame is fitted into that. */
+.simple-app-host:has(.yui-app-web-stage) > :is(.yui-app-row, .yui-app-column, .yui-app-grid):has(.yui-app-web-stage),
+.yui-app-row:has(.yui-app-web-stage) > :is(.yui-app-row, .yui-app-column, .yui-app-grid):has(.yui-app-web-stage),
+.yui-app-column:has(.yui-app-web-stage) > :is(.yui-app-row, .yui-app-column, .yui-app-grid):has(.yui-app-web-stage) {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.yui-app-row > .yui-app-web-stage {
+  width: auto;
+  min-width: 0;
+}
+
 /* The stage needs a definite height, so the host is a column; in fullscreen
  * the frame sits on a plain backdrop with no card padding (the bars fill the rest). */
 .simple-app-host:has(.yui-app-web-stage) {

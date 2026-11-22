@@ -48,9 +48,11 @@
     return ((node as YuiNode).props?.[name] as T | undefined) ?? fallback;
   }
 
-  function aspectProp(): string | number | undefined {
-    return prop<string | number>("aspect");
-  }
+  // Reactive on `node`, unlike a call in the template (`aspect={aspectProp()}`
+  // never re-runs: Svelte only sees the function, which never changes). An
+  // app's embed changes aspect mid-session (Retro Arcade: the picker's 9:16,
+  // then the running system's 4:3), and the frame must follow.
+  $: embedAspect = node && typeof node === "object" && !Array.isArray(node) ? ((node as YuiNode).props?.aspect as string | number | undefined) : undefined;
 
   function layoutStyle(value: YuiNode) {
     const props = value.props ?? {};
@@ -588,7 +590,7 @@
     input={booleanProp("input")}
     fill={booleanProp("fill")}
     title={stringProp("title")}
-    aspect={aspectProp()}
+    aspect={embedAspect}
     style={booleanProp("fill") ? "" : embedShellStyle()}
   />
 {:else if node.type === "embed"}

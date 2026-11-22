@@ -102,6 +102,10 @@ body {
 .avatar yui-avatar[data-avatar-kind="creature"] { box-sizing: border-box; padding: 8%; background: #fff; border-radius: 50%; }
 .avatar.big { width: 84px; height: 84px; font-size: 42px; }
 
+/* `hidden` must win over the display rules below (.overlay is a grid, for one):
+ * without this every overlay, "That didn't work" included, shows all the time. */
+[hidden] { display: none !important; }
+
 /* ---- overlays -------------------------------------------------------- */
 
 .overlay { position: absolute; inset: 0; display: grid; place-items: center; z-index: 5; }
