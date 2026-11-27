@@ -4,6 +4,18 @@
  * under them that they sink into when pressed. --player is the player's
  * colour (playerSwatch); --b is a chunky button's base colour.
  */
+/*
+ * Allo (https://allo.joshpuckett.me, SIL OFL 1.1, see assets/fonts/allo/OFL.txt):
+ * the variable font with roundness fixed at Friendly, weights 100 to 900.
+ */
+@font-face {
+  font-family: 'Allo';
+  src: url('./assets/fonts/allo/AlloVariableFriendly.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   /* stage */
   --kit-sky: #3d9de0;
@@ -43,7 +55,7 @@
   --yui-ease-out: cubic-bezier(0.2, 0.9, 0.18, 1);
   --yui-press: 90ms;
   --yui-scrim: rgba(18, 62, 104, 0.55);
-  --yui-font: ui-rounded, 'SF Pro Rounded', 'Nunito', 'Varela Round', 'Arial Rounded MT Bold', 'YuiAvenirNext',
+  --yui-font: 'Allo', ui-rounded, 'SF Pro Rounded', 'Nunito', 'Varela Round', 'Arial Rounded MT Bold', 'YuiAvenirNext',
     'Avenir Next', 'Segoe UI', Helvetica, Arial, sans-serif;
 
   /* pad aliases: on the stage text is white; .kit-panel flips it to ink */
