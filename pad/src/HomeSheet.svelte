@@ -251,19 +251,18 @@
         <div class="set-group">
           <label class="set-row volume">
             <span class="set-badge"><SettingIcon name="volume" /></span>
-            <span class="set-label">
-              <span>Volume</span>
-              <input
-                style="--fill:{Math.round(volume * 100)}%"
-                type="range"
-                min="0"
-                max="100"
-                step="1"
-                value={Math.round(volume * 100)}
-                on:input={(e) => onVolume(Number(e.currentTarget.value) / 100)}
-              />
-            </span>
+            <span class="set-label"><span>Volume</span></span>
             <span class="set-value pct">{Math.round(volume * 100)}%</span>
+            <input
+              style="--fill:{Math.round(volume * 100)}%"
+              type="range"
+              min="0"
+              max="100"
+              step="1"
+              aria-label="Volume"
+              value={Math.round(volume * 100)}
+              on:input={(e) => onVolume(Number(e.currentTarget.value) / 100)}
+            />
           </label>
           {#if vibration !== null}
             <label class="set-row">
@@ -542,15 +541,41 @@
     color: var(--kit-red);
     font-weight: 800;
   }
-  /* The slider sits under the Volume label, inside the row. */
+  /* Volume: label and percentage on top, a full-width slider under them. */
   .volume {
-    align-items: center;
-  }
-  .volume .set-label {
-    gap: 4px;
+    flex-wrap: wrap;
+    row-gap: 2px;
+    padding-bottom: 10px;
   }
   .volume input {
-    width: 100%;
+    flex: 1 0 100%;
+    height: 32px;
+    margin: 0;
+  }
+  .volume input::-webkit-slider-runnable-track {
+    height: 8px;
+    box-shadow: none;
+  }
+  .volume input::-moz-range-track {
+    height: 8px;
+  }
+  /* A round white knob, like the switches. */
+  .volume input::-webkit-slider-thumb {
+    width: 26px;
+    height: 26px;
+    margin-top: -9px;
+    border: 0;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 4px rgba(20, 30, 50, 0.3), 0 0 0 0.5px rgba(20, 30, 50, 0.08);
+  }
+  .volume input::-moz-range-thumb {
+    width: 26px;
+    height: 26px;
+    border: 0;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 4px rgba(20, 30, 50, 0.3);
   }
   .pct {
     min-width: 3em;
