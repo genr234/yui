@@ -355,7 +355,7 @@ func TestSignalingRosterAndQR(t *testing.T) {
 	if snap.Session == nil || snap.Session.Code != "KQXM" {
 		t.Fatalf("snapshot %+v", snap)
 	}
-	if snap.Session.JoinURL != f.srv.URL+"/play/KQXM?t="+sharedQRTok {
+	if snap.Session.JoinURL != f.srv.URL+"/play/KQXM" {
 		t.Fatalf("join url %s", snap.Session.JoinURL)
 	}
 
@@ -595,29 +595,30 @@ func TestStaleInputAndSnapshotJSON(t *testing.T) {
 	}
 }
 
-func TestQRPublishUsesClock(t *testing.T) {
+func TestJoinURLHasNoTokenAndStaysPut(t *testing.T) {
+	now := time.Unix(sharedQRAt, 0)
 	mgr, err := Open(Config{
 		ServerURL:   "http://kiosk.example",
 		DeviceToken: "t",
-		Now:         func() time.Time { return time.Unix(sharedQRAt, 0) },
+		Now:         func() time.Time { return now },
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	mgr.active = true
-	mgr.record = &SessionRecord{ID: "sess-1", Code: "KQXM", QRKey: sharedQRB64, JoinBaseURL: "https://yui.example/play/KQXM"}
-	if err := mgr.publishQR(); err != nil {
+	mgr.record = &SessionRecord{ID: "sess-1", Code: "KQXM", JoinBaseURL: "https://yui.example/play/KQXM"}
+	if err := mgr.publishJoinURL(); err != nil {
 		t.Fatal(err)
 	}
-	if mgr.Snapshot().Session.JoinURL != "https://yui.example/play/KQXM?t="+sharedQRTok {
+	if mgr.Snapshot().Session.JoinURL != "https://yui.example/play/KQXM" {
 		t.Fatalf("url %s", mgr.Snapshot().Session.JoinURL)
 	}
-	mgr.cfg.Now = func() time.Time { return time.Unix(sharedQRAt+30, 0) }
-	if err := mgr.publishQR(); err != nil {
+	now = now.Add(time.Minute)
+	if err := mgr.publishJoinURL(); err != nil {
 		t.Fatal(err)
 	}
-	if mgr.token == sharedQRTok {
-		t.Fatal("token did not rotate")
+	if mgr.Snapshot().Session.JoinURL != "https://yui.example/play/KQXM" {
+		t.Fatalf("url changed to %s", mgr.Snapshot().Session.JoinURL)
 	}
 }
 

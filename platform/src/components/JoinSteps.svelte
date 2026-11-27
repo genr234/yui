@@ -11,7 +11,7 @@
 	 * the attract screen and app join cards. With the kiosk hotspot on (or
 	 * starting) it is two steps: join the Wi-Fi, then scan to play. The
 	 * Wi-Fi tile holds its place while the hotspot starts, so nothing jumps
-	 * when it comes up, and the play QR crossfades when its token rotates.
+	 * when it comes up, and the play QR crossfades if its URL changes.
 	 */
 	export let session: NonNullable<PadState["session"]>;
 	/** Side of each QR tile: px, or any CSS length (a clamp() for the attract screen). */

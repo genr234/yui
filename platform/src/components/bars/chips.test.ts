@@ -5,7 +5,7 @@ import { JOIN_RESERVE_PX, chipLayout, joinVisible, pickedBy, seated, spectators,
 const player = (id: string, slot: number | null, extra: Partial<PadPlayer> = {}): PadPlayer => ({
 	id, slot, name: id, color: "blue", host: false, connected: true, ...extra,
 });
-const session = () => ({ code: "ABCD", join_url: "https://yui.example/play/ABCD?t=1" });
+const session = () => ({ code: "ABCD", join_url: "https://yui.example/play/ABCD" });
 
 describe("chipLayout", () => {
 	test("no seats, no grid", () => {

@@ -381,7 +381,7 @@ class DemoBridge {
 		if (method === "pad.session.start" && this.config.event_mode) {
 			// Event mode: nobody is in it yet.
 			this.padState = {
-				session: { code: "KQXM", join_url: "https://yui.example/play/KQXM?t=OT56FOOG" },
+				session: { code: "KQXM", join_url: "https://yui.example/play/KQXM" },
 				players: [],
 			};
 			this.startFakeWifi();
@@ -390,7 +390,7 @@ class DemoBridge {
 		}
 		if (method === "pad.session.start") {
 			this.padState = {
-				session: { code: "KQXM", join_url: "https://yui.example/play/KQXM?t=OT56FOOG" },
+				session: { code: "KQXM", join_url: "https://yui.example/play/KQXM" },
 				players: [
 					{ id: "p1", slot: 1, name: "Riccardo", color: "blue", host: true, speaker: true, connected: true, account_linked: true, rtt_ms: 18, input_hz: 60 },
 					{ id: "p2", slot: 2, name: "Sam", color: "purple", host: false, connected: true, rtt_ms: 94, input_hz: 58.5, avatar: "yui:c1:1.1.3.0.2.1.2.4:33-38-13,67-38-13:50-70:50-55" },

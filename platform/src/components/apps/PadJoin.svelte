@@ -18,8 +18,8 @@
 	onDestroy(() => off?.());
 </script>
 
-<!-- ctx.controllers.joinCard(): the live join code and QR. The join URL
-     (QR token) is drawn here and never handed to the app. -->
+<!-- ctx.controllers.joinCard(): the live join code and QR, drawn here by the
+     overlay rather than handed to the app. -->
 <div class="pad-join">
 	{#if state.session}
 		<JoinSteps session={state.session} {size} />

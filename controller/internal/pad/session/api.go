@@ -67,8 +67,8 @@ func (c *apiClient) Create(ctx context.Context) (SessionRecord, bool, error) {
 	if err := decodeJSON(resp.Body, &rec); err != nil {
 		return SessionRecord{}, false, err
 	}
-	if rec.ID == "" || rec.Code == "" || rec.QRKey == "" {
-		return SessionRecord{}, false, errors.New("pad session: create response is missing id, code, or qr_key")
+	if rec.ID == "" || rec.Code == "" {
+		return SessionRecord{}, false, errors.New("pad session: create response is missing id or code")
 	}
 	return rec, resp.StatusCode == http.StatusCreated, nil
 }

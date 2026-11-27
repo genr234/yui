@@ -3,7 +3,7 @@
    * Bottom bar, right corner: a small join QR with "Join or watch" and how
    * many are watching. Shown whenever a session is running (see `joinVisible`):
    * the code alone gets anyone in, to a free seat or to watch.
-   * The URL rotates every 30 s, so it always comes from the live session.
+   * The URL comes from the live session.
    */
   import { onDestroy, onMount } from "svelte";
   import type { Rect } from "../../sdk/game-rect";

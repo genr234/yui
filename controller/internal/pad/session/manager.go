@@ -139,7 +139,6 @@ type Manager struct {
 	running bool
 	active  bool
 	record  *SessionRecord
-	token   string
 	joinURL string
 	wifi    *WiFi
 	// wifiPending: the hotspot is starting and wifi is not set yet.
@@ -252,7 +251,6 @@ func (m *Manager) Run(ctx context.Context) error {
 		m.running = false
 		m.active = false
 		m.record = nil
-		m.token = ""
 		m.joinURL = ""
 		m.speakerID = ""
 		m.rightID = ""
@@ -284,8 +282,8 @@ func (m *Manager) Run(ctx context.Context) error {
 	m.record = &record
 	m.mergePlayersLocked(record.Players)
 	m.mu.Unlock()
-	if err := m.publishQR(); err != nil {
-		log.Printf("pad session: qr: %v", err)
+	if err := m.publishJoinURL(); err != nil {
+		log.Printf("pad session: join url: %v", err)
 	}
 	m.mu.Lock()
 	m.active = true
@@ -301,19 +299,17 @@ func (m *Manager) Run(ctx context.Context) error {
 
 	runCtx, cancel := context.WithCancel(ctx)
 	// Deferred calls run last-in first-out: delete, cancel the loops, wait
-	// for them, then the reset above. A QR tick that snapshotted the live
-	// session therefore emits before the final, ended snapshot.
+	// for them, then the reset above.
 	var loops sync.WaitGroup
 	defer loops.Wait()
 	defer cancel()
 	defer m.deleteIfStopped(ctx, record.ID)
 
-	loops.Add(3)
+	loops.Add(2)
 	if m.cfg.IdleTimeout > 0 || m.cfg.InactiveTimeout > 0 {
 		loops.Add(1)
 		go func() { defer loops.Done(); m.idleLoop(runCtx, stopSelf) }()
 	}
-	go func() { defer loops.Done(); m.qrLoop(runCtx) }()
 	go func() { defer loops.Done(); m.pingLoop(runCtx) }()
 	go func() { defer loops.Done(); m.resyncLoop(runCtx, record.ID) }()
 
@@ -1451,49 +1447,19 @@ func (m *Manager) pushPlayer(p Player, fallback bool) error {
 	return m.sendControl(p.ID, playerMsg{T: "player", Player: p})
 }
 
-func (m *Manager) publishQR() error {
+// publishJoinURL sets the URL the kiosk's QR code shows (fixed for the session).
+func (m *Manager) publishJoinURL() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.record == nil {
 		return nil
 	}
-	token, err := QRToken(m.record.QRKey, m.now().Unix())
+	join, err := JoinURL(m.record.JoinBaseURL)
 	if err != nil {
 		return err
 	}
-	join, err := JoinURL(m.record.JoinBaseURL, token)
-	if err != nil {
-		return err
-	}
-	if token == m.token && join == m.joinURL {
-		return nil
-	}
-	m.token = token
 	m.joinURL = join
 	return nil
-}
-
-func (m *Manager) qrLoop(ctx context.Context) {
-	for {
-		// Sleep on the wall clock. The token uses Config.Now, but a stalled
-		// test clock must not busy-loop this goroutine.
-		wait := time.Until(nextQRDeadline(time.Now()))
-		if wait < 0 {
-			wait = 0
-		}
-		timer := time.NewTimer(wait)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return
-		case <-timer.C:
-			if err := m.publishQR(); err != nil {
-				log.Printf("pad session: qr: %v", err)
-				continue
-			}
-			m.emit()
-		}
-	}
 }
 
 // IdleExpired reports whether a session with this many connected players,

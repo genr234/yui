@@ -17,7 +17,7 @@ func liveManager() *Manager {
 	return &Manager{
 		record:  &SessionRecord{Code: "KKTC"},
 		active:  true,
-		joinURL: "https://yui.example/play/KKTC?t=AAAAAAAA",
+		joinURL: "https://yui.example/play/KKTC",
 		players: map[string]*playerState{},
 	}
 }
