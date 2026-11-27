@@ -30,21 +30,17 @@
         <input id="code" name="code" value="<%= @code %>" maxlength="4" autocomplete="off" required>
         <label for="pads">Pads</label>
         <input id="pads" name="pads" value="<%= @count %>" maxlength="1" inputmode="numeric">
-        <% if @qr_token %><input type="hidden" name="t" value="<%= @qr_token %>"><% end %>
         <button type="submit">Open</button>
       </form>
       <p class="muted">Each pad is its own player. Drag the dashed box in a pad to move its fake gyro.</p>
     </header>
 
     <% if @play_session %>
-      <% unless @play_session.lobby_open || @qr_token %>
-        <main><p class="muted">Joining needs the lobby open (or a QR token as <code>&amp;t=</code>). Open the lobby on the kiosk, then reload.</p></main>
-      <% end %>
       <div class="pads">
         <% (1..@count).each do |n| %>
           <div class="phone">
             <span>Pad <%= n %></span>
-            <iframe title="Pad <%= n %>" src="<%= play_path(code: @play_session.code, sim: n, t: @qr_token) %>" allow="autoplay"></iframe>
+            <iframe title="Pad <%= n %>" src="<%= play_path(code: @play_session.code, sim: n) %>" allow="autoplay"></iframe>
           </div>
         <% end %>
       </div>

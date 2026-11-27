@@ -87,6 +87,8 @@ Rails.application.routes.draw do
     delete "profile_grants/:app_id", to: "play/accounts#revoke_grant", as: :play_profile_grant,
       constraints: { app_id: /[A-Za-z0-9._-]+/ }, format: false
   end
+  # Anything else under /play (a mistyped code, an old link): the start page.
+  get "play/*rest", to: "play#elsewhere", format: false
   # Pad simulator: four pads in iframes (development and test only, never production).
   get "sim", to: "pad_sim#show", as: :pad_sim if Rails.env.local?
 

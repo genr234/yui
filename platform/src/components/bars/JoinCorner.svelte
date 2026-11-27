@@ -1,8 +1,8 @@
 <script lang="ts">
   /**
    * Bottom bar, right corner: a small join QR with "Join or watch" and how
-   * many are watching. Shown while the session's lobby is open or a seat is
-   * free (see `joinVisible`); hidden for a full table with the lobby closed.
+   * many are watching. Shown whenever a session is running (see `joinVisible`):
+   * the code alone gets anyone in, to a free seat or to watch.
    * The URL rotates every 30 s, so it always comes from the live session.
    */
   import { onDestroy, onMount } from "svelte";
@@ -25,7 +25,7 @@
   onMount(() => (off = watchPadState((state) => (session = state.session))));
   onDestroy(() => off?.());
 
-  $: show = joinVisible(session, players);
+  $: show = joinVisible(session);
   $: watching = spectators(players).length;
   $: size = Math.max(84, Math.min(116, (rect?.h ?? 280) * 0.4));
 </script>

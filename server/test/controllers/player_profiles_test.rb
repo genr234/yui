@@ -12,7 +12,7 @@ class PlayerProfilesTest < ActionDispatch::IntegrationTest
     @owner = Account.create!(name: "Lobby")
     @kiosk = create_kiosk(account: @owner, token: "kiosk-token")
     @auth = { "Authorization" => "Bearer kiosk-token" }
-    @play_session = start_session(@kiosk, lobby_open: true)
+    @play_session = start_session(@kiosk)
     @player_account = Account.create!(name: "Riccardo")
     post "/play/#{@play_session.code}/join", params: { name: "Ann", color: "blue" }, as: :json
     @player = Player.find(json.dig("player", "id"))
@@ -79,7 +79,7 @@ class PlayerProfilesTest < ActionDispatch::IntegrationTest
   test "joining a new session with use_account picks the link up again" do
     link_phone
     @play_session.end!
-    next_session = start_session(@kiosk, lobby_open: true)
+    next_session = start_session(@kiosk)
     post "/play/#{next_session.code}/join", params: { name: "Ann", color: "blue", use_account: true }, as: :json
     assert_response :success
     assert_equal true, json.dig("player", "account_linked")

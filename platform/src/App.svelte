@@ -153,7 +153,7 @@
     });
     attract = step.state;
     if (attract.shown && !wasShown) void loadAttractEntries();
-    // A real QR needs a real session; the controller opens its lobby.
+    // A real QR needs a real session.
     if (step.startSession) void pad.run("start");
   }
 

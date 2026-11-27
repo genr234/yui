@@ -31,7 +31,6 @@
 	let wrap: HTMLDivElement | undefined;
 	let confirmEnd = false;
 	let confirmKick = "";
-	let lobbyBusy = false;
 
 	$: session = padState.session;
 	$: playerBySlot = new Map(padState.players.filter((player) => player.slot).map((player) => [player.slot, player]));
@@ -88,13 +87,6 @@
 		}
 		const next = await pad.run("end");
 		if (next) close();
-	}
-
-	async function toggleLobby() {
-		if (!session || lobbyBusy) return;
-		lobbyBusy = true;
-		await pad.setLobby(!session.lobby_open);
-		lobbyBusy = false;
 	}
 
 	async function kick(player: PadPlayer) {
@@ -181,22 +173,11 @@
 			<div class="session-join">
 				<JoinSteps {session} size={session.wifi || session.wifi_pending ? 148 : 172} />
 				<div class="session-join-copy">
-					<span class="session-eyebrow">{session.lobby_open ? "Or enter the code" : "Session code"}</span>
+					<span class="session-eyebrow">Or enter the code</span>
 					<strong class="session-join-code">{session.code}</strong>
-					{#if session.lobby_open && joinHost}
+					{#if joinHost}
 						<span class="session-join-host">at {joinHost}/play</span>
 					{/if}
-					<button
-						class="session-lobby"
-						type="button"
-						role="switch"
-						aria-checked={Boolean(session.lobby_open)}
-						disabled={lobbyBusy}
-						on:click={toggleLobby}
-					>
-						<span class="session-switch" class:on={session.lobby_open} aria-hidden="true"></span>
-						<span>Let phones join with just the code</span>
-					</button>
 				</div>
 			</div>
 

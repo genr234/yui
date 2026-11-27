@@ -17,9 +17,6 @@
                 <% end %>
               </small>
             </span>
-            <span class="quiet-status <%= "quiet-status--on" if play_session.lobby_open? %>">
-              <%= play_session.lobby_open? ? "Lobby open" : "QR only" %>
-            </span>
           </li>
         <% end %>
       </ul>

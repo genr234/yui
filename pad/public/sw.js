@@ -1,6 +1,6 @@
 // Yui Pad service worker: caches the app shell; API, cable and sim traffic always hits the network.
 // Registered from /pad/sw.js with scope /play/ (Rails sends Service-Worker-Allowed: /play/).
-const CACHE = "yui-pad-shell-v3";
+const CACHE = "yui-pad-shell-v4";
 const SHELL = [
 	"/pad/",
 	"/pad/manifest.webmanifest",
@@ -60,10 +60,19 @@ self.addEventListener("fetch", (e) => {
     return;
   }
 
-  // Navigations to /play/ (the installed app's start page) and /play/<CODE>:
-  // network first (the session may be gone, and Rails sends the CSP), the
-  // cached shell only when offline.
-  if (req.mode === "navigate" && url.pathname.startsWith("/play/")) {
-    e.respondWith(fetch(req).catch(() => caches.match("/pad/")));
+  // Navigations to /play (the installed app's start page) and /play/<CODE>:
+  // network first (Rails sends the CSP). The cached shell stands in when the
+  // network is down or answers with an error page (a proxy's 502, an old
+  // server's 404), so the app always opens on its own screens, which say
+  // what went wrong and offer a box for a code.
+  if (req.mode === "navigate" && (url.pathname === "/play" || url.pathname.startsWith("/play/"))) {
+    e.respondWith(
+      fetch(req)
+        .then(async (res) => {
+          if (res.ok || res.type === "opaqueredirect" || res.redirected) return res;
+          return (await caches.match("/pad/")) || res;
+        })
+        .catch(async () => (await caches.match("/pad/")) || Response.error()),
+    );
   }
 });

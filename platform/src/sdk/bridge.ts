@@ -192,7 +192,6 @@ class DemoBridge {
 		session: {
 			code: string;
 			join_url: string;
-			lobby_open?: boolean;
 			wifi?: { ssid: string; password: string; qr: string };
 			wifi_pending?: boolean;
 		} | null;
@@ -380,9 +379,9 @@ class DemoBridge {
 			return this.padState as T;
 		}
 		if (method === "pad.session.start" && this.config.event_mode) {
-			// Event mode: the lobby opens by itself and nobody is in it yet.
+			// Event mode: nobody is in it yet.
 			this.padState = {
-				session: { code: "KQXM", join_url: "https://yui.example/play/KQXM?t=OT56FOOG", lobby_open: true },
+				session: { code: "KQXM", join_url: "https://yui.example/play/KQXM?t=OT56FOOG" },
 				players: [],
 			};
 			this.startFakeWifi();
@@ -391,7 +390,7 @@ class DemoBridge {
 		}
 		if (method === "pad.session.start") {
 			this.padState = {
-				session: { code: "KQXM", join_url: "https://yui.example/play/KQXM?t=OT56FOOG", lobby_open: false },
+				session: { code: "KQXM", join_url: "https://yui.example/play/KQXM?t=OT56FOOG" },
 				players: [
 					{ id: "p1", slot: 1, name: "Riccardo", color: "blue", host: true, speaker: true, connected: true, account_linked: true, rtt_ms: 18, input_hz: 60 },
 					{ id: "p2", slot: 2, name: "Sam", color: "purple", host: false, connected: true, rtt_ms: 94, input_hz: 58.5, avatar: "yui:c1:1.1.3.0.2.1.2.4:33-38-13,67-38-13:50-70:50-55" },
@@ -403,10 +402,6 @@ class DemoBridge {
 			this.startFakeWifi();
 			this.emitPad();
 			return this.padState as T;
-		}
-		if (this.padState.session && method === "pad.lobby") {
-			this.padState = { ...this.padState, session: { ...this.padState.session, lobby_open: Boolean(params.open) } };
-			this.emitPad();
 		}
 		if (method === "pad.kick") {
 			this.padState = { ...this.padState, players: this.padState.players.filter((player) => player.id !== params.player_id) };

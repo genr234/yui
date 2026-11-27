@@ -5,7 +5,7 @@ import { JOIN_RESERVE_PX, chipLayout, joinVisible, pickedBy, seated, spectators,
 const player = (id: string, slot: number | null, extra: Partial<PadPlayer> = {}): PadPlayer => ({
 	id, slot, name: id, color: "blue", host: false, connected: true, ...extra,
 });
-const session = (lobby_open: boolean) => ({ code: "ABCD", join_url: "https://yui.example/play/ABCD?t=1", lobby_open });
+const session = () => ({ code: "ABCD", join_url: "https://yui.example/play/ABCD?t=1" });
 
 describe("chipLayout", () => {
 	test("no seats, no grid", () => {
@@ -56,18 +56,10 @@ describe("roster helpers", () => {
 });
 
 describe("joinVisible", () => {
-	const full = [player("a", 1), player("b", 2), player("c", 3), player("d", 4)];
 	test("no session: hidden", () => {
-		expect(joinVisible(null, [])).toBe(false);
+		expect(joinVisible(null)).toBe(false);
 	});
-	test("lobby open: shown even with a full table (watchers can still join)", () => {
-		expect(joinVisible(session(true), full)).toBe(true);
-	});
-	test("lobby closed: shown only while a seat is free", () => {
-		expect(joinVisible(session(false), full.slice(0, 3))).toBe(true);
-		expect(joinVisible(session(false), full)).toBe(false);
-	});
-	test("spectators do not take seats", () => {
-		expect(joinVisible(session(false), [...full.slice(0, 3), player("w", null)])).toBe(true);
+	test("a running session: always shown, even with a full table (the code still lets people watch)", () => {
+		expect(joinVisible(session())).toBe(true);
 	});
 });

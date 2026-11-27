@@ -98,15 +98,14 @@ describe("session admin", () => {
 		expect(sentParams).toEqual([{ player_id: "p2", channel: "right" }, { player_id: "p3" }]);
 	});
 
-	test("lobby, kick, host and speaker call their bridge commands", async () => {
+	test("kick, host and speaker call their bridge commands", async () => {
 		sends.length = 0;
 		void pad.kick("p2");
 		void pad.makeHost("p2");
-		void pad.makeSpeaker("p2");
-		const lobby = pad.setLobby(true);
-		release({ session: { code: "KQXM", join_url: "https://yui.example/j", lobby_open: true }, players: [] });
-		expect(sends).toEqual(["pad.kick", "pad.host", "pad.speaker", "pad.lobby"]);
-		expect((await lobby)?.session?.lobby_open).toBe(true);
+		const speaker = pad.makeSpeaker("p2");
+		release({ session: { code: "KQXM", join_url: "https://yui.example/j" }, players: [] });
+		expect(sends).toEqual(["pad.kick", "pad.host", "pad.speaker"]);
+		expect((await speaker)?.session?.code).toBe("KQXM");
 	});
 
 	test("a failed kick resolves null and shows its error without marking busy", async () => {

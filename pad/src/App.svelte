@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import type { Node, Player } from '@yui/protocol'
-  import { ApiError, codeFromPath, friendlyError, getInfo, join, linkAccount, qrTokenFromQuery, simSlotFromQuery, type SessionInfo } from './api'
+  import { ApiError, codeFromPath, friendlyError, getInfo, join, linkAccount, simSlotFromQuery, type SessionInfo } from './api'
   import { COLOR_NAMES, colorHex } from './colors'
   import Pad from './Pad.svelte'
   import Avatar from './Avatar.svelte'
@@ -9,7 +9,7 @@
   import CodeEntry from './CodeEntry.svelte'
   import InstallHint from './InstallHint.svelte'
   import PadHome from './PadHome.svelte'
-  import { rememberCode } from './platform/pwa'
+  import { forgetCode, rememberCode } from './platform/pwa'
   import Icon from './Icon.svelte'
   import { rememberAvatar, startingAvatar } from './avatar'
   import { demoGamepad, demoRemote, demoShell, demoSurface, demoTree } from './layout/demo'
@@ -21,8 +21,16 @@
   const demos: Record<string, Node> = { layout: demoTree, gamepad: demoGamepad, remote: demoRemote, shell: demoShell, surface: demoSurface }
   const demo: Node | null = (demoName && demos[demoName]) || null
   const code = codeFromPath()
-  const qrToken = qrTokenFromQuery()
   const simSlot = simSlotFromQuery()
+
+  // A scanned kiosk link carries a `?t=` the code no longer needs: drop it, so
+  // the address (and a home-screen icon added from here) is just /play/<CODE>.
+  if (typeof location !== 'undefined' && new URLSearchParams(location.search).has('t')) {
+    const params = new URLSearchParams(location.search)
+    params.delete('t')
+    const rest = params.toString()
+    history.replaceState(history.state, '', `${location.pathname}${rest ? `?${rest}` : ''}${location.hash}`)
+  }
 
   let screen: Screen = 'loading'
   let info: SessionInfo | null = null
@@ -75,8 +83,16 @@
       screen = player ? 'joined' : 'join'
       if (!player && simSlot) await submit()
     } catch (e) {
-      screen = e instanceof ApiError && e.status === 404 ? 'not_found' : 'error'
+      if (e instanceof ApiError && e.status === 404) showNotFound()
+      else screen = 'error'
     }
+  }
+
+  /** No game with this code: back to the start page with a note, and the app's address with it. */
+  function showNotFound() {
+    if (code) forgetCode(code)
+    if (!simSlot) history.replaceState(history.state, '', '/play/')
+    screen = 'not_found'
   }
 
   async function submit() {
@@ -85,7 +101,7 @@
     error = ''
     unlockAudio()
     try {
-      const res = await join(code, name.trim(), color, qrToken, avatar, accountName ? useAccountOn : undefined)
+      const res = await join(code, name.trim(), color, avatar, accountName ? useAccountOn : undefined)
       player = res.player
       if (pendingCode) {
         // Linking needs a player, so it happens right after joining.
@@ -112,7 +128,7 @@
     } catch (e) {
       error = friendlyError(e)
       if (e instanceof ApiError && e.code === 'kicked') screen = 'kicked'
-      else if (e instanceof ApiError && e.status === 404) screen = 'not_found'
+      else if (e instanceof ApiError && e.status === 404) showNotFound()
       else {
         if (e instanceof ApiError && (e.code === 'validation' || e.code === 'validation_failed')) await load().catch(() => {})
         if (!player) screen = 'join'
@@ -138,7 +154,10 @@
     <pre class="log">{log.join('\n') || 'no events yet'}</pre>
   </div>
 {:else if screen === 'joined' && player && code}
-  <Pad {code} {player} {accountName} kioskName={info?.kiosk_name ?? ''} onEnd={(s) => (screen = s)} />
+  <Pad {code} {player} {accountName} kioskName={info?.kiosk_name ?? ''} onEnd={(s) => {
+      if (s === 'ended' && !simSlot) forgetCode(code)
+      screen = s
+    }} />
 {:else}
   <main class="shell">
     {#if screen === 'loading'}
@@ -147,22 +166,24 @@
       </section>
     {:else if screen === 'home'}
       <PadHome go={(path) => location.assign(path)} />
-    {:else if screen === 'not_found' || screen === 'ended'}
+    {:else if screen === 'not_found'}
+      <PadHome
+        go={(path) => location.assign(path)}
+        notice={`There's no game with code ${code} right now. It may have ended: check the four letters on the kiosk.`}
+      />
+    {:else if screen === 'ended'}
       <section class="center">
-        <div class="glyph kit-panel" aria-hidden="true"><Icon name={screen === 'ended' ? 'checkmark' : 'search'} size={52} /></div>
-        <h1>{screen === 'ended' ? 'Thanks for playing' : 'Session not found'}</h1>
-        <p class="muted">
-          {screen === 'ended'
-            ? 'The kiosk ended this session.'
-            : 'This session has ended or the link is wrong. Scan the QR code on the kiosk again.'}
-        </p>
-        <button class="secondary" on:click={() => location.assign('/play/')}>Join another game</button>
+        <div class="glyph kit-panel" aria-hidden="true"><Icon name="checkmark" size={52} /></div>
+        <h1>Thanks for playing</h1>
+        <p class="muted">The kiosk ended this session.</p>
+        <button class="primary" on:click={() => location.assign('/play/')}>Join another game</button>
       </section>
     {:else if screen === 'kicked'}
       <section class="center">
         <div class="glyph kit-panel bad" aria-hidden="true"><Icon name="cross" size={48} /></div>
         <h1>You were removed</h1>
-        <p class="muted">The host removed you from this session. Ask them to let you back in, then scan the QR code again.</p>
+        <p class="muted">The host removed you from this session.</p>
+        <button class="secondary" on:click={() => location.assign('/play/')}>Join another game</button>
       </section>
     {:else if screen === 'closed'}
       <section class="center">

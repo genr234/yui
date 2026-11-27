@@ -1,33 +1,72 @@
 <script lang="ts">
   /**
    * /play with no code: where the installed app opens. Rejoin the last game,
-   * scan the kiosk's QR code, or type the four-letter code.
+   * scan the kiosk's QR code, or type the four-letter code. A code is checked
+   * before the app goes there, so a typo or a finished game shows a message
+   * here instead of a dead end.
    */
+  import { onMount } from 'svelte'
+  import { ApiError, getInfo } from './api'
   import Icon from './Icon.svelte'
   import InstallHint from './InstallHint.svelte'
   import QrScan from './QrScan.svelte'
-  import { canScan, cleanCode, joinTarget, lastCode } from './platform/pwa'
+  import { canScan, cleanCode, forgetCode, joinTarget, lastCode } from './platform/pwa'
 
   /** Navigates the app to a /play/<CODE> path (location.assign in the app). */
   export let go: (path: string) => void
+  /** Why the app is back here, e.g. the code it was opened with has no game. */
+  export let notice = ''
 
-  const last = lastCode()
   const scanner = typeof window !== 'undefined' && canScan()
+  // Offered only once the server says that game is still running.
+  let last: string | null = null
   let typed = ''
   let scanning = false
-  let error = ''
+  let checking = false
+  let error = notice
 
   $: code = cleanCode(typed)
 
+  onMount(() => {
+    const remembered = lastCode()
+    if (!remembered) return
+    getInfo(remembered)
+      .then(() => (last = remembered))
+      .catch((e) => {
+        if (e instanceof ApiError && e.status === 404) forgetCode(remembered)
+        else last = remembered // offline or a hiccup: let them try
+      })
+  })
+
+  async function open(target: string) {
+    if (checking) return
+    checking = true
+    error = ''
+    try {
+      await getInfo(target)
+      go(`/play/${target}`)
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) {
+        forgetCode(target)
+        if (last === target) last = null
+        error = `There's no game with code ${target} right now. Check the four letters on the kiosk.`
+      } else {
+        error = "Can't reach Yui. Check your connection and try again."
+      }
+    } finally {
+      checking = false
+    }
+  }
+
   function submit() {
-    if (code) go(`/play/${code}`)
+    if (code) void open(code)
   }
 
   function scanned(text: string) {
     const target = joinTarget(text)
     scanning = false
-    if (target) go(target)
-    else error = "That QR code isn't a Yui game. Scan the \"Scan to play\" code on the kiosk."
+    if (target) void open(target)
+    else error = "That QR code isn't a Yui game. Scan the \"Scan to play\" code on the kiosk, or type its code."
   }
 </script>
 
@@ -36,7 +75,7 @@
   <h1>Join a game</h1>
 
   {#if last}
-    <button class="primary" type="button" on:click={() => go(`/play/${last}`)}>
+    <button class="primary" type="button" disabled={checking} on:click={() => last && open(last)}>
       <Icon name="play" size={22} /> Rejoin {last}
     </button>
   {/if}
@@ -53,6 +92,7 @@
       <input
         class="code"
         bind:value={typed}
+        on:input={() => (error = '')}
         maxlength="4"
         autocapitalize="characters"
         autocomplete="off"
@@ -62,9 +102,11 @@
       />
     </label>
     <p class="muted hint">The four letters on the kiosk, under its QR code.</p>
-    <button class="secondary" type="submit" disabled={!code}>Join with code</button>
+    {#if error}<p class="err" role="alert">{error}</p>{/if}
+    <button class={last || scanner ? 'secondary' : 'primary'} type="submit" disabled={!code || checking}>
+      {checking ? 'Checking…' : 'Join with code'}
+    </button>
   </form>
-  {#if error}<p class="err" role="alert">{error}</p>{/if}
 
   <InstallHint />
 </section>
@@ -134,7 +176,12 @@
   }
   .err {
     margin: 0;
-    color: var(--kit-yellow);
+    padding: 10px 12px;
+    border: 2px solid #b8263a;
+    border-radius: var(--yui-radius-hero);
+    background: var(--kit-red);
+    color: #fff;
     font-weight: 800;
+    box-shadow: 0 3px 0 #b8263a;
   }
 </style>

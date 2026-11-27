@@ -29,7 +29,7 @@ class PlayController < ActionController::Base
   content_security_policy(only: :show, if: :sim_request?) do |policy|
     policy.frame_ancestors :self
   end
-  before_action :set_play_session, except: :home
+  before_action :set_play_session, except: [ :home, :show, :elsewhere ]
 
   # /play with no code: where the installed pad (PWA) opens. The same static
   # pad, which shows its own "join a game" screen when the path has no code.
@@ -42,13 +42,24 @@ class PlayController < ActionController::Base
     end
   end
 
+  # Always the pad, even for a code with no live session: the pad asks /info
+  # and shows "no game with that code" next to a box for a new one. An old
+  # link or an installed app reopening on last night's code never lands on a
+  # bare error page.
   def show
     response.headers["Cache-Control"] = "no-cache"
     if pad_index.file?
       send_file pad_index, type: "text/html", disposition: "inline"
     else
+      @code = PlaySession.normalize_code(params[:code])
       render :placeholder, layout: false
     end
+  end
+
+  # Any other /play/... path (a code of the wrong length, a stray slash):
+  # back to the start page, where a code can be typed again.
+  def elsewhere
+    redirect_to play_home_path
   end
 
   def info
@@ -58,7 +69,7 @@ class PlayController < ActionController::Base
       account_name: link&.account&.name,
       code: @play_session.code,
       kiosk_name: @play_session.kiosk.name,
-      lobby_open: @play_session.lobby_open,
+      lobby_open: true,
       player: player&.as_player_json,
       colors_taken: @play_session.players.active.where.not(id: player&.id).distinct.pluck(:color)
     }
@@ -68,13 +79,8 @@ class PlayController < ActionController::Base
     player = cookie_player(include_kicked: true)
     return render json: { error: "kicked" }, status: :forbidden if player&.kicked?
 
-    if player
-      rejoin(player)
-    elsif @play_session.lobby_open || @play_session.valid_qr_token?(params[:qr_token])
-      first_join
-    else
-      render json: { error: "qr_required" }, status: :forbidden
-    end
+    # The code alone is enough to join; a `qr_token` from a scanned link is ignored.
+    player ? rejoin(player) : first_join
   end
 
   def ice
@@ -90,11 +96,7 @@ class PlayController < ActionController::Base
     @play_session = PlaySession.find_active_by_code(params[:code])
     return if @play_session
 
-    if action_name == "show"
-      render file: Rails.public_path.join("404.html"), status: :not_found, layout: false, content_type: "text/html"
-    else
-      render json: { error: "not_found" }, status: :not_found
-    end
+    render json: { error: "not_found" }, status: :not_found
   end
 
   def first_join

@@ -3,7 +3,6 @@ import type { IceConfig, Player } from '@yui/protocol'
 export interface SessionInfo {
   code: string
   kiosk_name: string
-  lobby_open: boolean
   player: Player | null
   colors_taken: string[]
   /** The phone's linked Yui account, when it has one (plan 10). */
@@ -25,10 +24,6 @@ export class ApiError extends Error {
 export function codeFromPath(pathname = location.pathname): string | null {
   const m = pathname.match(/^\/play\/([^/]+)/)
   return m ? decodeURIComponent(m[1]).toUpperCase() : null
-}
-
-export function qrTokenFromQuery(search = location.search): string | null {
-  return new URLSearchParams(search).get('t')
 }
 
 /**
@@ -71,14 +66,13 @@ export const getInfo = (code: string) => request<SessionInfo>(`/play/${encodeURI
 
 type JoinResponse = { player: Player; session: { id: string; code: string } }
 
-export const join = (code: string, name: string, color: string, qr_token: string | null, avatar: string | null = null, use_account?: boolean) =>
+export const join = (code: string, name: string, color: string, avatar: string | null = null, use_account?: boolean) =>
   request<JoinResponse>(`/play/${encodeURIComponent(code)}/join${simQuery}`, {
     method: 'POST',
     body: JSON.stringify({
       name,
       color,
       ...(avatar ? { avatar } : {}),
-      ...(qr_token ? { qr_token } : {}),
       ...(use_account === undefined ? {} : { use_account }),
     }),
   })
@@ -115,12 +109,10 @@ export const revokeProfile = (code: string, app_id: string) =>
 export function friendlyError(e: unknown): string {
   const code = e instanceof ApiError ? e.code : 'error'
   switch (code) {
-    case 'qr_required':
-      return 'Scan the QR code on the kiosk to join.'
     case 'kicked':
       return 'You were removed from this session.'
     case 'not_found':
-      return 'That session is no longer available.'
+      return "There's no game with that code right now. Check the code on the kiosk."
     case 'rate_limited':
       return 'Too many tries. Wait a moment and try again.'
     case 'invalid_code':

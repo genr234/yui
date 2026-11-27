@@ -384,7 +384,9 @@ class PlaySession < ApplicationRecord
       code: code,
       qr_key: qr_key,
       join_base_url: "#{base_url}/play/#{code}",
-      lobby_open: lobby_open,
+      # Always true: every session is joinable with its code alone. Kept so
+      # older controllers and overlays still show the code as a way in.
+      lobby_open: true,
       players: players.active.order(:id).map(&:as_player_json)
     }
   end

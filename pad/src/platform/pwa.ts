@@ -92,14 +92,13 @@ export function cleanCode(text: string): string | null {
 }
 
 /**
- * What a scanned QR code (or pasted text) should open: a same-origin
- * /play/<CODE> link keeps its path and `?t=` token; a bare code becomes
- * /play/<CODE>. Anything else (another site, a Wi-Fi code) is null.
+ * The code a scanned QR code (or pasted text) points at: a same-origin
+ * /play/<CODE> link (its `?t=` is dropped: the code alone is enough to join)
+ * or a bare code. Anything else (another site, a Wi-Fi code) is null.
  */
 export function joinTarget(text: string, origin: string = location.origin): string | null {
   const t = text.trim()
-  const bare = CODE.test(t) ? t.toUpperCase() : null
-  if (bare) return `/play/${bare}`
+  if (CODE.test(t)) return t.toUpperCase()
   let url: URL
   try {
     url = new URL(t)
@@ -108,16 +107,16 @@ export function joinTarget(text: string, origin: string = location.origin): stri
   }
   if (url.origin !== origin) return null
   const m = url.pathname.match(/^\/play\/([A-Za-z]{4})\/?$/)
-  if (!m) return null
-  // The token exactly as the kiosk wrote it: decoding would turn a '+' into a space.
-  const raw = url.search.match(/[?&]t=([^&#]*)/)?.[1]
-  let token = ''
+  return m ? m[1].toUpperCase() : null
+}
+
+/** Forgets the remembered code (its game is over), so Rejoin stops offering it. */
+export function forgetCode(code: string) {
   try {
-    token = raw ? encodeURIComponent(decodeURIComponent(raw.replace(/\+/g, '%2B'))) : ''
+    if (localStorage.getItem(LAST_CODE_KEY) === code.toUpperCase()) localStorage.removeItem(LAST_CODE_KEY)
   } catch {
-    return null // a malformed %-escape: not a link the kiosk made
+    /* storage unavailable */
   }
-  return `/play/${m[1].toUpperCase()}${token ? `?t=${token}` : ''}`
 }
 
 /** The browser can read QR codes from the camera itself (Android Chrome; not iOS Safari). */

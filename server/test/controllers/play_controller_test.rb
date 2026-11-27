@@ -65,25 +65,38 @@ class PlayControllerTest < ActionDispatch::IntegrationTest
     FileUtils.rm_rf(dir)
   end
 
-  test "GET /play/:code is 404 without an active session" do
+  test "GET /play/:code still serves the pad when the session is gone, and info says not_found" do
     @play_session.end!
-    get "/play/#{@play_session.code}"
-    assert_response :not_found
+    dir = Rails.root.join("tmp", "pad-test-#{SecureRandom.hex(4)}")
+    FileUtils.mkdir_p(dir)
+    File.write(dir.join("index.html"), "<!doctype html><title>Pad</title><div id=app></div>")
+
+    with_pad_index(dir.join("index.html")) do
+      get "/play/#{@play_session.code}"
+    end
+    assert_response :success
+    assert_includes response.body, "<div id=app>"
 
     get "/play/#{@play_session.code}/info"
     assert_response :not_found
     assert_equal "not_found", json["error"]
+
+    post "/play/#{@play_session.code}/join", params: { name: "Ann", color: "blue" }, as: :json
+    assert_response :not_found
+  ensure
+    FileUtils.rm_rf(dir) if dir
   end
 
-  test "joining needs a valid qr token unless the lobby is open" do
+  test "any other /play path goes back to the start page" do
+    get "/play/ABCDE"
+    assert_redirected_to "/play"
+
+    get "/play/AB1D/extra"
+    assert_redirected_to "/play"
+  end
+
+  test "the code alone is enough to join" do
     join
-    assert_response :forbidden
-    assert_equal "qr_required", json["error"]
-
-    join(qr_token: "AAAAAAAA")
-    assert_response :forbidden
-
-    join(qr_token: @play_session.qr_token_for(Time.current))
     assert_response :success
     assert_equal({ "id" => @play_session.id.to_s, "code" => @play_session.code }, json["session"])
     player = json["player"]
@@ -95,14 +108,12 @@ class PlayControllerTest < ActionDispatch::IntegrationTest
     assert cookies[:yui_player].present?
   end
 
-  test "an open lobby lets players join with the code only" do
-    @play_session.update!(lobby_open: true)
-    join
+  test "a stale or bogus qr token doesn't get in the way" do
+    join(qr_token: "AAAAAAAA")
     assert_response :success
   end
 
   test "the player cookie is HttpOnly and SameSite=Lax" do
-    @play_session.update!(lobby_open: true)
     join
     set_cookie = Array(response.headers["Set-Cookie"]).join("\n")
     assert_match(/yui_player=/, set_cookie)
@@ -110,12 +121,10 @@ class PlayControllerTest < ActionDispatch::IntegrationTest
     assert_match(/samesite=lax/i, set_cookie)
   end
 
-  test "rejoining with the cookie keeps the slot and skips the qr check" do
-    @play_session.update!(lobby_open: true)
+  test "rejoining with the cookie keeps the slot" do
     join_player(@play_session, name: "First")
     join(name: "Second")
     second = json["player"]
-    @play_session.update!(lobby_open: false)
 
     assert_broadcasts(PlaySessionChannel.broadcasting_for(@play_session), 1) do
       join(name: "Renamed", color: "teal")
@@ -127,7 +136,6 @@ class PlayControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "kicked players are refused" do
-    @play_session.update!(lobby_open: true)
     join
     player = Player.find(json["player"]["id"])
     @play_session.kick!(player)
@@ -141,7 +149,6 @@ class PlayControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "join and rejoin accept an avatar and broadcast it" do
-    @play_session.update!(lobby_open: true)
     join(avatar: "\u{1F98A}")
     assert_response :success
     assert_equal "\u{1F98A}", json["player"]["avatar"]
@@ -166,7 +173,6 @@ class PlayControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "a bad or oversized avatar is a 422 validation_failed" do
-    @play_session.update!(lobby_open: true)
     [ "AB", "<img src=x>", jpeg_avatar(bytes: 13.kilobytes), { "src" => "x" }, [ "\u{1F98A}" ] ].each do |avatar|
       join(avatar: avatar)
       assert_response :unprocessable_content
@@ -182,7 +188,6 @@ class PlayControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "validation errors are 422" do
-    @play_session.update!(lobby_open: true)
     join(name: "", color: "black")
     assert_response :unprocessable_content
     assert_equal "validation_failed", json["error"]
@@ -191,8 +196,6 @@ class PlayControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "join requires JSON and a same-origin request" do
-    @play_session.update!(lobby_open: true)
-
     post "/play/#{@play_session.code}/join", params: { name: "Ann", color: "blue" }
     assert_response :unsupported_media_type
 
@@ -209,7 +212,7 @@ class PlayControllerTest < ActionDispatch::IntegrationTest
 
   test "join is rate limited to 10 per minute per IP" do
     10.times { join }
-    assert_response :forbidden
+    assert_response :success
 
     join
     assert_response :too_many_requests
@@ -217,7 +220,6 @@ class PlayControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "info reports the session, the cookie's player and taken colors" do
-    @play_session.update!(lobby_open: true)
     join_player(@play_session, name: "Other", color: "red")
 
     get "/play/#{@play_session.code}/info"
@@ -238,7 +240,6 @@ class PlayControllerTest < ActionDispatch::IntegrationTest
     get "/play/#{@play_session.code}/ice"
     assert_response :unauthorized
 
-    @play_session.update!(lobby_open: true)
     join
     player_id = json["player"]["id"]
 

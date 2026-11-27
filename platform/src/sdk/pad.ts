@@ -47,11 +47,10 @@ export type PadHome = { player_id: string; via: "button" | "system" };
 
 /** The kiosk's play session as the overlay sees it; `session` is null when none is open. */
 export type PadState = {
-	/** `lobby_open`: anyone with the code can join; otherwise phones must scan the current QR. */
+	/** Anyone with `code` can join; `join_url` is what the QR code opens. */
 	session: {
 		code: string;
 		join_url: string;
-		lobby_open?: boolean;
 		/** The kiosk's own hotspot while it is on: `qr` is a WIFI: join code. */
 		wifi?: PadWifi;
 		/** The hotspot is still starting; `wifi` follows when it is up. */
@@ -89,8 +88,6 @@ export const pad = {
 	 * `padAction`. Never rejects.
 	 */
 	run: (kind: "start" | "end") => runPadAction(kind),
-	/** Let anyone with the code join (open) or require the QR (closed). */
-	setLobby: (open: boolean) => playerAction("pad.lobby", { open }),
 	/** Remove a phone from the session. */
 	kick: (playerId: string) => playerAction("pad.kick", { player_id: playerId }),
 	/** Give the host role (the remote and the Home sheet) to another phone. */

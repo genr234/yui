@@ -28,7 +28,7 @@ class KioskPlaySessionsApiTest < ActionDispatch::IntegrationTest
     assert_equal %w[code id join_base_url lobby_open players qr_key], created.keys.sort
     assert_kind_of String, created["id"]
     assert_equal "http://www.example.com/play/#{created["code"]}", created["join_base_url"]
-    assert_equal false, created["lobby_open"]
+    assert_equal true, created["lobby_open"]
     assert_equal [], created["players"]
 
     play_session = PlaySession.find(created["id"])
@@ -59,14 +59,13 @@ class KioskPlaySessionsApiTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
-  test "updates lobby_open and ends the session" do
+  test "ignores lobby_open and ends the session" do
     play_session = start_session(@kiosk)
     player, = join_player(play_session)
 
-    patch "/api/kiosk/play_sessions/#{play_session.id}", params: { lobby_open: true }, headers: @auth, as: :json
+    patch "/api/kiosk/play_sessions/#{play_session.id}", params: { lobby_open: false }, headers: @auth, as: :json
     assert_response :success
     assert_equal true, json["lobby_open"]
-    assert play_session.reload.lobby_open
 
     assert_broadcast_on(PlaySessionChannel.broadcasting_for(player), { type: "session_ended" }) do
       delete "/api/kiosk/play_sessions/#{play_session.id}", headers: @auth
@@ -156,7 +155,6 @@ class KioskPlaySessionsApiTest < ActionDispatch::IntegrationTest
 
     assert other_session.reload.active?
     assert_not player.reload.kicked?
-    assert_not other_session.lobby_open
   end
 
   test "returns ICE config for the kiosk" do

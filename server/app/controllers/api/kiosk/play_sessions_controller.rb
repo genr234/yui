@@ -15,10 +15,9 @@ module Api
         render json: @play_session.as_kiosk_json(base_url: request.base_url)
       end
 
+      # Nothing to change any more: `lobby_open` from older controllers is
+      # accepted and ignored, since every session is joinable with its code.
       def update
-        if params.key?(:lobby_open)
-          @play_session.update!(lobby_open: ActiveModel::Type::Boolean.new.cast(params[:lobby_open]) || false)
-        end
         render json: @play_session.as_kiosk_json(base_url: request.base_url)
       end
 

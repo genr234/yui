@@ -48,12 +48,9 @@ export function pickedBy(players: PadPlayer[]): string | null {
 }
 
 /**
- * The join corner shows while a session exists and either phones may join
- * with the code (`lobby_open`) or a seat is free (a scan of the rotating QR
- * still seats someone, or lets them watch). A full table with the lobby
- * closed hides it: nobody new can get in.
+ * The join corner shows whenever a session exists: anyone with the code can
+ * join, taking a free seat or watching when the table is full.
  */
-export function joinVisible(session: PadState["session"] | undefined, players: PadPlayer[]): boolean {
-	if (!session?.join_url) return false;
-	return Boolean(session.lobby_open) || seated(players).length < MAX_SEATS;
+export function joinVisible(session: PadState["session"] | undefined): boolean {
+	return Boolean(session?.join_url);
 }

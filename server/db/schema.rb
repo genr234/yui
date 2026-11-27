@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_10_000200) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_27_000100) do
   create_table "account_state_records", force: :cascade do |t|
     t.integer "account_id", null: false
     t.string "collection", null: false
@@ -240,7 +240,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_000200) do
     t.datetime "created_at", null: false
     t.datetime "ended_at"
     t.integer "kiosk_id", null: false
-    t.boolean "lobby_open", default: false, null: false
     t.string "qr_key", null: false
     t.datetime "updated_at", null: false
     t.index ["code"], name: "index_play_sessions_on_active_code", unique: true, where: "ended_at IS NULL"

@@ -5,7 +5,7 @@ class PadSimTest < ActionDispatch::IntegrationTest
 
   setup do
     PlayController.cache_store.clear
-    @play_session = start_session(lobby_open: true)
+    @play_session = start_session
   end
 
   test "GET /sim lists active sessions when no code is given" do
@@ -17,13 +17,13 @@ class PadSimTest < ActionDispatch::IntegrationTest
   end
 
   test "GET /sim?code= shows one iframe per simulated pad" do
-    get "/sim", params: { code: @play_session.code.downcase, pads: 3, t: "ABCDEFGH" }
+    get "/sim", params: { code: @play_session.code.downcase, pads: 3 }
 
     assert_response :success
     frames = response.body.scan(/<iframe[^>]*src="([^"]+)"/).flatten.map { |src| CGI.unescapeHTML(src) }
     assert_equal 3, frames.size
     frames.each_with_index do |src, i|
-      assert_equal "/play/#{@play_session.code}?sim=#{i + 1}&t=ABCDEFGH", src
+      assert_equal "/play/#{@play_session.code}?sim=#{i + 1}", src
     end
   end
 

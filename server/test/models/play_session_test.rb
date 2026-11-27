@@ -10,7 +10,6 @@ class PlaySessionTest < ActiveSupport::TestCase
     assert created
     assert_match(/\A[BCDFGHJKLMNPQRSTVWXZ]{4}\z/, play_session.code)
     assert_equal 32, Base64.strict_decode64(play_session.qr_key).bytesize
-    assert_not play_session.lobby_open
   end
 
   test "returns the kiosk's active session instead of starting another" do

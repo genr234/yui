@@ -11,7 +11,7 @@ class KioskAppSavesApiTest < ActionDispatch::IntegrationTest
     @owner = Account.create!(name: "Lobby")
     @kiosk = create_kiosk(account: @owner, token: "kiosk-token")
     @auth = { "Authorization" => "Bearer kiosk-token" }
-    @play_session = start_session(@kiosk, lobby_open: true)
+    @play_session = start_session(@kiosk)
     @player_account = Account.create!(name: "Riccardo")
     post "/play/#{@play_session.code}/join", params: { name: "Ann", color: "blue" }, as: :json
     @player = Player.find(JSON.parse(response.body).dig("player", "id"))

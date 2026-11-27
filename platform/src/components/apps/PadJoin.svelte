@@ -24,7 +24,7 @@
 	{#if state.session}
 		<JoinSteps session={state.session} {size} />
 		<div class="pad-join-text">
-			<span>{state.session.lobby_open ? "Or enter the code" : "Session code"}</span>
+			<span>Or enter the code</span>
 			<strong>{state.session.code}</strong>
 			{#if state.players.length}
 				<ul class="pad-join-players">

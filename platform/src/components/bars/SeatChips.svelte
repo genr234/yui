@@ -42,7 +42,7 @@
   $: seats = seated(players);
   $: watchers = spectators(players);
   $: seatIds = new Set(seats.map((p) => p.id));
-  $: joinShown = joinVisible(session, players);
+  $: joinShown = joinVisible(session);
   $: layout = chipLayout(seats.length, rect?.w ?? 540, rect?.h ?? 280, joinShown ? JOIN_RESERVE_PX : 0);
   $: unit = layout.h / 84;
 
