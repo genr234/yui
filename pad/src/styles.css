@@ -486,43 +486,36 @@ button.set-row:disabled {
 .set-row.danger .set-badge {
   --b: var(--kit-red);
 }
-/* An on/off switch with the kit's rim and lip: a green track, a white key. */
+/* An on/off switch: a green pill with a white knob. */
 input[type='checkbox'].set-switch {
   position: relative;
   display: block;
-  width: 58px;
-  height: 34px;
-  margin-bottom: 3px;
-  border: 2px solid var(--kit-key-line);
+  width: 52px;
+  height: 32px;
+  border: 0;
   border-radius: 999px;
-  background: var(--kit-well);
-  box-shadow: 0 3px 0 var(--kit-key-lip);
+  background: #d6dae3;
+  box-shadow: none;
   transition: background var(--yui-press) var(--yui-ease-out);
 }
 input[type='checkbox'].set-switch::after {
   position: absolute;
-  top: 2px;
-  left: 2px;
+  top: 3px;
+  left: 3px;
   width: 26px;
   height: 26px;
-  box-sizing: border-box;
-  border: 2px solid var(--kit-key-line);
   border-radius: 50%;
   background: #fff;
   -webkit-mask: none;
   mask: none;
-  box-shadow: 0 2px 0 var(--kit-key-lip);
+  box-shadow: 0 1px 3px rgba(20, 30, 50, 0.25);
   transform: none;
   transition: transform 180ms var(--yui-ease-out);
 }
 input[type='checkbox'].set-switch:checked {
-  border-color: color-mix(in srgb, var(--kit-green), #000 26%);
   background: var(--kit-green);
-  box-shadow: 0 3px 0 color-mix(in srgb, var(--kit-green), #000 26%);
 }
 input[type='checkbox'].set-switch:checked::after {
-  border-color: color-mix(in srgb, var(--kit-green), #000 26%);
   background: #fff;
-  box-shadow: 0 2px 0 color-mix(in srgb, var(--kit-green), #000 26%);
-  transform: translateX(24px);
+  transform: translateX(20px);
 }
