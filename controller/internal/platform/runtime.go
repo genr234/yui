@@ -70,6 +70,7 @@ func (r *Runtime) serveHTTP(ctx context.Context) {
 	mux.HandleFunc("/diagnostics.txt", func(w http.ResponseWriter, req *http.Request) {
 		http.ServeFile(w, req, diagnosticsPath(r.cfg.StatusPath))
 	})
+	mux.Handle("/assets/", platformAssets(r.staticFS))
 	mux.HandleFunc("/embed-proxy/", r.handleEmbedProxy)
 
 	server := &http.Server{Addr: r.cfg.PlatformHTTPAddr, Handler: mux}
@@ -84,6 +85,37 @@ func (r *Runtime) serveHTTP(ctx context.Context) {
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Printf("platform http stopped: %v", err)
 	}
+}
+
+// platformAssets serves the files Vite emits next to platform.js (the avatar
+// atlas, the logo, the face finder, fonts). The overlay runs inside whatever
+// page the kiosk shows and asks for them at __YUI_PLATFORM_HTTP/assets/...,
+// so they must be reachable cross-origin. They hold nothing secret.
+func platformAssets(staticFS fs.FS) http.Handler {
+	assets, err := fs.Sub(staticFS, "static/assets")
+	if err != nil {
+		return http.NotFoundHandler()
+	}
+	files := http.StripPrefix("/assets", http.FileServer(http.FS(assets)))
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Private-Network", "true")
+		if req.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if req.Method != http.MethodGet && req.Method != http.MethodHead {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if strings.HasSuffix(req.URL.Path, "/") {
+			http.NotFound(w, req) // no directory listings
+			return
+		}
+		// File names carry a content hash, so they never change.
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		files.ServeHTTP(w, req)
+	})
 }
 
 func readJSONFile(path string) (any, error) {
