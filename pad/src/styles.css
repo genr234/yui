@@ -5,12 +5,20 @@
  * colour (playerSwatch); --b is a chunky button's base colour.
  */
 /*
- * Allo (https://allo.joshpuckett.me, SIL OFL 1.1, see assets/fonts/allo/OFL.txt):
- * the variable font with roundness fixed at Friendly, weights 100 to 900.
+ * Allo 1.1.0 (https://allo.joshpuckett.me, SIL OFL 1.1, see assets/fonts/allo/OFL.txt).
+ * AlloRound.woff2 is AlloVariable.woff2 cut down for the pad: roundness pinned at
+ * 100 (fully round, to match the chunky kit buttons) and Latin, punctuation, arrows
+ * and maths signs only. It keeps the weight (100 to 900) and optical size axes.
+ * Other scripts and emoji fall back to the phone's own fonts. Made with fonttools:
+ *   pyftsubset AlloVariable.woff2 --layout-features='*' --output-file=sub.ttf --unicodes=
+ *     U+0000-017F,U+0218-021B,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+1E9E,U+2000-209F,U+20AC,
+ *     U+2122,U+2190-21FF,U+2212,U+2215,U+221A,U+221E,U+2248,U+2260,U+2264-2265,U+2713,
+ *     U+2715,U+FEFF,U+FFFD
+ *   fonttools varLib.instancer sub.ttf ROND=100 -o round.ttf   (then saved as woff2)
  */
 @font-face {
   font-family: 'Allo';
-  src: url('./assets/fonts/allo/AlloVariableFriendly.woff2') format('woff2');
+  src: url('./assets/fonts/allo/AlloRound.woff2') format('woff2');
   font-weight: 100 900;
   font-style: normal;
   font-display: swap;
@@ -115,6 +123,8 @@ body {
   background-attachment: fixed;
   color: var(--fg);
   font-family: var(--yui-font);
+  /* Allo's 400 is a little thin for white text on the sky; 500 reads better. */
+  font-weight: 500;
   overscroll-behavior: none;
 }
 
