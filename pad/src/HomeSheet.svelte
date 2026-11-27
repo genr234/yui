@@ -243,12 +243,7 @@
       {/if}
 
       {#if playing}
-        <div class="set-group">
-          <button class="set-row danger" type="button" on:click={quit}>
-            <span class="set-badge"><SettingIcon name="power" /></span>
-            <span class="set-label"><span>{confirmQuit ? 'Tap again to quit' : 'Quit game'}</span></span>
-          </button>
-        </div>
+        <button class="danger-btn" on:click={quit}>{confirmQuit ? 'Tap again to quit' : 'Quit game'}</button>
       {/if}
     {:else if tab === 'sound'}
       <section class="set-section" aria-label="Sound">
