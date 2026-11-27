@@ -3,7 +3,7 @@
   import type { Player, Peer } from '@yui/protocol'
   import { colorHex } from './colors'
   import Avatar from './Avatar.svelte'
-  import CreatureBuilder from './CreatureBuilder.svelte'
+  import AvatarEditor from './AvatarEditor.svelte'
   import CodeEntry from './CodeEntry.svelte'
   import { friendlyError } from './api'
   import Icon, { type IconName } from './Icon.svelte'
@@ -168,7 +168,7 @@
 </script>
 
 {#if editingAvatar}
-  <CreatureBuilder
+  <AvatarEditor
     value={player.avatar ?? null}
     color={colorHex(player.color)}
     busy={savingAvatar}
@@ -190,7 +190,7 @@
         <span class="muted">{kioskName || 'Yui'}{player.host ? ' · host' : ''}</span>
       </div>
       {#if !editingAvatar}
-        <button class="link" type="button" on:click={editAvatar}>{player.avatar ? 'Change creature' : 'Make a creature'}</button>
+        <button class="link" type="button" on:click={editAvatar}>{player.avatar ? 'Change avatar' : 'Add an avatar'}</button>
       {/if}
       <!-- Always reachable, whichever tab the sheet reopens on. -->
       <button class="close" type="button" aria-label={playing ? 'Resume' : 'Close'} on:click={onResume}><Icon name="cross" size={18} /></button>

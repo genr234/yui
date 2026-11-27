@@ -5,6 +5,9 @@ import {
   avatarImage,
   cameraErrorMessage,
   creatureOf,
+  cropSquare,
+  drawSquare,
+  photoOf,
   drawSelfie,
   encodeSelfie,
   rememberAvatar,
@@ -39,6 +42,37 @@ describe('drawSelfie', () => {
   })
 })
 
+describe('cropSquare', () => {
+  test('zoom 1 fills the square with the short side', () => {
+    expect(cropSquare(400, 300, 1, 200, 150)).toEqual({ sx: 50, sy: 0, size: 300 })
+  })
+
+  test('the square never leaves the picture', () => {
+    expect(cropSquare(400, 300, 1, 0, 0)).toEqual({ sx: 0, sy: 0, size: 300 })
+    expect(cropSquare(400, 300, 2, 1000, 1000)).toEqual({ sx: 250, sy: 150, size: 150 })
+  })
+
+  test('zoom is held between 1 and the maximum', () => {
+    expect(cropSquare(100, 100, 0.2, 50, 50).size).toBe(100)
+    expect(cropSquare(100, 100, 99, 50, 50).size).toBe(25)
+  })
+})
+
+describe('drawSquare', () => {
+  test('a picked photo is not mirrored', () => {
+    const calls: string[] = []
+    const ctx: SelfieContext = {
+      save: () => calls.push('save'),
+      restore: () => calls.push('restore'),
+      translate: () => calls.push('translate'),
+      scale: () => calls.push('scale'),
+      drawImage: (_img, ...a) => calls.push(`drawImage ${a.join(',')}`),
+    }
+    drawSquare(ctx, {} as CanvasImageSource, { sx: 10, sy: 20, size: 50 }, 128, false)
+    expect(calls).toEqual(['save', 'drawImage 10,20,50,50,0,0,128,128', 'restore'])
+  })
+})
+
 describe('creature avatars', () => {
   const memory = () => {
     const data = new Map<string, string>()
@@ -68,6 +102,16 @@ describe('creature avatars', () => {
     expect(store.data.has('yui_pad_avatar')).toBe(false)
     store.data.set('yui_pad_avatar', '🦊')
     expect(creatureOf(startingAvatar(store, () => 0.5))).not.toBeNull()
+  })
+
+  test('a plain photo avatar is never stored and keeps the last creature', () => {
+    const store = memory()
+    const creature = encodeCreature(creatureOf(startingAvatar(null, () => 0.3))!)
+    rememberAvatar(store, creature)
+    rememberAvatar(store, JPEG)
+    expect(store.data.get('yui_pad_avatar')).toBe(creature)
+    expect(photoOf(JPEG)).toBe(JPEG)
+    expect(photoOf(creature)).toBeNull()
   })
 
   test('a selfie moves the eyes, nose and mouth onto the face', () => {
@@ -124,12 +168,12 @@ describe('avatarImage', () => {
 })
 
 describe('camera helpers', () => {
-  test('error messages say the builder still works', () => {
+  test('error messages offer picking a photo instead', () => {
     expect(cameraErrorMessage({ name: 'NotAllowedError' })).toContain('blocked')
     expect(cameraErrorMessage({ name: 'NotFoundError' })).toContain('No front camera')
     expect(cameraErrorMessage({ name: 'NotReadableError' })).toContain('busy')
-    expect(cameraErrorMessage(new Error('x'))).toContain('build your creature')
-    expect(cameraErrorMessage(null)).toContain('build your creature')
+    expect(cameraErrorMessage(new Error('x'))).toContain("Couldn't use the camera")
+    expect(cameraErrorMessage(null)).toContain('pick a photo')
   })
 
   test('stopStream stops every track', () => {

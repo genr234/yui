@@ -1,10 +1,11 @@
-// Player avatars (contracts §2): a creature the player builds, optionally
-// with a selfie that fills its body. The camera code stays thin; cropping,
-// encoding and the creature maths are pure so they can be tested without a
-// browser.
+// Player avatars (contracts §2): either a creature the player builds
+// (optionally with a selfie filling its body) or just a round photo. The
+// camera code stays thin; cropping, encoding and the creature maths are pure
+// so they can be tested without a browser.
 import {
   bodySize,
   encodeCreature,
+  imageUrl,
   parseAvatar,
   photoSquare,
   randomCreature,
@@ -32,6 +33,11 @@ export function creatureOf(avatar: string | null | undefined): Creature | null {
   return parsed.kind === 'creature' ? parsed.creature : null
 }
 
+/** The photo when the avatar is a plain photo (not a creature), or null. */
+export function photoOf(avatar: string | null | undefined): string | null {
+  return imageUrl(avatar)
+}
+
 /**
  * The avatar to start the join form with: the creature this phone made last
  * time, or a fresh random one to build on.
@@ -47,12 +53,15 @@ export function startingAvatar(storage: Pick<Storage, 'getItem'> | null, rng: Rn
   return encodeCreature(creature ? withoutPhoto(creature) : randomCreature(rng))
 }
 
-/** Remembers the creature for next time. The photo never stays on the phone. */
+/**
+ * Remembers the creature for next time. Photos never stay on the phone, so a
+ * plain photo avatar leaves the last creature in place for next time.
+ */
 export function rememberAvatar(storage: Pick<Storage, 'setItem' | 'removeItem'> | null, avatar: string | null): void {
   try {
     const creature = creatureOf(avatar)
     if (creature) storage?.setItem(STORAGE_KEY, encodeCreature(withoutPhoto(creature)))
-    else storage?.removeItem(STORAGE_KEY)
+    else if (!photoOf(avatar)) storage?.removeItem(STORAGE_KEY)
   } catch {
     /* storage unavailable */
   }
@@ -93,6 +102,23 @@ export function squareCrop(width: number, height: number): SquareCrop {
   return { sx: (width - size) / 2, sy: (height - size) / 2, size }
 }
 
+/** Most a picked photo can be zoomed in, relative to filling the square. */
+export const CROP_ZOOM_MAX = 4
+
+/**
+ * The square of a `width`×`height` picture shown when it is zoomed by `zoom`
+ * (1 = the short side fills the square) around the centre (`cx`, `cy`), in
+ * the picture's pixels. The centre is pulled back so the square never leaves
+ * the picture.
+ */
+export function cropSquare(width: number, height: number, zoom: number, cx: number, cy: number): SquareCrop {
+  const size = Math.max(0, Math.min(width, height)) / Math.min(CROP_ZOOM_MAX, Math.max(1, zoom))
+  const half = size / 2
+  const x = Math.min(width - half, Math.max(half, cx))
+  const y = Math.min(height - half, Math.max(half, cy))
+  return { sx: x - half, sy: y - half, size }
+}
+
 /** The 2D context calls `drawSelfie` makes (a subset of CanvasRenderingContext2D). */
 export interface SelfieContext {
   save(): void
@@ -103,16 +129,23 @@ export interface SelfieContext {
 }
 
 /**
- * Draws the centred square of `source` into a `size`×`size` square, mirrored
- * like the live preview so the photo matches what the player saw.
+ * Draws the `crop` square of `source` into a `size`×`size` square. Camera
+ * frames are mirrored like the live preview so the photo matches what the
+ * player saw; a picked photo is not.
  */
-export function drawSelfie(ctx: SelfieContext, source: CanvasImageSource, width: number, height: number, size = SELFIE_SIZE): void {
-  const crop = squareCrop(width, height)
+export function drawSquare(ctx: SelfieContext, source: CanvasImageSource, crop: SquareCrop, size: number, mirror: boolean): void {
   ctx.save()
-  ctx.translate(size, 0)
-  ctx.scale(-1, 1)
+  if (mirror) {
+    ctx.translate(size, 0)
+    ctx.scale(-1, 1)
+  }
   ctx.drawImage(source, crop.sx, crop.sy, crop.size, crop.size, 0, 0, size, size)
   ctx.restore()
+}
+
+/** Draws the centred square of a camera frame, mirrored, into a `size`×`size` square. */
+export function drawSelfie(ctx: SelfieContext, source: CanvasImageSource, width: number, height: number, size = SELFIE_SIZE): void {
+  drawSquare(ctx, source, squareCrop(width, height), size, true)
 }
 
 /**
@@ -132,18 +165,45 @@ export function encodeSelfie(
   return null
 }
 
-/** Grabs the current video frame as a square selfie data URL (null on failure). */
-export function captureSelfie(video: HTMLVideoElement, doc: Document = document): string | null {
-  const width = video.videoWidth
-  const height = video.videoHeight
-  if (!width || !height) return null
+/** The `crop` square of `source` as a small square JPEG data URL (null on failure). */
+export function capturePhoto(source: CanvasImageSource, crop: SquareCrop, mirror: boolean, doc: Document = document): string | null {
+  if (!(crop.size > 0)) return null
   const canvas = doc.createElement('canvas')
   canvas.width = SELFIE_SIZE
   canvas.height = SELFIE_SIZE
   const ctx = canvas.getContext('2d')
   if (!ctx) return null
-  drawSelfie(ctx, video, width, height)
+  // JPEG has no transparency: a see-through PNG goes on white, not black.
+  ctx.fillStyle = '#fff'
+  ctx.fillRect(0, 0, SELFIE_SIZE, SELFIE_SIZE)
+  drawSquare(ctx, source, crop, SELFIE_SIZE, mirror)
   return encodeSelfie((type, quality) => canvas.toDataURL(type, quality))
+}
+
+/** Grabs the current video frame as a square selfie data URL (null on failure). */
+export function captureSelfie(video: HTMLVideoElement, doc: Document = document): string | null {
+  const width = video.videoWidth
+  const height = video.videoHeight
+  if (!width || !height) return null
+  return capturePhoto(video, squareCrop(width, height), true, doc)
+}
+
+/** Opens a picked image file. Browsers turn phone photos the right way up (EXIF) for us. */
+export function loadImageFile(file: Blob): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      if (img.naturalWidth && img.naturalHeight) resolve(img)
+      else reject(new Error('empty image'))
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('not an image'))
+    }
+    img.src = url
+  })
 }
 
 export function cameraSupported(nav: Navigator | undefined = typeof navigator === 'undefined' ? undefined : navigator): boolean {
@@ -162,20 +222,21 @@ export function stopStream(stream: MediaStream | null | undefined): void {
   for (const track of stream?.getTracks() ?? []) track.stop()
 }
 
-/** A short message for a failed or refused camera; the builder stays usable without it. */
+/** A short message for a failed or refused camera; picking a photo still works without it. */
 export function cameraErrorMessage(error: unknown): string {
   const name = (error as { name?: unknown } | null)?.name
+  const instead = ' You can pick a photo from your gallery instead.'
   switch (name) {
     case 'NotAllowedError':
     case 'SecurityError':
-      return 'Camera access was blocked. You can still build your creature.'
+      return 'Camera access was blocked.' + instead
     case 'NotFoundError':
     case 'OverconstrainedError':
-      return 'No front camera found. You can still build your creature.'
+      return 'No front camera found.' + instead
     case 'NotReadableError':
     case 'AbortError':
-      return 'The camera is busy. You can still build your creature.'
+      return 'The camera is busy.' + instead
     default:
-      return "Couldn't use the camera. You can still build your creature."
+      return "Couldn't use the camera." + instead
   }
 }
