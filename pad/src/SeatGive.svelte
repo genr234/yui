@@ -81,14 +81,9 @@
     overflow-y: auto;
   }
   /* Rows in the list and the row after it keep their hairlines. */
-  li + li :global(.set-row)::before,
-  ul + :global(.set-row)::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 66px;
-    right: 16px;
-    border-top: 1.5px solid #e9ecf1;
+  li + li :global(.set-row),
+  ul + :global(.set-row) {
+    border-top: 2px solid var(--kit-panel);
   }
   .back {
     transform: scaleX(-1);

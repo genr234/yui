@@ -12,7 +12,6 @@
     | 'user'
     | 'link'
     | 'logout'
-    | 'power'
     | 'chevron'
 </script>
 
@@ -55,8 +54,6 @@
     <path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1" /><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1" />
   {:else if name === 'logout'}
     <path d="M9 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h4" /><path d="m15 16 4-4-4-4" /><path d="M19 12H9" />
-  {:else if name === 'power'}
-    <path d="M12 3v9" /><path d="M6.34 6.34a8 8 0 1 0 11.32 0" />
   {:else if name === 'chevron'}
     <path d="m9 6 6 6-6 6" />
   {/if}

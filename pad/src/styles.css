@@ -349,73 +349,79 @@ input[type='range']::-moz-range-thumb {
 }
 
 /*
- * Settings lists: a small caps title over a white rounded group of rows. Each
- * row is an icon in a soft round badge, a label, and a value or control on the
- * right, with a hairline between rows that starts under the label.
+ * Settings lists: a title over a white group of rows with the kit's rim and
+ * lip. Each row is a chunky blue icon tile, a label, and a value or control
+ * on the right, with a soft groove between rows.
  */
 .set-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 .set-title {
   margin: 4px 0 0;
-  padding: 0 16px;
+  padding: 0 6px;
   color: var(--ink-muted);
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   font-weight: 900;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 .set-group {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border-radius: 18px;
+  border: 2px solid var(--kit-key-line);
+  border-radius: var(--yui-radius-hero);
   background: #fff;
-  box-shadow: 0 1px 0 var(--kit-key-line);
+  box-shadow: 0 var(--yui-lip) 0 var(--kit-key-lip);
+  margin-bottom: var(--yui-lip);
 }
 .set-row {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   width: 100%;
   min-height: 60px;
   margin: 0;
-  padding: 10px 16px;
+  padding: 8px 14px 8px 10px;
   border: 0;
   border-radius: 0;
   background: transparent;
   color: var(--ink);
   font: inherit;
   font-size: 1.05rem;
-  font-weight: 700;
+  font-weight: 800;
   text-align: left;
 }
-.set-row + .set-row::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 66px;
-  right: 16px;
-  border-top: 1.5px solid #e9ecf1;
+.set-row + .set-row {
+  border-top: 2px solid var(--kit-panel);
 }
 button.set-row:active:not(:disabled) {
-  background: #f3f5f8;
+  background: var(--kit-panel);
 }
 button.set-row:disabled {
   cursor: default;
+  opacity: 0.6;
 }
 .set-badge {
+  --b: var(--kit-blue);
+  --b-edge: color-mix(in srgb, var(--b), #000 26%);
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: #e8ebf1;
-  color: #5d6577;
+  width: 38px;
+  height: 38px;
+  margin-bottom: 3px;
+  border: 2px solid var(--b-edge);
+  border-radius: var(--yui-radius-control);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--b), #fff 16%) 0 50%, var(--b) 50%);
+  color: #fff;
+  box-shadow: 0 3px 0 var(--b-edge);
+}
+.set-badge .setting-icon {
+  stroke-width: 2.6;
 }
 .set-label {
   flex: 1;
@@ -431,7 +437,7 @@ button.set-row:disabled {
 .set-sub {
   color: var(--ink-muted);
   font-size: 0.85rem;
-  font-weight: 600;
+  font-weight: 700;
 }
 .set-value {
   flex: 0 0 auto;
@@ -439,61 +445,72 @@ button.set-row:disabled {
   align-items: center;
   gap: 6px;
   color: var(--ink-muted);
-  font-weight: 600;
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
 .set-chevron {
-  color: #a6adbb;
+  color: var(--kit-key-lip);
+}
+.set-chevron .setting-icon {
+  stroke-width: 3;
 }
 .set-pill {
-  padding: 4px 12px;
-  border-radius: 999px;
-  background: #e8ebf1;
+  padding: 3px 10px;
+  border: 2px solid var(--kit-key-line);
+  border-radius: var(--yui-radius-badge);
+  background: var(--kit-well);
   color: var(--ink-muted);
-  font-size: 0.9rem;
-  font-weight: 800;
+  font-size: 0.85rem;
+  font-weight: 900;
 }
 .set-pill.on {
-  background: color-mix(in srgb, var(--kit-green), #fff 82%);
-  color: color-mix(in srgb, var(--kit-green), #000 18%);
+  border-color: color-mix(in srgb, var(--kit-green), #000 26%);
+  background: var(--kit-green);
+  color: #fff;
 }
 .set-row.danger {
   color: var(--kit-red);
 }
 .set-row.danger .set-badge {
-  background: color-mix(in srgb, var(--kit-red), #fff 86%);
-  color: var(--kit-red);
+  --b: var(--kit-red);
 }
-/* An on/off switch: a green pill with a white knob. */
+/* An on/off switch with the kit's rim and lip: a green track, a white key. */
 input[type='checkbox'].set-switch {
   position: relative;
   display: block;
-  width: 54px;
-  height: 32px;
-  border: 0;
+  width: 58px;
+  height: 34px;
+  margin-bottom: 3px;
+  border: 2px solid var(--kit-key-line);
   border-radius: 999px;
-  background: #d6dae3;
-  box-shadow: none;
+  background: var(--kit-well);
+  box-shadow: 0 3px 0 var(--kit-key-lip);
   transition: background var(--yui-press) var(--yui-ease-out);
 }
 input[type='checkbox'].set-switch::after {
   position: absolute;
-  top: 3px;
-  left: 3px;
+  top: 2px;
+  left: 2px;
   width: 26px;
   height: 26px;
+  box-sizing: border-box;
+  border: 2px solid var(--kit-key-line);
   border-radius: 50%;
   background: #fff;
   -webkit-mask: none;
   mask: none;
-  box-shadow: 0 1px 3px rgba(20, 30, 50, 0.25);
+  box-shadow: 0 2px 0 var(--kit-key-lip);
   transform: none;
   transition: transform 180ms var(--yui-ease-out);
 }
 input[type='checkbox'].set-switch:checked {
+  border-color: color-mix(in srgb, var(--kit-green), #000 26%);
   background: var(--kit-green);
+  box-shadow: 0 3px 0 color-mix(in srgb, var(--kit-green), #000 26%);
 }
 input[type='checkbox'].set-switch:checked::after {
+  border-color: color-mix(in srgb, var(--kit-green), #000 26%);
   background: #fff;
-  transform: translateX(22px);
+  box-shadow: 0 2px 0 color-mix(in srgb, var(--kit-green), #000 26%);
+  transform: translateX(24px);
 }
