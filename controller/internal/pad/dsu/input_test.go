@@ -18,9 +18,10 @@ func vectorFrame() protocol.InputState {
 			protocol.ButtonL1 | protocol.ButtonR2 | protocol.ButtonStart | protocol.ButtonSelect |
 			protocol.ButtonRecenter | protocol.ButtonHome,
 		LX: 32767, LY: 32767, RX: -32767, RY: 0,
-		// Remote frame (x right, y toward the screen, z up) → DSU (x, z, -y).
-		Accel: [3]float32{0.5, -2, -1},
-		Gyro:  [3]float32{10, 20, 30},
+		// Remote frame (x right, y toward the screen, z up) → DSU (-x, -z, y);
+		// gyro (pitch, yaw left, roll) → DSU (pitch, yaw right, roll).
+		Accel: [3]float32{-0.5, 2, 1},
+		Gyro:  [3]float32{10, -20, 30},
 	}
 }
 
@@ -68,16 +69,40 @@ func TestFromInputMatchesVector(t *testing.T) {
 }
 
 func TestFromInputGravityAtRest(t *testing.T) {
-	// Phone flat, face up: gravity reads +1 g on the remote frame's z.
+	// Dolphin's DSU client reads Accel Up = -y, Right = -x, Forward = +z
+	// (DualShockUDPClient.cpp), and a Wii Remote at rest must read +1 g up.
+
+	// Phone flat, face up: proper acceleration is +1 g on the remote's z.
 	ps := FromInput(protocol.InputState{Accel: [3]float32{0, 0, 1}}, 0, InputOptions{})
-	if ps.Accel != [3]float32{0, 1, 0} {
-		t.Fatalf("flat remote should read +1 g on DSU y (up): %v", ps.Accel)
+	if ps.Accel != [3]float32{0, -1, 0} {
+		t.Fatalf("flat remote must read Accel Up (DSU -y): %v", ps.Accel)
 	}
-	// Pointing straight up at the ceiling: gravity along -y of the remote
-	// frame, which is +z (toward the player) in DSU.
-	ps = FromInput(protocol.InputState{Accel: [3]float32{0, -1, 0}}, 0, InputOptions{})
+	// Top edge at the ceiling: +1 g on the remote's y, Accel Forward (DSU +z).
+	ps = FromInput(protocol.InputState{Accel: [3]float32{0, 1, 0}}, 0, InputOptions{})
 	if ps.Accel != [3]float32{0, 0, 1} {
-		t.Fatalf("upright remote: %v", ps.Accel)
+		t.Fatalf("upright remote must read Accel Forward (DSU +z): %v", ps.Accel)
+	}
+	// Rolled right side up: +1 g on the remote's x, Accel Right (DSU -x).
+	ps = FromInput(protocol.InputState{Accel: [3]float32{1, 0, 0}}, 0, InputOptions{})
+	if ps.Accel != [3]float32{-1, 0, 0} {
+		t.Fatalf("remote on its left edge must read Accel Right (DSU -x): %v", ps.Accel)
+	}
+}
+
+func TestFromInputGyroDirections(t *testing.T) {
+	// Dolphin: Pitch Up = +pitch, Yaw Right = +yaw, Roll Right = +roll.
+	// The pad: pitch up +, yaw left +, roll right + (right-handed about +y).
+	ps := FromInput(protocol.InputState{Gyro: [3]float32{5, 0, 0}}, 0, InputOptions{})
+	if ps.Gyro != [3]float32{5, 0, 0} {
+		t.Fatalf("pitch up: %v", ps.Gyro)
+	}
+	ps = FromInput(protocol.InputState{Gyro: [3]float32{0, 5, 0}}, 0, InputOptions{})
+	if ps.Gyro != [3]float32{0, -5, 0} {
+		t.Fatalf("turning left must be DSU yaw left (negative): %v", ps.Gyro)
+	}
+	ps = FromInput(protocol.InputState{Gyro: [3]float32{0, 0, 5}}, 0, InputOptions{})
+	if ps.Gyro != [3]float32{0, 0, 5} {
+		t.Fatalf("roll right: %v", ps.Gyro)
 	}
 }
 

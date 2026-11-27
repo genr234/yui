@@ -86,7 +86,7 @@ func main() {
 			if *held == "" {
 				st.Cross = int(el)%2 == 0
 			}
-			st.Accel = [3]float32{0, 0, 1}
+			st.Accel = [3]float32{0, -1, 0} // lying flat (DSU reads gravity as -y)
 			if !*noMotion {
 				st.Gyro = [3]float32{0, 30, 0} // 30 deg/s yaw
 			}
