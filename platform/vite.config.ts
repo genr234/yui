@@ -29,6 +29,11 @@ export default defineConfig(({ mode }) => ({
     },
   },
   build: {
+    // The overlay hands these to the page as bytes, so they must be inlined
+    // into platform.js: a load from the controller could be blocked by the
+    // host page's Content-Security-Policy.
+    assetsInlineLimit: (file: string) =>
+      /[\\/]avatar[\\/]src[\\/]atlas\.png$|[\\/]AvenirNext\.woff2$/.test(file) ? true : undefined,
     outDir: mode === 'demo' ? 'demo-dist' : '../controller/static',
     emptyOutDir: mode === 'demo',
     ...(mode === 'demo'

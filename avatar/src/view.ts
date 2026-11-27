@@ -29,27 +29,92 @@ const DEFAULT_COLOR = '#9fb1c4'
 
 // ---- shared state: atlas, gravity, one animation loop ----------------------
 
-let atlasUrl: string | null = null
-let atlas: HTMLImageElement | null = null
+type AtlasSource = { atlasUrl: string } | { atlasData: Blob }
+
+let atlasKey: string | Blob | null = null
+let atlas: CanvasImageSource | null = null
+let atlasLoading = false
 let atlasReady = false
 
-/** Tells the renderer where the sprite atlas (src/atlas.png) is served. Call once at startup. */
-export function configureAvatars(options: { atlasUrl: string }): void {
-  if (options.atlasUrl === atlasUrl) return
-  atlasUrl = options.atlasUrl
+/**
+ * Tells the renderer where to get the sprite atlas (src/atlas.png). Call once
+ * at startup. `atlasData` hands it the bytes themselves, which no page's
+ * Content-Security-Policy can block: the kiosk overlay runs inside other
+ * people's pages and uses that.
+ */
+export function configureAvatars(options: AtlasSource): void {
+  const key = 'atlasData' in options ? options.atlasData : options.atlasUrl
+  if (key === atlasKey) return
+  atlasKey = key
   atlas = null
+  atlasLoading = false
   atlasReady = false
 }
 
 function loadAtlas(): void {
-  if (atlas || !atlasUrl) return
-  atlas = new Image()
-  atlas.decoding = 'async'
-  atlas.onload = () => {
-    atlasReady = true
-    for (const view of views) view.wake()
+  if (atlas || atlasLoading || !atlasKey) return
+  atlasLoading = true
+  const key = atlasKey
+  loadImage(key).then(
+    (image) => {
+      if (key !== atlasKey) return
+      atlas = image
+      atlasReady = true
+      for (const view of views) view.wake()
+    },
+    () => {
+      if (key === atlasKey) atlasLoading = false
+    },
+  )
+}
+
+/** The bytes of a base64 `data:` URL, or null for anything else. */
+export function dataUrlBlob(url: string): Blob | null {
+  const match = /^data:([^;,]+);base64,(.*)$/s.exec(url)
+  if (!match) return null
+  try {
+    const binary = atob(match[2])
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+    return new Blob([bytes], { type: match[1] })
+  } catch {
+    return null
   }
-  atlas.src = atlasUrl
+}
+
+/**
+ * Decodes an image. Bytes and `data:` URLs go through createImageBitmap,
+ * which a page's Content-Security-Policy does not govern (an <img> would be
+ * held to its img-src). Anything else loads as a normal image.
+ */
+function loadImage(source: string | Blob): Promise<CanvasImageSource> {
+  const blob = typeof source === 'string' ? dataUrlBlob(source) : source
+  if (blob && typeof createImageBitmap === 'function') return createImageBitmap(blob)
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.decoding = 'async'
+    img.onload = () => resolve(img)
+    img.onerror = reject
+    img.src = typeof source === 'string' ? source : URL.createObjectURL(source)
+  })
+}
+
+/** Draws a selfie into a round canvas, cropped to fill it like object-fit: cover. */
+function selfieCanvas(url: string): HTMLCanvasElement {
+  const canvas = document.createElement('canvas')
+  canvas.style.cssText = 'display:block;width:100%;height:100%;border-radius:50%'
+  loadImage(url).then(
+    (image) => {
+      const { width: w, height: h } = image as { width: number; height: number }
+      const side = Math.min(w, h)
+      if (!side) return
+      canvas.width = side
+      canvas.height = side
+      canvas.getContext('2d')?.drawImage(image, (w - side) / 2, (h - side) / 2, side, side, 0, 0, side, side)
+    },
+    () => {},
+  )
+  return canvas
 }
 
 let gravityX = 0
@@ -77,7 +142,7 @@ class CreatureView {
   readonly canvas = document.createElement('canvas')
   private ctx = this.canvas.getContext('2d')
   private pupils: Pupil[] = []
-  private photo: HTMLImageElement | null = null
+  private photo: CanvasImageSource | null = null
   private photoSrc: string | null = null
   private awake = false
   private idle: ReturnType<typeof setTimeout> | null = null
@@ -109,14 +174,16 @@ class CreatureView {
       this.photoSrc = creature.photo
       this.photo = null
       if (creature.photo) {
-        const img = new Image()
-        img.onload = () => {
-          if (this.photoSrc === creature.photo) {
-            this.photo = img
-            this.wake()
-          }
-        }
-        img.src = creature.photo
+        const src = creature.photo
+        loadImage(src).then(
+          (image) => {
+            if (this.photoSrc === src) {
+              this.photo = image
+              this.wake()
+            }
+          },
+          () => {},
+        )
       }
     }
     this.wake()
@@ -262,12 +329,7 @@ export function mountAvatar(host: HTMLElement, props: AvatarProps): AvatarHandle
     clear()
     shown = key
     if (parsed.kind === 'image') {
-      const img = document.createElement('img')
-      img.alt = ''
-      img.draggable = false
-      img.style.cssText = 'display:block;width:100%;height:100%;object-fit:cover;border-radius:50%'
-      img.src = parsed.url
-      host.append(img)
+      host.append(selfieCanvas(parsed.url))
     } else {
       // Text only, never HTML.
       const text = parsed.kind === 'emoji' ? parsed.text : (next.fallback ?? '')

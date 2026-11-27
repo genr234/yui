@@ -3,6 +3,7 @@ import { encodeCreature, imageUrl, isCreature, parseAvatar, parseCreature, witho
 import { bodySize, defaultEyes, layoutCreature, photoSquare, withBody } from './layout'
 import { randomCreature, seededRng } from './random'
 import { atRest, joltPupil, makePupil, stepPupil } from './physics'
+import { dataUrlBlob } from './view'
 
 const JPEG = 'data:image/jpeg;base64,/9j/4AAQ'
 
@@ -170,5 +171,19 @@ describe('random creatures', () => {
     }
     expect(randomCreature(seededRng('a'))).toEqual(randomCreature(seededRng('a')))
     expect(encodeCreature(randomCreature(seededRng('a')))).not.toBe(encodeCreature(randomCreature(seededRng('b'))))
+  })
+})
+
+describe('dataUrlBlob', () => {
+  test('decodes a base64 data URL to its bytes and type', async () => {
+    const blob = dataUrlBlob('data:image/png;base64,AAEC/w==')
+    expect(blob?.type).toBe('image/png')
+    expect([...new Uint8Array(await blob!.arrayBuffer())]).toEqual([0, 1, 2, 255])
+  })
+
+  test('returns null for anything that is not a base64 data URL', () => {
+    expect(dataUrlBlob('https://example.com/a.png')).toBeNull()
+    expect(dataUrlBlob('data:text/plain,hello')).toBeNull()
+    expect(dataUrlBlob('data:image/png;base64,***')).toBeNull()
   })
 })
