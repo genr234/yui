@@ -24,10 +24,16 @@ type InputOptions struct {
 // Sticks are -32767..32767 with +x right and +y up, as DSU expects.
 //
 // Motion: the pad sends the "phone held like a remote" frame (+x right,
-// +y toward the screen, +z up out of the phone's face) in g and deg/s.
-// DSU uses the DualShock 4 frame (+x right, +y up out of the face, +z
-// toward the player), so accel becomes (x, z, -y). Gyro is already named
-// pitch, yaw, roll and passes through.
+// +y toward the screen, +z up out of the phone's face) in g and deg/s,
+// with accel as proper acceleration (flat and still reads +1 g up) and
+// gyro as pitch (top edge up +), yaw (turning left +), roll (about +y).
+//
+// DSU, as cemuhook clients such as Dolphin read it, uses the DualShock 4
+// axes (+x right, +y up, +z toward the player) but with every accel sign
+// flipped: a pad lying still reports -1 g on y, and pointing the top edge
+// at the ceiling reports +1 g on z. Dolphin maps Accel Up = -y, Right =
+// -x, Forward = +z. So accel becomes (-x, -z, y). Its gyro is pitch up +,
+// yaw right +, roll right +, so yaw changes sign: (pitch, -yaw, roll).
 func FromInput(s protocol.InputState, ts uint64, opt InputOptions) PadState {
 	b := s.Buttons
 	on := func(bit uint32) bool { return b&bit != 0 }
@@ -55,8 +61,8 @@ func FromInput(s protocol.InputState, ts uint64, opt InputOptions) PadState {
 		RX: axis(s.RX),
 		RY: axis(s.RY),
 
-		Accel: [3]float32{s.Accel[0], s.Accel[2], -s.Accel[1]},
-		Gyro:  s.Gyro,
+		Accel: [3]float32{-s.Accel[0], -s.Accel[2], s.Accel[1]},
+		Gyro:  [3]float32{s.Gyro[0], -s.Gyro[1], s.Gyro[2]},
 
 		MotionTimestamp: ts,
 	}

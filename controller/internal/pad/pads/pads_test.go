@@ -62,7 +62,7 @@ func TestPlayerRouteUsesSlotAndStamps(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, ok := players.get(2)
-	if !ok || !got.Cross || got.Accel != [3]float32{0, 1, 0} || got.Gyro != [3]float32{1, 2, 3} {
+	if !ok || !got.Cross || got.Accel != [3]float32{0, -1, 0} || got.Gyro != [3]float32{1, -2, 3} {
 		t.Fatalf("slot 2 %+v %v", got, ok)
 	}
 	first := got.MotionTimestamp
