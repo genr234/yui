@@ -8,6 +8,7 @@
   import { friendlyError } from './api'
   import Icon, { type IconName } from './Icon.svelte'
   import SeatGive from './SeatGive.svelte'
+  import SettingIcon from './SettingIcon.svelte'
   import { emptySeat, type SeatState } from './seatPass'
 
   export let player: Player
@@ -116,6 +117,7 @@
   let confirmForget = false
   let enteringCode = false
 
+  $: motionOn = motion?.status === 'on' && motion.calibrated
   $: usingAccount = player.account_linked === true
   $: label = accountName || 'your Yui account'
 
@@ -147,12 +149,12 @@
   }
 
   function motionLabel(m: MotionView): string {
-    if (m.status === 'denied') return 'Motion blocked in this browser'
+    if (m.status === 'denied') return 'Blocked in this browser'
     if (m.status === 'unsupported') return 'This phone has no motion sensor'
-    if (m.status === 'skipped') return 'Motion skipped: touch controls'
-    if (m.status === 'needs-permission') return 'Motion needs permission'
-    if (!m.calibrated) return 'Motion needs calibrating'
-    return m.gyro ? 'Motion on, aiming with the phone' : 'Motion on (no gyroscope: aim by touch)'
+    if (m.status === 'skipped') return 'Skipped: touch controls'
+    if (m.status === 'needs-permission') return 'Needs permission'
+    if (!m.calibrated) return 'Needs calibrating'
+    return m.gyro ? 'Aiming with the phone' : 'No gyroscope: aim by touch'
   }
 
   function quit() {
@@ -206,24 +208,34 @@
       <button class="primary big" on:click={onResume}>{playing ? 'Resume' : 'Close'}</button>
 
       <!--
-        Per-feature rows go here (one row per feature, e.g. reactions, snapshot,
-        game-specific options). Keep Resume/Close first and Quit game last.
+        Per-feature sections go here (one group per feature, e.g. reactions,
+        snapshot, game-specific options). Keep Resume/Close first and Quit game last.
       -->
       {#if motion}
-        <div class="motion-row">
-          <span class="motion-state">
-            <span class="dot" class:on={motion.status === 'on' && motion.calibrated}></span>
-            {motionLabel(motion)}
-          </span>
-          <div class="motion-actions">
-            {#if motion.status === 'on' && motion.calibrated}
-              <button class="secondary" type="button" on:click={onRecenter}>Recenter aim</button>
+        <section class="set-section" aria-label="Motion">
+          <h3 class="set-title">Motion</h3>
+          <div class="set-group">
+            <div class="set-row">
+              <span class="set-badge"><SettingIcon name="tilt" /></span>
+              <span class="set-label"><span>Motion</span><span class="set-sub">{motionLabel(motion)}</span></span>
+              <span class="set-pill" class:on={motionOn}>{motionOn ? 'On' : 'Off'}</span>
+            </div>
+            {#if motionOn}
+              <button class="set-row" type="button" on:click={onRecenter}>
+                <span class="set-badge"><SettingIcon name="target" /></span>
+                <span class="set-label"><span>Recenter aim</span></span>
+                <span class="set-chevron"><SettingIcon name="chevron" size={18} /></span>
+              </button>
             {/if}
             {#if motion.status === 'on' || motion.status === 'skipped'}
-              <button class="secondary" type="button" on:click={onCalibrate}>{motion.calibrated ? 'Recalibrate' : 'Calibrate'}</button>
+              <button class="set-row" type="button" on:click={onCalibrate}>
+                <span class="set-badge"><SettingIcon name="refresh" /></span>
+                <span class="set-label"><span>{motion.calibrated ? 'Recalibrate' : 'Calibrate'}</span></span>
+                <span class="set-chevron"><SettingIcon name="chevron" size={18} /></span>
+              </button>
             {/if}
           </div>
-        </div>
+        </section>
       {/if}
 
       {#if player.slot || seat.outgoing || seat.result}
@@ -231,88 +243,153 @@
       {/if}
 
       {#if playing}
-        <button class="danger-btn" on:click={quit}>{confirmQuit ? 'Tap again to quit' : 'Quit game'}</button>
+        <div class="set-group">
+          <button class="set-row danger" type="button" on:click={quit}>
+            <span class="set-badge"><SettingIcon name="power" /></span>
+            <span class="set-label"><span>{confirmQuit ? 'Tap again to quit' : 'Quit game'}</span></span>
+          </button>
+        </div>
       {/if}
     {:else if tab === 'sound'}
-      <label class="volume">
-        <span>Volume</span>
-        <input
-          style="--fill:{Math.round(volume * 100)}%"
-          type="range"
-          min="0"
-          max="100"
-          step="1"
-          value={Math.round(volume * 100)}
-          on:input={(e) => onVolume(Number(e.currentTarget.value) / 100)}
-        />
-        <span class="pct">{Math.round(volume * 100)}%</span>
-      </label>
+      <section class="set-section" aria-label="Sound">
+        <h3 class="set-title">Sound</h3>
+        <div class="set-group">
+          <label class="set-row volume">
+            <span class="set-badge"><SettingIcon name="volume" /></span>
+            <span class="set-label">
+              <span>Volume</span>
+              <input
+                style="--fill:{Math.round(volume * 100)}%"
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value={Math.round(volume * 100)}
+                on:input={(e) => onVolume(Number(e.currentTarget.value) / 100)}
+              />
+            </span>
+            <span class="set-value pct">{Math.round(volume * 100)}%</span>
+          </label>
+          {#if vibration !== null}
+            <label class="set-row">
+              <span class="set-badge"><SettingIcon name="pulse" /></span>
+              <span class="set-label"><span>Vibration</span></span>
+              <input class="set-switch" type="checkbox" role="switch" checked={vibration} on:change={(e) => onVibration(e.currentTarget.checked)} />
+            </label>
+          {/if}
+        </div>
+      </section>
 
-      {#if vibration !== null}
-        <label class="vibration">
-          <span>Vibration</span>
-          <input type="checkbox" checked={vibration} on:change={(e) => onVibration(e.currentTarget.checked)} />
-        </label>
-      {/if}
-
-      {#if player.speaker}
-        <p class="speaker-now">
-          {player.speaker_channel ? `This phone is the ${player.speaker_channel} speaker` : 'This phone is the speaker'}
-        </p>
-        {#if player.speaker_channel}
-          <button
-            class="secondary"
-            disabled={speakerAsked !== ''}
-            on:click={() => {
-              speakerAsked = 'mono'
-              onSpeaker()
-            }}>{speakerAsked ? 'Switching the sound here…' : 'Play all the sound here'}</button
-          >
-        {/if}
-      {:else}
-        <button
-          class="secondary"
-          disabled={speakerAsked !== ''}
-          on:click={() => {
-            speakerAsked = 'mono'
-            onSpeaker()
-          }}>{speakerAsked === 'mono' ? 'Switching the sound here…' : 'Be the speaker'}</button
-        >
-        <button
-          class="secondary"
-          disabled={speakerAsked !== ''}
-          on:click={() => {
-            speakerAsked = 'right'
-            onSpeaker('right')
-          }}>{speakerAsked === 'right' ? 'Pairing as the right speaker…' : 'Be the right speaker'}</button
-        >
-      {/if}
+      <section class="set-section" aria-label="Speaker">
+        <h3 class="set-title">Speaker</h3>
+        <div class="set-group">
+          {#if player.speaker}
+            <div class="set-row">
+              <span class="set-badge"><SettingIcon name="speaker" /></span>
+              <span class="set-label"
+                ><span>{player.speaker_channel ? `This phone is the ${player.speaker_channel} speaker` : 'This phone is the speaker'}</span></span
+              >
+              <span class="set-pill on">On</span>
+            </div>
+            {#if player.speaker_channel}
+              <button
+                class="set-row"
+                type="button"
+                disabled={speakerAsked !== ''}
+                on:click={() => {
+                  speakerAsked = 'mono'
+                  onSpeaker()
+                }}
+              >
+                <span class="set-badge"><SettingIcon name="volume" /></span>
+                <span class="set-label"><span>{speakerAsked ? 'Switching the sound here…' : 'Play all the sound here'}</span></span>
+                <span class="set-chevron"><SettingIcon name="chevron" size={18} /></span>
+              </button>
+            {/if}
+          {:else}
+            <button
+              class="set-row"
+              type="button"
+              disabled={speakerAsked !== ''}
+              on:click={() => {
+                speakerAsked = 'mono'
+                onSpeaker()
+              }}
+            >
+              <span class="set-badge"><SettingIcon name="speaker" /></span>
+              <span class="set-label"><span>{speakerAsked === 'mono' ? 'Switching the sound here…' : 'Be the speaker'}</span></span>
+              <span class="set-chevron"><SettingIcon name="chevron" size={18} /></span>
+            </button>
+            <button
+              class="set-row"
+              type="button"
+              disabled={speakerAsked !== ''}
+              on:click={() => {
+                speakerAsked = 'right'
+                onSpeaker('right')
+              }}
+            >
+              <span class="set-badge"><SettingIcon name="swap" /></span>
+              <span class="set-label"><span>{speakerAsked === 'right' ? 'Pairing as the right speaker…' : 'Be the right speaker'}</span></span>
+              <span class="set-chevron"><SettingIcon name="chevron" size={18} /></span>
+            </button>
+          {/if}
+        </div>
+      </section>
     {:else}
-      <label class="vibration">
-        <span>Allow pokes</span>
-        <input type="checkbox" checked={allowPokes} on:change={(e) => onPokes(e.currentTarget.checked)} />
-      </label>
+      <section class="set-section" aria-label="Play">
+        <h3 class="set-title">Play</h3>
+        <div class="set-group">
+          <label class="set-row">
+            <span class="set-badge"><SettingIcon name="bell" /></span>
+            <span class="set-label"><span>Allow pokes</span></span>
+            <input class="set-switch" type="checkbox" role="switch" checked={allowPokes} on:change={(e) => onPokes(e.currentTarget.checked)} />
+          </label>
+        </div>
+      </section>
 
-      <section class="account" aria-label="Yui account">
+      <section class="set-section" aria-label="Yui account">
+        <h3 class="set-title">Account</h3>
         {#if enteringCode}
           <CodeEntry busy={accountBusy} error={accountError} onSubmit={link} onCancel={() => ((enteringCode = false), (accountError = ''))} />
-        {:else if usingAccount || accountName}
-          <p class="account-line">
-            <strong>{usingAccount ? `${label} · playing as your account` : `${label}`}</strong>
-          </p>
-          {#if usingAccount}
-            <button class="secondary" type="button" disabled={accountBusy} on:click={() => account(() => onAccountUse(false))}>Stop using it here</button>
-          {:else}
-            <button class="secondary" type="button" disabled={accountBusy} on:click={() => account(() => onAccountUse(true))}>Play as {label}</button>
-          {/if}
-          <button class="secondary danger" type="button" disabled={accountBusy} on:click={forget}>{confirmForget ? 'Tap again to forget this phone' : 'Forget this phone'}</button>
         {:else}
-          <button class="secondary" type="button" on:click={() => (enteringCode = true)}>Use my Yui account</button>
+          <div class="set-group">
+            {#if usingAccount || accountName}
+              <div class="set-row">
+                <span class="set-badge"><SettingIcon name="user" /></span>
+                <span class="set-label"><span>{label}</span></span>
+                <span class="set-pill" class:on={usingAccount}>{usingAccount ? 'Playing' : 'Linked'}</span>
+              </div>
+              {#if usingAccount}
+                <button class="set-row" type="button" disabled={accountBusy} on:click={() => account(() => onAccountUse(false))}>
+                  <span class="set-badge"><SettingIcon name="logout" /></span>
+                  <span class="set-label"><span>Stop using it here</span></span>
+                  <span class="set-chevron"><SettingIcon name="chevron" size={18} /></span>
+                </button>
+              {:else}
+                <button class="set-row" type="button" disabled={accountBusy} on:click={() => account(() => onAccountUse(true))}>
+                  <span class="set-badge"><SettingIcon name="link" /></span>
+                  <span class="set-label"><span>Play as {label}</span></span>
+                  <span class="set-chevron"><SettingIcon name="chevron" size={18} /></span>
+                </button>
+              {/if}
+              <button class="set-row danger" type="button" disabled={accountBusy} on:click={forget}>
+                <span class="set-badge"><SettingIcon name="logout" /></span>
+                <span class="set-label"><span>{confirmForget ? 'Tap again to forget this phone' : 'Forget this phone'}</span></span>
+              </button>
+            {:else}
+              <button class="set-row" type="button" on:click={() => (enteringCode = true)}>
+                <span class="set-badge"><SettingIcon name="link" /></span>
+                <span class="set-label"><span>Use my Yui account</span></span>
+                <span class="set-chevron"><SettingIcon name="chevron" size={18} /></span>
+              </button>
+            {/if}
+          </div>
         {/if}
         {#if accountError && !enteringCode}<p class="err" role="alert">{accountError}</p>{/if}
       </section>
-
     {/if}
+
   </div>
 </div>
 
@@ -460,92 +537,28 @@
     text-shadow: 0 2px 0 var(--edge);
     box-shadow: 0 3px 0 var(--edge);
   }
-  .err {
-    margin: 0;
-    color: var(--kit-red);
-    font-weight: 800;
-  }
-  .motion-row {
-    display: grid;
-    gap: 10px;
-    padding: 12px;
-    border-radius: var(--yui-radius-card);
-    background: var(--kit-well);
-    color: var(--ink);
-  }
-  .motion-state {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-weight: 800;
-  }
-  .dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: var(--kit-panel-line);
-  }
-  .dot.on {
-    background: var(--kit-green);
-  }
-  .motion-actions {
-    display: flex;
-    gap: 10px;
-  }
-  .motion-actions button {
-    flex: 1;
-  }
   .big {
     min-height: 72px;
     font-size: 1.35rem;
   }
-  .speaker-now {
+  .err {
     margin: 0;
-    padding: 12px 16px;
-    border: 2px dashed var(--kit-panel-line);
-    border-radius: var(--yui-radius-hero);
-    text-align: center;
+    padding: 0 16px;
+    color: var(--kit-red);
     font-weight: 800;
   }
-  /* Settings rows: a white inset row, label left, control right. */
-  .volume,
-  .vibration {
-    display: grid;
-    grid-template-columns: auto 1fr auto;
+  /* The slider sits under the Volume label, inside the row. */
+  .volume {
     align-items: center;
-    gap: 12px;
-    min-height: 60px;
-    padding: 8px 14px;
-    border: 2px solid var(--kit-key-line);
-    border-radius: var(--yui-radius-hero);
-    background: #fff;
-    font-weight: 800;
   }
-  .vibration {
-    grid-template-columns: 1fr auto;
+  .volume .set-label {
+    gap: 4px;
+  }
+  .volume input {
+    width: 100%;
   }
   .pct {
-    min-width: 3.2em;
-    padding: 4px 6px;
-    border-radius: var(--yui-radius-control);
-    background: var(--kit-well);
-    text-align: center;
-    color: var(--ink);
-    font-size: 0.9rem;
-    font-variant-numeric: tabular-nums;
-  }
-  .account {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-  .account-line {
-    margin: 0;
-    padding: 0 4px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .danger {
-    color: var(--kit-red);
+    min-width: 3em;
+    justify-content: flex-end;
   }
 </style>

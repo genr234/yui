@@ -359,3 +359,153 @@ input[type='range']::-moz-range-thumb {
   --k-lip: color-mix(in srgb, var(--player), #000 40%);
   --k-ink: #fff;
 }
+
+/*
+ * Settings lists: a small caps title over a white rounded group of rows. Each
+ * row is an icon in a soft round badge, a label, and a value or control on the
+ * right, with a hairline between rows that starts under the label.
+ */
+.set-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.set-title {
+  margin: 4px 0 0;
+  padding: 0 16px;
+  color: var(--ink-muted);
+  font-size: 0.8rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.set-group {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 1px 0 var(--kit-key-line);
+}
+.set-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 60px;
+  margin: 0;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 1.05rem;
+  font-weight: 700;
+  text-align: left;
+}
+.set-row + .set-row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 66px;
+  right: 16px;
+  border-top: 1.5px solid #e9ecf1;
+}
+button.set-row:active:not(:disabled) {
+  background: #f3f5f8;
+}
+button.set-row:disabled {
+  cursor: default;
+}
+.set-badge {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #e8ebf1;
+  color: #5d6577;
+}
+.set-label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.set-label > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.set-sub {
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.set-value {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-muted);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.set-chevron {
+  color: #a6adbb;
+}
+.set-pill {
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: #e8ebf1;
+  color: var(--ink-muted);
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+.set-pill.on {
+  background: color-mix(in srgb, var(--kit-green), #fff 82%);
+  color: color-mix(in srgb, var(--kit-green), #000 18%);
+}
+.set-row.danger {
+  color: var(--kit-red);
+}
+.set-row.danger .set-badge {
+  background: color-mix(in srgb, var(--kit-red), #fff 86%);
+  color: var(--kit-red);
+}
+/* An on/off switch: a green pill with a white knob. */
+input[type='checkbox'].set-switch {
+  position: relative;
+  display: block;
+  width: 54px;
+  height: 32px;
+  border: 0;
+  border-radius: 999px;
+  background: #d6dae3;
+  box-shadow: none;
+  transition: background var(--yui-press) var(--yui-ease-out);
+}
+input[type='checkbox'].set-switch::after {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #fff;
+  -webkit-mask: none;
+  mask: none;
+  box-shadow: 0 1px 3px rgba(20, 30, 50, 0.25);
+  transform: none;
+  transition: transform 180ms var(--yui-ease-out);
+}
+input[type='checkbox'].set-switch:checked {
+  background: var(--kit-green);
+}
+input[type='checkbox'].set-switch:checked::after {
+  background: #fff;
+  transform: translateX(22px);
+}
