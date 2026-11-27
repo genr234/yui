@@ -4,6 +4,7 @@ import { configureAvatars, dataUrlBlob } from "../../avatar/src";
 import avatarAtlas from "../../avatar/src/atlas.png";
 import App from "./App.svelte";
 import { platformAssetUrl } from "./assets";
+import { watchForCSPBlocks } from "./csp";
 import { loadPlatformFonts } from "./fonts";
 import appsCss from "./styles/apps.css?inline";
 import attractCss from "./styles/attract.css?inline";
@@ -60,6 +61,8 @@ declare global {
 }
 
 const hostId = "yui-platform-host";
+
+watchForCSPBlocks();
 
 function mount() {
 	if (document.getElementById(hostId)) {
