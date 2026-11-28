@@ -231,7 +231,7 @@
           openMenuFromPhone();
           break;
         case "close":
-          closeMenu();
+          dismissMenu();
           break;
         case "history-back":
           if (!demoMode) history.back();
@@ -354,6 +354,14 @@
     window.clearTimeout(closeTimer);
     closing = false;
     void requestAdminEntry();
+  }
+
+  // A tap on the backdrop or a phone's Back/Home would close Yui, and closing
+  // Yui unmounts the open app: a game would lose its phones mid-play. While an
+  // app is open these do nothing; leave the app first (Back to apps).
+  function dismissMenu() {
+    if (appRouteActive) return;
+    closeMenu();
   }
 
   function closeMenu() {
@@ -745,7 +753,7 @@
     class:closing={shellClosing}
     class="veil"
     aria-label="Close Yui menu"
-    on:click={closeMenu}
+    on:click={dismissMenu}
   ></button>
 
   {#if authVisible}
