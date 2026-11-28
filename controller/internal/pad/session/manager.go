@@ -416,6 +416,19 @@ func (m *Manager) DirectControl(playerID string) bool {
 	return !fallback && peer.controlReady()
 }
 
+// ControlBuffered is how many bytes are queued on the player's control data
+// channel, for senders of bulk data (clips) to pace themselves. ok is false
+// when the channel is not open (or the player is on the cable fallback).
+func (m *Manager) ControlBuffered(playerID string) (uint64, bool) {
+	if !m.DirectControl(playerID) {
+		return 0, false
+	}
+	m.mu.Lock()
+	peer := m.peers[playerID]
+	m.mu.Unlock()
+	return peer.controlBuffered()
+}
+
 // Snapshot copies the roster and the current join URL.
 func (m *Manager) Snapshot() Snapshot {
 	m.mu.Lock()

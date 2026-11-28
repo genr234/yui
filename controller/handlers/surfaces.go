@@ -153,7 +153,7 @@ func (r *Registry) padManager() *session.Manager {
 func (r *Registry) videoAssetInUse(id string) bool {
 	r.videoMu.Lock()
 	defer r.videoMu.Unlock()
-	return r.video.sessions > 0 && r.video.helperAsset != "" && r.video.helperAsset == id
+	return (r.video.sessions > 0 || r.clipsRecording()) && r.video.helperAsset != "" && r.video.helperAsset == id
 }
 
 // videoHelper finds the encoder: the newest ready runtime asset whose

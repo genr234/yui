@@ -176,6 +176,14 @@ func (a *Audio) SetCapturePID(pid int) {
 	a.reconcile()
 }
 
+// Target is what the kiosk's sound comes from right now: "browser" (pid 0)
+// or "native" with the runtime's PID. Clips record the same thing.
+func (a *Audio) Target() (process string, pid int) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.wantedLocked()
+}
+
 // ResetCapture goes back to capturing the browser (AudioSource).
 func (a *Audio) ResetCapture() { a.SetCapturePID(0) }
 

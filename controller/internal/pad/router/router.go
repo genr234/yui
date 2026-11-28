@@ -88,6 +88,8 @@ type Config struct {
 	// Snap captures the game area as a JPEG for "snap" requests. nil turns
 	// the feature off (phones get an error).
 	Snap func(ctx context.Context) (SnapImage, error)
+	// Clips renders "clip" requests (clip.go). nil turns the feature off.
+	Clips Clipper
 	// StartURL is the page the remote's Home button loads.
 	StartURL string
 	// Activity is called when a player presses something, moves a stick or
@@ -120,6 +122,9 @@ type Router struct {
 	snapSeq  int
 	now      func() time.Time // test clock; nil = time.Now
 
+	// clip holds pinned moments, reactions and password spans (mu).
+	clip clipState
+
 	// pushMu orders layout sends so versions reach each phone increasing.
 	pushMu   sync.Mutex
 	version  int
@@ -138,7 +143,7 @@ type Router struct {
 // New builds the stack with the shell provider at the bottom and registers
 // the adapters.
 func New(cfg Config) (*Router, error) {
-	r := &Router{cfg: cfg, players: map[string]protocol.Player{}, sent: map[string][]byte{}, lastInput: map[string]protocol.InputState{}, soc: newSocial(), calibrating: map[string]bool{}, snapLast: map[string]time.Time{}, snapBusy: map[string]bool{}}
+	r := &Router{cfg: cfg, players: map[string]protocol.Player{}, sent: map[string][]byte{}, lastInput: map[string]protocol.InputState{}, soc: newSocial(), calibrating: map[string]bool{}, snapLast: map[string]time.Time{}, snapBusy: map[string]bool{}, clip: newClipState()}
 	deps := shell.Deps{
 		IsHost:   r.IsHost,
 		HostName: r.hostName,
@@ -245,6 +250,9 @@ func (r *Router) SetSensitive(active bool) {
 	r.mu.Lock()
 	changed := r.sensitive != active
 	r.sensitive = active
+	if changed {
+		r.clipNoteSensitive(active, r.clock())
+	}
 	ids := r.readyIDs()
 	r.mu.Unlock()
 	if !changed {
@@ -378,6 +386,7 @@ func (r *Router) forget(id string) {
 	delete(r.players, id)
 	delete(r.lastInput, id)
 	delete(r.snapLast, id)
+	r.clipForget(id)
 	r.mu.Unlock()
 	r.soc.forget(id)
 	r.setCalibrating(id, false)
@@ -419,6 +428,12 @@ func (r *Router) onControl(playerID string, msg any) {
 		err = r.stack.System(playerID, m)
 	case protocol.Snap:
 		r.onSnap(playerID)
+		return
+	case protocol.Clip:
+		r.onClip(playerID)
+		return
+	case protocol.ClipMake:
+		r.onClipMake(playerID, m)
 		return
 	case protocol.ProfileReply:
 		if r.cfg.ProfileReply != nil {

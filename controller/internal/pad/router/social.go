@@ -138,6 +138,7 @@ func (r *Router) onReact(playerID string, m protocol.React) {
 	s.lastReact[playerID] = now
 	s.mu.Unlock()
 	r.emit(ReactionEvent, Reaction{PlayerID: playerID, Emote: m.Emote})
+	r.clipNoteReaction(m.Emote)
 }
 
 func (r *Router) onCalibrate(playerID string, value any) {

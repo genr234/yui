@@ -13,6 +13,8 @@
   import ProfileSheet from './ProfileSheet.svelte'
   import SnapOverlay from './SnapOverlay.svelte'
   import { SnapReceiver, blobToDataUrl } from './platform/snap'
+  import ClipSheet from './ClipSheet.svelte'
+  import { ClipReceiver, type ClipReadyInfo, type ClipVideo } from './platform/clip'
   import SeatOfferCard from './SeatOfferCard.svelte'
   import { emptySeat, seatExpire, seatReduce, secondsLeft, spectatorsOf, type SeatState } from './seatPass'
   import { enqueueAsk, type ProfileAsk } from './account'
@@ -207,6 +209,7 @@
 
   function onControl(msg: ControlMessage) {
     if (snapRx.handle(msg)) return
+    if (clipRx.handle(msg)) return
     switch (msg.t) {
       case 'seat_offered':
       case 'seat_result':
@@ -292,6 +295,12 @@
     },
     fail: (text) => {
       snapBusy = false
+      // No photo card to offer the clip from: let the pinned moment go.
+      if (clipRx.stage === 'marking' || clipRx.stage === 'ready') {
+        clipRx.cancel()
+        clipPinning = false
+        clipInfo = null
+      }
       showSnapToast(text)
     },
   })
@@ -329,6 +338,7 @@
     snapBusy = true
     snapFlash++
     pressTick()
+    pinClip()
     if (demoTree) {
       send({ t: 'snap' })
       setTimeout(demoSnap, 500)
@@ -339,6 +349,84 @@
       snapBusy = false
       showSnapToast('Not connected to the screen')
     }
+  }
+
+  // ------------------------------------------------- clip the last moments
+  // The snapshot button also pins the moment for a clip: the photo card then
+  // offers "Make a clip" of the seconds before it. A kiosk that cannot clip
+  // just never offers it (no toast: the player asked for a photo).
+  type ClipView = { stage: 'options'; info: ClipReadyInfo } | { stage: 'making' } | { stage: 'receiving'; progress: number } | { stage: 'done'; clip: ClipVideo }
+  let clipView: ClipView | null = null
+  let clipInfo: ClipReadyInfo | null = null
+  let clipPinning = false
+  const clipRx = new ClipReceiver({
+    ready: (info) => {
+      clipPinning = false
+      clipInfo = info
+    },
+    progress: (fraction) => (clipView = { stage: 'receiving', progress: fraction }),
+    done: (clip) => {
+      clipView = { stage: 'done', clip }
+    },
+    fail: (text) => {
+      const silent = clipPinning
+      clipPinning = false
+      clipInfo = null
+      clipView = null
+      if (!silent) showSnapToast(text)
+    },
+  })
+
+  /** Pins "now" for a clip, alongside a snapshot. */
+  function pinClip() {
+    if (clipView) return // a clip is being made or shown
+    if (clipRx.stage === 'ready') clipRx.cancel() // an older, unused moment
+    clipInfo = null
+    if (!clipRx.begin()) return
+    clipPinning = true
+    if (demoTree) {
+      send({ t: 'clip' })
+      // Local demo: pretend the kiosk pinned the moment.
+      setTimeout(() => clipRx.handle({ t: 'clip_ready', id: 'demo', secs: 30, camera: true }), 300)
+      return
+    }
+    if (!session?.send({ t: 'clip' })) {
+      clipRx.cancel()
+      clipPinning = false
+    }
+  }
+
+  /** From the photo card: choose how to clip the pinned moment. */
+  function openClip() {
+    if (!clipInfo || clipRx.stage !== 'ready') return
+    snapCard = null
+    clipView = { stage: 'options', info: clipInfo }
+  }
+
+  function makeClip(opts: Parameters<ClipReceiver['make']>[0]) {
+    const msg = clipRx.make(opts)
+    clipInfo = null
+    if (!msg) return
+    if (demoTree) {
+      send(msg)
+      clipRx.cancel()
+      clipView = null
+      showSnapToast('Clips need the kiosk')
+      return
+    }
+    clipView = { stage: 'making' }
+    if (!session?.send(msg)) {
+      clipRx.cancel()
+      clipView = null
+      showSnapToast('Not connected to the screen')
+    }
+  }
+
+  function closeClip() {
+    // Closing while the video is on its way drops it; the kiosk just stops being heard.
+    clipRx.cancel()
+    clipInfo = null
+    clipView = null
   }
 
   // ------------------------------------------------------ profile requests
@@ -636,6 +724,7 @@
     if (toastTimer) clearTimeout(toastTimer)
     session?.stop()
     snapRx.cancel()
+    clipRx.cancel()
     if (snapToastTimer) clearTimeout(snapToastTimer)
     loop.dispose()
     touchSender.dispose()
@@ -777,7 +866,8 @@
     {/if}
   </main>
 
-  <SnapOverlay card={snapCard} toast={snapToast} flash={snapFlash} onClose={() => (snapCard = null)} />
+  <ClipSheet view={clipView} onMake={makeClip} onClose={closeClip} />
+  <SnapOverlay card={snapCard} toast={snapToast} flash={snapFlash} clipSecs={clipInfo ? clipInfo.secs : 0} onClip={openClip} onClose={() => (snapCard = null)} />
 
   {#if homeOpen}
     <HomeSheet

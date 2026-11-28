@@ -194,7 +194,10 @@ func publicAuthMethod(method string) bool {
 	switch method {
 	// pad.sensitive must work on the PIN screen itself (D9): it can only
 	// block remote input, never grant anything.
-	case "auth.status", "auth.setPin", "auth.verifyPin", "status.get", "diagnostics.get", "config.get", "accounts.status", "pad.sensitive":
+	case "auth.status", "auth.setPin", "auth.verifyPin", "status.get", "diagnostics.get", "config.get", "accounts.status", "pad.sensitive",
+		// The overlay's camera ring reports in and hands footage over even
+		// while the PIN screen is up; neither grants anything.
+		"clips.camera.status", "clips.camera.deliver":
 		return true
 	default:
 		return false

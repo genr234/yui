@@ -250,6 +250,13 @@ func (p *peer) sendControlText(text string) error {
 	return p.control.SendText(text)
 }
 
+func (p *peer) controlBuffered() (uint64, bool) {
+	if !p.controlReady() {
+		return 0, false
+	}
+	return p.control.BufferedAmount(), true
+}
+
 func (p *peer) controlReady() bool {
 	return p != nil && !p.closed.Load() && p.control != nil && p.control.ReadyState() == webrtc.DataChannelStateOpen
 }

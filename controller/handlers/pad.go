@@ -364,6 +364,8 @@ func (r *Registry) startPadSession() (session.Snapshot, error) {
 			}
 		}
 		connected = now
+		// The replay buffer records while someone could ask for a clip.
+		r.setClipsWanted(len(now) > 0)
 		r.Emit("pad.players", snap)
 	})
 
@@ -396,6 +398,7 @@ func (r *Registry) startPadSession() (session.Snapshot, error) {
 		}
 		gate.Lock()
 		ended = true
+		r.setClipsWanted(false)
 		r.AssetSyncer().SetPaused(playPauseReason, false)
 		r.Emit("pad.players", mgr.Snapshot())
 		gate.Unlock()
@@ -516,6 +519,7 @@ func (r *Registry) padHub() *router.Router {
 		// fire mid-game without this.
 		Activity: useractivity.Default().Touch,
 		Snap:     r.snapGameArea,
+		Clips:    registryClipper{r},
 		// A native game's window covers the kiosk's page; while phones scan
 		// its code or aim at its targets, the page goes on top.
 		Calibrating: func(on bool) { r.Native().ShowOverlay(on) },

@@ -205,6 +205,59 @@ type SnapChunk struct {
 	Data string `json:"data"`
 }
 
+// Clip (pad → kiosk) pins "now" as the end of a clip (contracts §3 "clip").
+type Clip struct {
+	T string `json:"t"`
+}
+
+// ClipReady (kiosk → pad) answers a Clip: ID names the pinned moment, Secs
+// is how much footage there is before it, Camera whether a facecam can be
+// added.
+type ClipReady struct {
+	T      string `json:"t"`
+	ID     string `json:"id"`
+	Secs   int    `json:"secs"`
+	Camera bool   `json:"camera"`
+}
+
+// Clip layouts.
+const (
+	ClipWide = "wide"
+	ClipTall = "tall"
+)
+
+// ClipMake (pad → kiosk) asks for the video of a pinned moment.
+type ClipMake struct {
+	T      string `json:"t"`
+	ID     string `json:"id"`
+	Secs   int    `json:"secs"`
+	Camera bool   `json:"camera"`
+	Layout string `json:"layout"`
+}
+
+// ClipResult (kiosk → pad) answers a Clip (refusals) or a ClipMake. With OK
+// it announces Chunks ClipChunk messages carrying the MP4 (Size bytes).
+type ClipResult struct {
+	T      string  `json:"t"`
+	ID     string  `json:"id"`
+	OK     bool    `json:"ok"`
+	Error  string  `json:"error,omitempty"`
+	Mime   string  `json:"mime,omitempty"`
+	Size   int     `json:"size,omitempty"`
+	Chunks int     `json:"chunks,omitempty"`
+	W      int     `json:"w,omitempty"`
+	H      int     `json:"h,omitempty"`
+	Secs   float64 `json:"secs,omitempty"`
+}
+
+// ClipChunk (kiosk → pad) is one base64 slice of a clip, in order.
+type ClipChunk struct {
+	T    string `json:"t"`
+	ID   string `json:"id"`
+	Seq  int    `json:"seq"`
+	Data string `json:"data"`
+}
+
 // SeatOffer (pad → kiosk): the sender offers their seat to the spectator `to`.
 type SeatOffer struct {
 	T  string `json:"t"`
@@ -575,6 +628,59 @@ func ParseControl(data []byte) (any, error) {
 			return nil, wrap(err)
 		}
 		var m SnapChunk
+		if err := decode(data, &m); err != nil {
+			return nil, wrap(err)
+		}
+		if m.ID == "" || m.Seq < 0 {
+			return nil, wrap(errors.New("bad id or seq"))
+		}
+		return m, nil
+	case "clip":
+		return Clip{T: "clip"}, nil
+	case "clip_ready":
+		if err := need("id", "secs", "camera"); err != nil {
+			return nil, wrap(err)
+		}
+		var m ClipReady
+		if err := decode(data, &m); err != nil {
+			return nil, wrap(err)
+		}
+		if m.ID == "" || m.Secs < 0 {
+			return nil, wrap(errors.New("bad id or secs"))
+		}
+		return m, nil
+	case "clip_make":
+		if err := need("id", "secs", "camera", "layout"); err != nil {
+			return nil, wrap(err)
+		}
+		var m ClipMake
+		if err := decode(data, &m); err != nil {
+			return nil, wrap(err)
+		}
+		if m.ID == "" || m.Secs <= 0 || (m.Layout != ClipWide && m.Layout != ClipTall) {
+			return nil, wrap(errors.New("bad id, secs or layout"))
+		}
+		return m, nil
+	case "clip_result":
+		if err := need("id", "ok"); err != nil {
+			return nil, wrap(err)
+		}
+		var m ClipResult
+		if err := decode(data, &m); err != nil {
+			return nil, wrap(err)
+		}
+		if m.ID == "" {
+			return nil, wrap(errors.New("id required"))
+		}
+		if m.OK && (m.Chunks < 1 || m.Size < 1) {
+			return nil, wrap(errors.New("chunks and size required"))
+		}
+		return m, nil
+	case "clip_chunk":
+		if err := need("id", "seq", "data"); err != nil {
+			return nil, wrap(err)
+		}
+		var m ClipChunk
 		if err := decode(data, &m); err != nil {
 			return nil, wrap(err)
 		}

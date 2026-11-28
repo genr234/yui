@@ -13,6 +13,8 @@ Rails.application.configure do
     policy.form_action :self
     policy.frame_ancestors :none
     policy.img_src     :self, :https, :data
+    # The pad plays a finished clip from a blob: URL (data: as a fallback).
+    policy.media_src   :self, :blob, :data
     policy.object_src  :none
     policy.script_src  :self
     # Nonce on style-src blocks inline <style> blocks. Pad layouts still set

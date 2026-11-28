@@ -202,6 +202,58 @@ export interface SnapChunk {
   seq: number;
   data: string;
 }
+/** Raw bytes per `clip_chunk` (base64 on the wire). */
+export const CLIP_CHUNK_BYTES = 32 * 1024;
+/** Largest clip the kiosk sends (1536 chunks). */
+export const CLIP_MAX_BYTES = 48 * 1024 * 1024;
+export type ClipLayout = "wide" | "tall";
+export const CLIP_LAYOUTS: readonly ClipLayout[] = ["wide", "tall"];
+
+/** pad -> kiosk: pin "now" as the end of a clip of the last moments. */
+export interface Clip {
+  t: "clip";
+}
+/** kiosk -> pad: the moment is pinned; `secs` seconds of footage end there. */
+export interface ClipReady {
+  t: "clip_ready";
+  /** Names the pinned moment (valid about two minutes). */
+  id: string;
+  /** Seconds of footage available before the pin (3..30). */
+  secs: number;
+  /** A facecam can be added. */
+  camera: boolean;
+}
+/** pad -> kiosk: make the video for a pinned moment. */
+export interface ClipMake {
+  t: "clip_make";
+  id: string;
+  /** 3..30; the kiosk clamps to what it has. */
+  secs: number;
+  camera: boolean;
+  /** "wide" = 16:9 1280x720, "tall" = 9:16 720x1280. */
+  layout: ClipLayout;
+}
+/** kiosk -> pad: answer to `clip` (refusal) or `clip_make`. With `ok`, `chunks` `clip_chunk` messages follow. */
+export interface ClipResult {
+  t: "clip_result";
+  id: string;
+  ok: boolean;
+  /** Text to show the player when `ok` is false. */
+  error?: string;
+  mime?: string;
+  size?: number;
+  chunks?: number;
+  w?: number;
+  h?: number;
+  secs?: number;
+}
+/** kiosk -> pad: one base64 slice of a clip, in order from seq 0. */
+export interface ClipChunk {
+  t: "clip_chunk";
+  id: string;
+  seq: number;
+  data: string;
+}
 export type SurfaceState = "on" | "off";
 /** Kiosk → pad: what this phone's video track carries now. */
 export interface SurfaceMsg {
@@ -298,6 +350,11 @@ export type ControlMessage =
   | Snap
   | SnapResult
   | SnapChunk
+  | Clip
+  | ClipReady
+  | ClipMake
+  | ClipResult
+  | ClipChunk
   | Ping
   | Pong
   | Idle
@@ -626,6 +683,30 @@ export function parseControl(json: string): ControlMessage {
       if (!isStr(m.id) || m.id === "") fail("snap_chunk: id must be a non-empty string");
       if (!isNum(m.seq) || m.seq < 0) fail("snap_chunk: seq must be >= 0");
       if (!isStr(m.data)) fail("snap_chunk: data must be a string");
+      break;
+    case "clip":
+      break;
+    case "clip_ready":
+      if (!isStr(m.id) || m.id === "") fail("clip_ready: id must be a non-empty string");
+      if (!isNum(m.secs) || m.secs < 0) fail("clip_ready: secs must be a non-negative number");
+      if (!isBool(m.camera)) fail("clip_ready: camera must be a boolean");
+      break;
+    case "clip_make":
+      if (!isStr(m.id) || m.id === "") fail("clip_make: id must be a non-empty string");
+      if (!isNum(m.secs) || m.secs <= 0) fail("clip_make: secs must be a positive number");
+      if (!isBool(m.camera)) fail("clip_make: camera must be a boolean");
+      if (!isStr(m.layout) || !(CLIP_LAYOUTS as readonly string[]).includes(m.layout)) fail("clip_make: layout must be wide or tall");
+      break;
+    case "clip_result":
+      if (!isStr(m.id) || m.id === "") fail("clip_result: id must be a non-empty string");
+      if (!isBool(m.ok)) fail("clip_result: ok must be a boolean");
+      if (m.error !== undefined && !isStr(m.error)) fail("clip_result: error must be a string");
+      if (m.ok && (!isNum(m.chunks) || m.chunks < 1 || !isNum(m.size) || m.size < 1)) fail("clip_result: chunks and size required");
+      break;
+    case "clip_chunk":
+      if (!isStr(m.id) || m.id === "") fail("clip_chunk: id must be a non-empty string");
+      if (!isNum(m.seq) || m.seq < 0) fail("clip_chunk: seq must be >= 0");
+      if (!isStr(m.data)) fail("clip_chunk: data must be a string");
       break;
     case "surface":
       if (!isStr(m.id) || m.id === "" || m.id.length > 32) fail("surface: id must be 1-32 characters");

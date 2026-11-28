@@ -197,6 +197,23 @@ describe("snap messages", () => {
   });
 });
 
+describe("clip messages", () => {
+  test("parse", () => {
+    expect(parseControl('{"t":"clip"}')).toEqual({ t: "clip" });
+    expect(parseControl('{"t":"clip_ready","id":"c1","secs":30,"camera":true}')).toEqual({ t: "clip_ready", id: "c1", secs: 30, camera: true });
+    expect(parseControl('{"t":"clip_make","id":"c1","secs":20,"camera":false,"layout":"tall"}')).toEqual({ t: "clip_make", id: "c1", secs: 20, camera: false, layout: "tall" });
+    expect(parseControl('{"t":"clip_result","id":"e","ok":false,"error":"Wait a moment"}')).toEqual({ t: "clip_result", id: "e", ok: false, error: "Wait a moment" });
+    expect(parseControl('{"t":"clip_chunk","id":"c1","seq":3,"data":"AA"}')).toEqual({ t: "clip_chunk", id: "c1", seq: 3, data: "AA" });
+  });
+  test("rejects bad shapes", () => {
+    expect(() => parseControl('{"t":"clip_ready","id":"c1","secs":30}')).toThrow();
+    expect(() => parseControl('{"t":"clip_make","id":"c1","secs":20,"camera":true,"layout":"square"}')).toThrow();
+    expect(() => parseControl('{"t":"clip_make","id":"","secs":20,"camera":true,"layout":"wide"}')).toThrow();
+    expect(() => parseControl('{"t":"clip_result","id":"c1","ok":true}')).toThrow();
+    expect(() => parseControl('{"t":"clip_chunk","id":"c1","seq":-1,"data":"x"}')).toThrow();
+  });
+});
+
 describe("avatarImage", () => {
   test("only jpeg and webp base64 data urls are images", () => {
     expect(avatarImage("data:image/jpeg;base64,/9j/4AAQ")).toBe("data:image/jpeg;base64,/9j/4AAQ");

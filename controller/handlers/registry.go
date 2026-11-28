@@ -106,6 +106,8 @@ type Registry struct {
 	// the service.
 	videoMu sync.Mutex
 	video   videoState
+	// clipsSt is the replay buffer and facecam handoff (clips.go).
+	clipsSt clipsState
 }
 
 // errStoreScopeChanged means the active account store moved to a new epoch
@@ -176,6 +178,7 @@ func NewRegistry(cfg config.Config) *Registry {
 	r.Register(ProfileCommands()...)
 	r.Register(WebAppsCommands()...)
 	r.Register(WakeLockCommands()...)
+	r.Register(ClipsCommands()...)
 	r.initWakeLocks()
 	return r
 }

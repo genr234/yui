@@ -191,6 +191,33 @@ func ClampClip(raw string, vw, vh float64) Clip {
 	return Clip{x0, y0, x1 - x0, y1 - y0}
 }
 
+// GameArea is the part of the Chrome page that holds the game (the
+// overlay's published game rect, else the whole page) and the page's size,
+// both in CSS pixels.
+func GameArea(ctx context.Context, port int) (clip Clip, w, h float64, err error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	s, err := open(ctx, port)
+	if err != nil {
+		return Clip{}, 0, 0, err
+	}
+	defer s.close()
+	w, h, err = s.viewport()
+	if err != nil {
+		return Clip{}, 0, 0, err
+	}
+	clip = Clip{0, 0, w, h}
+	var ev struct {
+		Result struct {
+			Value string `json:"value"`
+		} `json:"result"`
+	}
+	if err := s.call("Runtime.evaluate", map[string]any{"expression": GameRectExpr, "returnByValue": true}, &ev); err == nil {
+		clip = ClampClip(ev.Result.Value, w, h)
+	}
+	return clip, w, h, nil
+}
+
 // CaptureGameArea takes a JPEG of the part of the Chrome page that holds the
 // game: the overlay's published game rect when there is one, else the whole
 // page. The long side is at most maxSide pixels.

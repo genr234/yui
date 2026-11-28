@@ -41,6 +41,8 @@
   } from "./attract";
   import { loadLibraryRecent } from "./sdk/library";
   import { watchWakeLocks } from "./sdk/wake-lock";
+  import { startCameraRecorder } from "./sdk/clips/recorder";
+  import { platformAssetUrl } from "./assets";
   import type { YuiDevApp } from "./sdk/apps";
   import { resetControllersFocus } from "./sdk/apps/controllers";
   import { loadApps } from "./apps";
@@ -252,6 +254,16 @@
     void pad.state().then((state) => (attractPad = state));
     const offAttractPad = pad.onState((state) => (attractPad = state));
     const offWakeLocks = watchWakeLocks((view) => (wakeLocked = view.active));
+    // Phone clips: the kiosk camera's replay ring (a system feature, no
+    // indicator). Never in the static demo; a failure must not break Yui.
+    let stopCameraRecorder = () => {};
+    if (!demoMode) {
+      try {
+        stopCameraRecorder = startCameraRecorder(bridge, platformAssetUrl);
+      } catch (error) {
+        console.warn("clips: camera recorder did not start", error);
+      }
+    }
     const attractTimer = window.setInterval(() => {
       tickAttract();
       closeIdleAuth();
@@ -263,6 +275,7 @@
       window.removeEventListener("yui:config-changed", onConfigChanged);
       offAttractPad();
       offWakeLocks();
+      stopCameraRecorder();
       window.clearInterval(attractTimer);
       offPadHome();
       offPadRemote();

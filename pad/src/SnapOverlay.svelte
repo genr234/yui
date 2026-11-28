@@ -10,6 +10,9 @@
   /** Changes every time a snap is taken: plays the white flash. */
   export let flash = 0
   export let onClose: () => void = () => {}
+  /** Seconds of video the kiosk has before this moment; 0 hides "Make a clip". */
+  export let clipSecs = 0
+  export let onClip: () => void = () => {}
 
   let name = snapFileName()
   let canShare = false
@@ -63,6 +66,11 @@
         <button class="secondary" type="button" on:click={save}>Save</button>
         {#if canShare}<button class="primary" type="button" disabled={shareBusy} on:click={share}>Share</button>{/if}
       </div>
+      {#if clipSecs > 0}
+        <button class="secondary clip" type="button" on:click={onClip}>
+          <Icon name="play" size={18} /> Make a clip of the last {Math.min(clipSecs, 30)}s
+        </button>
+      {/if}
       <button class="close" type="button" on:click={onClose}><Icon name="cross" size={16} /> Close</button>
     </div>
   </div>
@@ -133,6 +141,20 @@
     flex: 1;
     min-height: 54px;
   }
+  .clip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 54px;
+    animation: rise 220ms var(--yui-ease-out);
+  }
+  @keyframes rise {
+    from {
+      transform: translateY(8px);
+      opacity: 0;
+    }
+  }
   .close {
     display: inline-flex;
     align-items: center;
@@ -169,6 +191,7 @@
   }
   @media (prefers-reduced-motion: reduce) {
     .card,
+    .clip,
     .toast {
       animation: none;
     }
