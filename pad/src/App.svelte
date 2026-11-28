@@ -5,7 +5,7 @@
   import { COLOR_NAMES, colorHex } from './colors'
   import Pad from './Pad.svelte'
   import Avatar from './Avatar.svelte'
-  import CreatureBuilder from './CreatureBuilder.svelte'
+  import AvatarEditor from './AvatarEditor.svelte'
   import CodeEntry from './CodeEntry.svelte'
   import InstallHint from './InstallHint.svelte'
   import PadHome from './PadHome.svelte'
@@ -231,10 +231,10 @@
         </div>
 
         <div class="field">
-          <span>Your creature</span>
+          <span>Your avatar</span>
           <button type="button" class="creature" disabled={busy} on:click={() => (building = true)}>
             <Avatar {avatar} color={colorHex(color)} view="full" size={72} />
-            <span class="creature-cta">{avatar ? 'Change it' : 'Make one'}<small class="muted">Parts, googly eyes, even your face</small></span>
+            <span class="creature-cta">{avatar ? 'Change it' : 'Make one'}<small class="muted">A googly creature, or just a photo</small></span>
           </button>
         </div>
 
@@ -261,7 +261,7 @@
       </form>
     {/if}
     {#if screen === 'join' && building}
-      <CreatureBuilder
+      <AvatarEditor
         value={avatar}
         color={colorHex(color)}
         onCancel={() => (building = false)}

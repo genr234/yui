@@ -1,7 +1,11 @@
-import { configureAvatars } from "../../avatar/src";
+// The atlas is bundled as a data URL and handed over as bytes, so a host
+// page's Content-Security-Policy cannot keep avatars from drawing.
+import { configureAvatars, dataUrlBlob } from "../../avatar/src";
 import avatarAtlas from "../../avatar/src/atlas.png";
 import App from "./App.svelte";
 import { platformAssetUrl } from "./assets";
+import { watchForCSPBlocks } from "./csp";
+import { loadPlatformFonts } from "./fonts";
 import appsCss from "./styles/apps.css?inline";
 import attractCss from "./styles/attract.css?inline";
 import barsCss from "./styles/bars.css?inline";
@@ -58,6 +62,8 @@ declare global {
 
 const hostId = "yui-platform-host";
 
+watchForCSPBlocks();
+
 function mount() {
 	if (document.getElementById(hostId)) {
 		return;
@@ -71,14 +77,32 @@ function mount() {
 	host.style.pointerEvents = "none";
 
 	const shadow = host.attachShadow({ mode: "open" });
-	const style = document.createElement("style");
-	style.textContent = css;
 	const target = document.createElement("div");
 	target.id = "yui-shadow-root";
-	shadow.append(style, target);
+	// A constructed stylesheet is not subject to the host page's
+	// Content-Security-Policy; a <style> element is held to its style-src.
+	let adopted = false;
+	if ("adoptedStyleSheets" in shadow && typeof CSSStyleSheet === "function") {
+		try {
+			const sheet = new CSSStyleSheet();
+			sheet.replaceSync(css);
+			shadow.adoptedStyleSheets = [sheet];
+			adopted = true;
+		} catch {
+			// fall back to a <style> element
+		}
+	}
+	if (!adopted) {
+		const style = document.createElement("style");
+		style.textContent = css;
+		shadow.append(style);
+	}
+	shadow.append(target);
 	document.documentElement.appendChild(host);
 
-	configureAvatars({ atlasUrl: platformAssetUrl(avatarAtlas) });
+	void loadPlatformFonts();
+	const atlasData = dataUrlBlob(avatarAtlas);
+	configureAvatars(atlasData ? { atlasData } : { atlasUrl: platformAssetUrl(avatarAtlas) });
 	const app = new App({ target });
 	window.__YUI_APP__ = {
 		destroy: () => {

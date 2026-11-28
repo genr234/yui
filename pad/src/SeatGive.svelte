@@ -2,7 +2,7 @@
   // "Give my seat": the Home > Game row for a seated player.
   import type { Peer } from '@yui/protocol'
   import Avatar from './Avatar.svelte'
-  import Icon from './Icon.svelte'
+  import SettingIcon from './SettingIcon.svelte'
   import { colorHex } from './colors'
   import { resultText, type SeatState } from './seatPass'
 
@@ -17,68 +17,75 @@
   $: if (seat.outgoing) picking = false
 </script>
 
-<section class="give" aria-label="Give my seat">
-  {#if seat.outgoing}
-    <p class="wait" role="status">Waiting for {seat.outgoing.to.name}… <span class="muted">{secondsLeft}s</span></p>
-    <button class="secondary" type="button" on:click={onCancel}>Cancel</button>
-  {:else if seat.result}
-    <p class="wait" role="status">{resultText(seat.result)}</p>
-    <button class="secondary" type="button" on:click={onDismissResult}>OK</button>
-  {:else if picking}
-    {#if spectators.length === 0}
-      <p class="muted">Nobody is watching right now.</p>
+<section class="set-section" aria-label="Give my seat">
+  <h3 class="set-title">Seat</h3>
+  <div class="set-group">
+    {#if seat.outgoing}
+      <div class="set-row" role="status">
+        <span class="set-badge"><SettingIcon name="swap" /></span>
+        <span class="set-label"><span>Waiting for {seat.outgoing.to.name}…</span></span>
+        <span class="set-value">{secondsLeft}s</span>
+      </div>
+      <button class="set-row" type="button" on:click={onCancel}>
+        <span class="set-badge"><SettingIcon name="chevron" /></span>
+        <span class="set-label"><span>Cancel</span></span>
+      </button>
+    {:else if seat.result}
+      <div class="set-row" role="status">
+        <span class="set-badge"><SettingIcon name="swap" /></span>
+        <span class="set-label"><span>{resultText(seat.result)}</span></span>
+      </div>
+      <button class="set-row" type="button" on:click={onDismissResult}>
+        <span class="set-badge"><SettingIcon name="chevron" /></span>
+        <span class="set-label"><span>OK</span></span>
+      </button>
+    {:else if picking}
+      {#if spectators.length === 0}
+        <div class="set-row">
+          <span class="set-badge"><SettingIcon name="user" /></span>
+          <span class="set-label"><span class="set-sub">Nobody is watching right now.</span></span>
+        </div>
+      {:else}
+        <ul>
+          {#each spectators as s (s.id)}
+            <li>
+              <button class="set-row" type="button" on:click={() => onOffer(s.id)}>
+                <Avatar avatar={s.avatar ?? null} color={colorHex(s.color)} size={36} />
+                <span class="set-label"><span>{s.name}</span></span>
+                <span class="set-chevron"><SettingIcon name="chevron" size={18} /></span>
+              </button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+      <button class="set-row" type="button" on:click={() => (picking = false)}>
+        <span class="set-badge back"><SettingIcon name="chevron" /></span>
+        <span class="set-label"><span>Back</span></span>
+      </button>
     {:else}
-      <ul>
-        {#each spectators as s (s.id)}
-          <li>
-            <button class="spectator" type="button" style="--player:{colorHex(s.color)}" on:click={() => onOffer(s.id)}>
-              <Avatar avatar={s.avatar ?? null} size={36} />
-              <span>{s.name}</span>
-            </button>
-          </li>
-        {/each}
-      </ul>
+      <button class="set-row" type="button" on:click={() => (picking = true)}>
+        <span class="set-badge"><SettingIcon name="swap" /></span>
+        <span class="set-label"><span>Give my seat</span></span>
+        <span class="set-chevron"><SettingIcon name="chevron" size={18} /></span>
+      </button>
     {/if}
-    <button class="secondary" type="button" on:click={() => (picking = false)}>Back</button>
-  {:else}
-    <button class="secondary" type="button" on:click={() => (picking = true)}><Icon name="arrow_rotate" size={18} /> Give my seat</button>
-  {/if}
+  </div>
 </section>
 
 <style>
-  .give {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-  p {
-    margin: 0;
-  }
-  .wait {
-    font-weight: 800;
-  }
   ul {
     list-style: none;
     margin: 0;
     padding: 0;
-    display: grid;
-    gap: 8px;
     max-height: 40vh;
     overflow-y: auto;
   }
-  .spectator {
-    width: 100%;
-    min-height: 52px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 6px 12px;
-    border: 3px solid var(--player);
-    border-radius: 14px;
-    background: #fff;
-    color: inherit;
-    font: inherit;
-    font-weight: 800;
-    text-align: left;
+  /* Rows in the list and the row after it keep their hairlines. */
+  li + li :global(.set-row),
+  ul + :global(.set-row) {
+    border-top: 2px solid var(--kit-panel);
+  }
+  .back {
+    transform: scaleX(-1);
   }
 </style>

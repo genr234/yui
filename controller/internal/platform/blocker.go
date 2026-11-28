@@ -76,6 +76,9 @@ func (r *Runtime) blockerOnce(ctx context.Context) error {
 	if err := session.send("Page.enable", nil); err != nil {
 		return fmt.Errorf("enable page domain: %w", err)
 	}
+	if err := session.bypassCSP(); err != nil {
+		return err
+	}
 	if err := session.send("Fetch.enable", map[string]any{
 		"patterns": []map[string]any{
 			{"urlPattern": "http://*/*", "requestStage": "Request"},
@@ -93,6 +96,9 @@ type blockerSession struct {
 	conn         *websocket.Conn
 	nextID       int
 	frameOrigins map[string]string
+	// cspReloads counts the reloads asked for per URL, so a page whose CSP
+	// somehow survives the bypass is not reloaded forever.
+	cspReloads map[string]int
 }
 
 func newBlockerSession(conn *websocket.Conn) *blockerSession {
@@ -100,8 +106,55 @@ func newBlockerSession(conn *websocket.Conn) *blockerSession {
 		conn:         conn,
 		nextID:       1000,
 		frameOrigins: make(map[string]string),
+		cspReloads:   make(map[string]int),
 	}
 }
+
+// cspBlockedBinding is the function the overlay calls when the page's
+// Content-Security-Policy blocks it from reaching the controller.
+const cspBlockedBinding = "__yuiCspBlocked"
+
+// bypassCSP keeps the page's Content-Security-Policy from applying to the
+// overlay. The kiosk owns this browser and the overlay has to reach the
+// controller (bridge websocket, assets) from whatever page is showing.
+//
+// Page.setBypassCSP only covers documents created while this session is
+// attached, which it stays for as long as the target lives. A document that
+// loaded before that keeps its CSP, so the overlay reports a block through the
+// binding (or, if it was blocked before the binding existed, a flag checked
+// here) and the page is reloaded once without it.
+func (s *blockerSession) bypassCSP() error {
+	if err := s.send("Page.setBypassCSP", map[string]any{"enabled": true}); err != nil {
+		return fmt.Errorf("bypass csp: %w", err)
+	}
+	if err := s.send("Runtime.addBinding", map[string]any{"name": cspBlockedBinding}); err != nil {
+		return fmt.Errorf("add csp binding: %w", err)
+	}
+	return s.send("Runtime.evaluate", map[string]any{
+		"expression": "window.__YUI_CSP_BLOCKED === true && " + cspBlockedBinding + "(location.href)",
+	})
+}
+
+type cdpBindingCalledParams struct {
+	Name    string `json:"name"`
+	Payload string `json:"payload"`
+}
+
+func (s *blockerSession) handleBindingCalled(params map[string]any) {
+	data, _ := json.Marshal(params)
+	var event cdpBindingCalledParams
+	if err := json.Unmarshal(data, &event); err != nil || event.Name != cspBlockedBinding {
+		return
+	}
+	if s.cspReloads[event.Payload] >= maxCSPReloads {
+		return
+	}
+	s.cspReloads[event.Payload]++
+	log.Printf("page csp blocked the overlay; reloading %s without it", event.Payload)
+	_ = s.send("Page.reload", nil)
+}
+
+const maxCSPReloads = 1
 
 func (s *blockerSession) send(method string, params map[string]any) error {
 	s.nextID++
@@ -128,6 +181,8 @@ func (s *blockerSession) readLoop(ctx context.Context) error {
 			s.handleFrameDetached(msg.Params)
 		case "Fetch.requestPaused":
 			s.handleRequestPaused(msg.Params)
+		case "Runtime.bindingCalled":
+			s.handleBindingCalled(msg.Params)
 		}
 	}
 }
