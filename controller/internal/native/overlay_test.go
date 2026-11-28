@@ -106,3 +106,40 @@ func TestAGameStartingMidCalibrationGoesUnderThePage(t *testing.T) {
 	// The session ending hands focus back to the page, as always.
 	focus.waitFor(t, "game,page,page")
 }
+
+// keeperLog is a focusLog that also keeps the game in front (FocusKeeper).
+type keeperLog struct{ focusLog }
+
+func (k *keeperLog) Hold(_ int, _ []*regexp.Regexp, stop, release <-chan struct{}) {
+	k.mu.Lock()
+	k.calls = append(k.calls, "hold")
+	k.mu.Unlock()
+	select {
+	case <-stop:
+	case <-release:
+	}
+	k.mu.Lock()
+	k.calls = append(k.calls, "release")
+	k.mu.Unlock()
+}
+
+func TestTheGameIsHeldInFrontExceptUnderThePage(t *testing.T) {
+	mgr, _ := overlayRig(t)
+	keeper := &keeperLog{}
+	mgr.cfg.Focus = keeper
+	spec := Spec{AppID: "dev.example.wiiu", Runtime: "rt1", Executable: "bin/game.exe"}
+	if _, err := mgr.Launch(spec); err != nil {
+		t.Fatal(err)
+	}
+	keeper.waitFor(t, "game,hold")
+	// Calibration lifts the page: the hold lets go first.
+	mgr.ShowOverlay(true)
+	keeper.waitFor(t, "game,hold,release,page")
+	mgr.ShowOverlay(false)
+	keeper.waitFor(t, "game,hold,release,page,game,hold")
+	// The game ending releases the hold before focus goes back to the page.
+	if _, err := mgr.Stop("", false); err != nil {
+		t.Fatal(err)
+	}
+	keeper.waitFor(t, "game,hold,release,page,game,hold,release,page")
+}

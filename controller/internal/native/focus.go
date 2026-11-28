@@ -26,6 +26,16 @@ type SystemFocus struct {
 	FallbackPID func() int
 }
 
+// FocusKeeper is an optional Focuser extension that keeps a program in front
+// for as long as it runs: a tap on the page around the game (the letterbox
+// bars) or another window popping up must not leave the game behind Chrome.
+type FocusKeeper interface {
+	// Hold brings pid's main window back whenever focus leaves the program,
+	// letting a press in progress finish first. It returns when stop or
+	// release is closed.
+	Hold(pid int, skip []*regexp.Regexp, stop, release <-chan struct{})
+}
+
 type noFocus struct{}
 
 func (noFocus) Capture() FocusToken                         { return 0 }

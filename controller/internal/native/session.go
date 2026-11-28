@@ -193,8 +193,11 @@ type session struct {
 	focusStop     chan struct{}
 	focus         FocusToken
 	skip          []*regexp.Regexp // surface window titles focus must not pick
-	logFile       *os.File
-	saves         *saveTarget
+	// hold keeps the game in front (FocusKeeper); guarded by Manager.focusMu.
+	holdRelease chan struct{}
+	holdDone    chan struct{}
+	logFile     *os.File
+	saves       *saveTarget
 
 	// Window placement: reports are dropped once the session has ended.
 	windowMu     sync.Mutex
@@ -412,10 +415,9 @@ func (m *Manager) Launch(spec Spec) (Status, error) {
 	m.publish()
 	go func() {
 		m.cfg.Focus.Give(info.PID, s.skip, s.focusStop)
-		// Someone is calibrating against the page: lift it over the new game.
-		if m.overlayWanted() {
-			m.applyOverlay(s)
-		}
+		// Keep the game in front, or, when someone is calibrating against
+		// the page, lift the page over the new game.
+		m.applyOverlay(s, false)
 	}()
 	if spec.Window != nil {
 		go m.cfg.Placer.Place(info.PID, *spec.Window, s.focusStop, func(r Rect, screen Screen) {
@@ -442,6 +444,9 @@ func (m *Manager) emitWindow(ev WindowEvent) {
 func (m *Manager) watch(s *session, info Info) {
 	waitErr := s.cmd.Wait()
 	close(s.focusStop)
+	m.focusMu.Lock()
+	m.releaseHold(s)
+	m.focusMu.Unlock()
 	s.windowMu.Lock()
 	s.windowEnded = true
 	m.emitWindow(WindowEvent{AppID: info.AppID, Rect: nil, Screen: s.windowScreen})

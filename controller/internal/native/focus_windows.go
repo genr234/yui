@@ -24,6 +24,7 @@ var (
 	procAttachThreadInput   = user32.NewProc("AttachThreadInput")
 	procKeybdEvent          = user32.NewProc("keybd_event")
 	procGetWindowTextW      = user32.NewProc("GetWindowTextW")
+	procGetAsyncKeyState    = user32.NewProc("GetAsyncKeyState")
 )
 
 const (
@@ -31,10 +32,17 @@ const (
 	swRestore      = 9
 	wmClose        = 0x0010
 	vkMenu         = 0x12
+	vkLButton      = 0x01
 	keyeventfKeyUp = 0x0002
 
 	focusPoll    = 250 * time.Millisecond
 	focusTimeout = 20 * time.Second
+
+	// holdPoll is how often Hold checks the foreground window; holdGrace is
+	// how long focus may stay elsewhere (after any press is released) before
+	// the game takes it back, so a tap on a bar button still lands.
+	holdPoll  = 300 * time.Millisecond
+	holdGrace = 900 * time.Millisecond
 )
 
 // windowSearch is shared by the single EnumWindows callback below.
@@ -169,6 +177,44 @@ func (SystemFocus) Give(pid int, skip []*regexp.Regexp, stop <-chan struct{}) {
 		case <-stop:
 			return
 		case <-ticker.C:
+		}
+	}
+}
+
+// pointerDown reports whether the primary button is held (a touch counts:
+// Windows reports it as the left button).
+func pointerDown() bool {
+	state, _, _ := procGetAsyncKeyState.Call(vkLButton)
+	return state&0x8000 != 0
+}
+
+func (SystemFocus) Hold(pid int, skip []*regexp.Regexp, stop, release <-chan struct{}) {
+	ticker := time.NewTicker(holdPoll)
+	defer ticker.Stop()
+	var awaySince time.Time
+	for {
+		select {
+		case <-stop:
+			return
+		case <-release:
+			return
+		case <-ticker.C:
+		}
+		if fg := windows.GetForegroundWindow(); fg != 0 && windowPID(fg) == pid {
+			awaySince = time.Time{}
+			continue
+		}
+		now := time.Now()
+		if awaySince.IsZero() || pointerDown() {
+			// Focus just left, or someone is still pressing: wait.
+			awaySince = now
+			continue
+		}
+		if now.Sub(awaySince) < holdGrace {
+			continue
+		}
+		if hwnd, ok := mainWindow(pid, skip); ok && bringToFront(hwnd) {
+			awaySince = time.Time{}
 		}
 	}
 }

@@ -22,7 +22,7 @@ func (m *Manager) ShowOverlay(on bool) {
 	running := s != nil && s.cmd != nil
 	m.mu.Unlock()
 	if running {
-		go m.applyOverlay(s)
+		go m.applyOverlay(s, true)
 	}
 }
 
@@ -32,8 +32,11 @@ func (m *Manager) overlayWanted() bool {
 	return m.overlay
 }
 
-// applyOverlay moves focus to match the current wish, for session s.
-func (m *Manager) applyOverlay(s *session) {
+// applyOverlay moves focus to match the current wish, for session s. When
+// the game should be in front it is also held there (FocusKeeper), so a tap
+// on the page around it cannot leave it behind Chrome. give asks for the
+// game to be brought forward first (Launch has already done that).
+func (m *Manager) applyOverlay(s *session, give bool) {
 	m.focusMu.Lock()
 	defer m.focusMu.Unlock()
 	select {
@@ -41,9 +44,34 @@ func (m *Manager) applyOverlay(s *session) {
 		return // the session ended; watch has restored focus already
 	default:
 	}
+	m.releaseHold(s)
 	if m.overlayWanted() {
 		m.cfg.Focus.Restore(s.focus)
-	} else {
+		return
+	}
+	if give {
 		m.cfg.Focus.Give(s.info.PID, s.skip, s.focusStop)
 	}
+	keeper, ok := m.cfg.Focus.(FocusKeeper)
+	if !ok {
+		return
+	}
+	release, done := make(chan struct{}), make(chan struct{})
+	s.holdRelease, s.holdDone = release, done
+	pid, skip, stop := s.info.PID, s.skip, s.focusStop
+	go func() {
+		defer close(done)
+		keeper.Hold(pid, skip, stop, release)
+	}()
+}
+
+// releaseHold stops s's focus hold and waits for it, so no later focus move
+// races it. The caller holds focusMu.
+func (m *Manager) releaseHold(s *session) {
+	if s.holdRelease == nil {
+		return
+	}
+	close(s.holdRelease)
+	<-s.holdDone
+	s.holdRelease, s.holdDone = nil, nil
 }
